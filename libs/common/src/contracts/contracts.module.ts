@@ -14,7 +14,7 @@ import { DynamicModuleUtils } from '@mvx-monorepo/common/utils';
 import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
 
 @Module({
-  imports: [DynamicModuleUtils.getCacheModule()],
+  imports: [DynamicModuleUtils.getRedisModule()],
   providers: [
     {
       provide: ProxyNetworkProvider,
@@ -47,9 +47,7 @@ import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
     },
     {
       provide: GatewayContract,
-      useFactory: async (
-        apiConfigService: ApiConfigService,
-      ) => {
+      useFactory: async (apiConfigService: ApiConfigService) => {
         const contractLoader = new ContractLoader(join(__dirname, '../assets/gateway.abi.json'));
 
         const smartContract = await contractLoader.getContract(apiConfigService.getContractGateway());

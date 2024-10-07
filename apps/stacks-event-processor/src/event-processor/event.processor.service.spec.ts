@@ -1,10 +1,8 @@
-import { EventProcessorService } from './event.processor.service';
-import { ApiConfigService } from '@mvx-monorepo/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { Test } from '@nestjs/testing';
-import { NotifierBlockEvent } from './types';
+import { ApiConfigService, CacheInfo } from '@mvx-monorepo/common';
 import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
+import { Test } from '@nestjs/testing';
+import { EventProcessorService } from './event.processor.service';
 
 describe('EventProcessorService', () => {
   let redisHelper: DeepMocked<RedisHelper>;
@@ -18,6 +16,7 @@ describe('EventProcessorService', () => {
 
     apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
     apiConfigService.getContractGasService.mockReturnValue('mockGasServiceAddress');
+    apiConfigService.getHiroWsUrl.mockReturnValue('mockHiroWs');
 
     const moduleRef = await Test.createTestingModule({
       providers: [EventProcessorService],
@@ -39,102 +38,84 @@ describe('EventProcessorService', () => {
   });
 
   describe('consumeEvents', () => {
-    it('Should not consume events', async () => {
-      const blockEvent: NotifierBlockEvent = {
-        hash: 'test',
-        shardId: 1,
-        timestamp: 123456,
-        events: [
-          {
-            txHash: 'test',
-            address: 'someAddress',
-            identifier: 'callContract',
-            data: '',
-            topics: [],
-          },
-          {
-            txHash: 'test',
-            address: 'mockGatewayAddress',
-            identifier: 'callContract',
-            data: '',
-            topics: [
-              BinaryUtils.base64Encode('any'),
-            ],
-          },
-          {
-            txHash: 'test',
-            address: 'mockGasServiceAddress',
-            identifier: 'any',
-            data: '',
-            topics: [
-              BinaryUtils.base64Encode('any'),
-            ],
-          },
-        ],
+    it('Should handle gateway event correctly', async () => {
+      const notification = {
+        tx: {
+          events: [
+            {
+              event_type: 'smart_contract_log',
+              event_index: 0,
+              tx_id: 'txHash',
+              contract_log: {
+                contract_id: 'mockGatewayAddress',
+                topic: 'contract_call_event',
+                value: {
+                  hex: 'mockHexValue',
+                  repr: 'mockReprValue',
+                },
+              },
+            },
+          ],
+        },
       };
 
-      await service.consumeEvents(blockEvent);
+      await service.consumeEvents(notification as any);
 
-      expect(apiConfigService.getContractGateway).toHaveBeenCalledTimes(1);
-      expect(apiConfigService.getContractGasService).toHaveBeenCalledTimes(1);
+      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
+      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+    });
+
+    it('Should handle gas service event correctly', async () => {
+      const notification = {
+        tx: {
+          events: [
+            {
+              event_type: 'smart_contract_log',
+              event_index: 0,
+              tx_id: 'txHash',
+              contract_log: {
+                contract_id: 'mockGasServiceAddress',
+                topic: 'gas_paid_for_contract_call_event',
+                value: {
+                  hex: 'mockHexValue',
+                  repr: 'mockReprValue',
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      await service.consumeEvents(notification as any);
+
+      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
+      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+    });
+
+    it('Should not consume invalid events', async () => {
+      const notification = {
+        tx: {
+          events: [
+            {
+              event_type: 'smart_contract_log',
+              event_index: 0,
+              tx_id: 'txHash',
+              contract_log: {
+                contract_id: 'someOtherAddress',
+                topic: 'unrelated_event',
+                value: {
+                  hex: 'mockHexValue',
+                  repr: 'mockReprValue',
+                },
+              },
+            },
+          ],
+        },
+      };
+
+      await service.consumeEvents(notification as any);
+
       expect(redisHelper.sadd).not.toHaveBeenCalled();
-    });
-
-    it('Should consume gateway event', async () => {
-      const blockEvent: NotifierBlockEvent = {
-        hash: 'test',
-        shardId: 1,
-        timestamp: 123456,
-        events: [
-          {
-            txHash: 'txHash',
-            address: 'mockGatewayAddress',
-            identifier: 'callContract',
-            data: '',
-            topics: [
-              BinaryUtils.base64Encode('contract_call_event'),
-            ],
-          },
-          {
-            txHash: 'txHash',
-            address: 'mockGatewayAddress',
-            identifier: 'approveMessages',
-            data: '',
-            topics: [
-              BinaryUtils.base64Encode('message_approved_event'),
-            ],
-          },
-        ],
-      };
-
-      await service.consumeEvents(blockEvent);
-
-      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
-      expect(redisHelper.sadd).toHaveBeenCalledWith('crossChainTransactions', 'txHash');
-    });
-
-    it('Should consume gas contract event', async () => {
-      const blockEvent: NotifierBlockEvent = {
-        hash: 'test',
-        shardId: 1,
-        timestamp: 123456,
-        events: [
-          {
-            txHash: 'test',
-            address: 'mockGasServiceAddress',
-            identifier: 'any',
-            data: '',
-            topics: [
-              BinaryUtils.base64Encode('gas_paid_for_contract_call_event'),
-            ],
-          },
-        ],
-      };
-
-      await service.consumeEvents(blockEvent);
-
-      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
-      expect(redisHelper.sadd).toHaveBeenCalledWith('crossChainTransactions', 'test');
     });
   });
 });

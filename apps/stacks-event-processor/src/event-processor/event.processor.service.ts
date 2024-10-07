@@ -1,16 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
 import { ApiConfigService, CacheInfo } from '@mvx-monorepo/common';
-import { NotifierBlockEvent, NotifierEvent } from './types';
-import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
-import { EVENTS_NOTIFIER_QUEUE } from '../../../../config/configuration';
 import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { EventIdentifiers, Events } from '@mvx-monorepo/common/utils/event.enum';
+import { Events } from '@mvx-monorepo/common/utils/event.enum';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { connectWebSocketClient, StacksApiWebSocketClient } from '@stacks/blockchain-api-client';
+import { RpcAddressTxNotificationParams } from '@stacks/blockchain-api-client/src/types';
+import { ScEvent } from './types';
 
 @Injectable()
-export class EventProcessorService {
+export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
   private readonly contractGateway: string;
   private readonly contractGasService: string;
+  private readonly hiroWs: string;
+
+  private client?: StacksApiWebSocketClient;
+  private gatewaySubscription?: any;
+  private gasSubscription?: any;
+
   private readonly logger: Logger;
 
   constructor(
@@ -19,22 +24,65 @@ export class EventProcessorService {
   ) {
     this.contractGateway = apiConfigService.getContractGateway();
     this.contractGasService = apiConfigService.getContractGasService();
+    this.hiroWs = apiConfigService.getHiroWsUrl();
     this.logger = new Logger(EventProcessorService.name);
   }
 
-  @RabbitSubscribe({
-    queue: EVENTS_NOTIFIER_QUEUE,
-    createQueueIfNotExists: false,
-  })
-  async consumeEvents(blockEvent: NotifierBlockEvent) {
+  async onModuleInit() {
+    await this.subscribeToEvents();
+  }
+
+  async onModuleDestroy() {
+    await this.unsubscribe();
+  }
+
+  private async subscribeToEvents() {
+    this.client = await connectWebSocketClient(this.hiroWs);
+
+    this.gatewaySubscription = await this.client.subscribeAddressTransactions(
+      this.contractGateway,
+      async (notification: RpcAddressTxNotificationParams) => {
+        await this.consumeEvents(notification);
+      },
+    );
+
+    this.gasSubscription = await this.client.subscribeAddressTransactions(
+      this.gasSubscription,
+      async (notification: RpcAddressTxNotificationParams) => {
+        await this.consumeEvents(notification);
+      },
+    );
+  }
+
+  private async unsubscribe() {
+    await this.gatewaySubscription?.unsubscribe();
+    await this.gasSubscription?.unsubscribe();
+  }
+
+  async consumeEvents(notification: RpcAddressTxNotificationParams) {
     try {
+      const events = notification.tx.events
+        .filter((event) => event.event_type === 'smart_contract_log')
+        .map((event) => {
+          if ('contract_log' in event) {
+            return {
+              event_index: event.event_index,
+              event_type: event.event_type,
+              tx_id: event.tx_id,
+              contract_log: event.contract_log,
+            } as ScEvent;
+          }
+          return null;
+        })
+        .filter((event) => event !== null) as ScEvent[];
+
       const crossChainTransactions = new Set<string>();
 
-      for (const event of blockEvent.events) {
+      for (const event of events) {
         const shouldHandle = this.handleEvent(event);
 
         if (shouldHandle) {
-          crossChainTransactions.add(event.txHash);
+          crossChainTransactions.add(event.tx_id);
         }
       }
 
@@ -43,9 +91,7 @@ export class EventProcessorService {
       }
     } catch (error) {
       this.logger.error(
-        `An unhandled error occurred when consuming events from block with hash ${blockEvent.hash}: ${JSON.stringify(
-          blockEvent.events,
-        )}`,
+        `An unhandled error occurred when consuming events for tx id ${notification.tx_id}: ${JSON.stringify(notification.tx.events)}`,
       );
       this.logger.error(error);
 
@@ -53,9 +99,10 @@ export class EventProcessorService {
     }
   }
 
-  private handleEvent(event: NotifierEvent): boolean {
-    if (event.address === this.contractGasService) {
-      const eventName = BinaryUtils.base64Decode(event.topics[0]);
+  private handleEvent(event: ScEvent): boolean {
+    const contractAddress = event.contract_log.contract_id.split('.')[0];
+    if (contractAddress === this.contractGasService) {
+      const eventName = event.contract_log.topic;
 
       const validEvent =
         eventName === Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT ||
@@ -65,24 +112,24 @@ export class EventProcessorService {
         eventName === Events.REFUNDED_EVENT;
 
       if (validEvent) {
-        this.logger.debug('Received Gas Service event from MultiversX:');
+        this.logger.debug('Received Gas Service event from Stacks:');
         this.logger.debug(JSON.stringify(event));
       }
 
       return validEvent;
     }
 
-    if (event.address === this.contractGateway) {
-      const eventName = BinaryUtils.base64Decode(event.topics[0]);
+    if (contractAddress === this.contractGateway) {
+      const eventName = event.contract_log.topic;
 
       const validEvent =
-        (event.identifier === EventIdentifiers.CALL_CONTRACT && eventName === Events.CONTRACT_CALL_EVENT) ||
-        (event.identifier === EventIdentifiers.ROTATE_SIGNERS && eventName === Events.SIGNERS_ROTATED_EVENT) ||
-        (event.identifier === EventIdentifiers.APPROVE_MESSAGES && eventName === Events.MESSAGE_APPROVED_EVENT) ||
-        (event.identifier === EventIdentifiers.VALIDATE_MESSAGE && eventName === Events.MESSAGE_EXECUTED_EVENT);
+        eventName === Events.CONTRACT_CALL_EVENT ||
+        eventName === Events.SIGNERS_ROTATED_EVENT ||
+        eventName === Events.MESSAGE_APPROVED_EVENT ||
+        eventName === Events.MESSAGE_EXECUTED_EVENT;
 
       if (validEvent) {
-        this.logger.debug('Received Gateway event from MultiversX:');
+        this.logger.debug('Received Gateway event from Stacks:');
         this.logger.debug(JSON.stringify(event));
       }
 

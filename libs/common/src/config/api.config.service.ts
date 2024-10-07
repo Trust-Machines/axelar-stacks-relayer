@@ -14,6 +14,15 @@ export class ApiConfigService {
     return apiUrl;
   }
 
+  getHiroWsUrl(): string {
+    const hiroUrl = this.configService.get<string>('HIRO_WS_URL');
+    if (!hiroUrl) {
+      throw new Error('No HIRO WS url present');
+    }
+
+    return hiroUrl;
+  }
+
   getGatewayUrl(): string {
     const gatewayUrl = this.configService.get<string>('GATEWAY_URL');
     if (!gatewayUrl) {

@@ -1,14 +1,15 @@
-export interface NotifierBlockEvent {
-  hash: string;
-  shardId: number;
-  timestamp: Number;
-  events: NotifierEvent[];
+export interface ContractLog {
+  contract_id: string;
+  topic: string;
+  value: {
+    hex: string;
+    repr: string;
+  };
 }
 
-export interface NotifierEvent {
-  txHash: string;
-  address: string;
-  identifier: string;
-  data: string;
-  topics: string[];
+export interface ScEvent {
+  event_index: number;
+  event_type: string;
+  tx_id: string;
+  contract_log: ContractLog;
 }

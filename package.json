@@ -29,14 +29,10 @@
     "test:migrate": "dotenv -e .env.test -- prisma migrate deploy"
   },
   "dependencies": {
-    "@golevelup/nestjs-rabbitmq": "4.0.0",
     "@multiversx/sdk-core": "^13.2.1",
-    "@multiversx/sdk-nestjs-cache": "^3.7.0",
     "@multiversx/sdk-nestjs-common": "^3.7.0",
     "@multiversx/sdk-nestjs-elastic": "^3.7.0",
     "@multiversx/sdk-nestjs-http": "^3.7.0",
-    "@multiversx/sdk-nestjs-monitoring": "^3.7.0",
-    "@multiversx/sdk-nestjs-rabbitmq": "^3.7.0",
     "@multiversx/sdk-nestjs-redis": "^3.7.0",
     "@multiversx/sdk-network-providers": "^2.4.3",
     "@multiversx/sdk-transaction-processor": "^0.1.33",
@@ -49,6 +45,7 @@
     "@nestjs/platform-express": "^10.3.9",
     "@nestjs/schedule": "^4.0.2",
     "@prisma/client": "^5.15.0",
+    "@stacks/blockchain-api-client": "^8.0.3",
     "agentkeepalive": "^4.5.0",
     "axios": "^1.7.5",
     "bignumber.js": "9.0.1",
@@ -57,14 +54,14 @@
     "cron": "^3.1.7",
     "ethers": "^6.13.0",
     "ioredis": "^5.4.1",
+    "js-yaml": "^4.1.0",
     "module-alias": "^2.2.3",
     "nest-winston": "^1.10.0",
     "openapi-client-axios": "^7.5.5",
     "rimraf": "^5.0.7",
     "rxjs": "^7.8.1",
     "winston": "^3.13.0",
-    "winston-daily-rotate-file": "^4.7.1",
-    "js-yaml": "^4.1.0"
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "devDependencies": {
     "@golevelup/ts-jest": "^0.5.0",
