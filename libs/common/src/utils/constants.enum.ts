@@ -1,5 +1,5 @@
 export enum CONSTANTS {
-  EGLD_IDENTIFIER = 'EGLD',
-
-  SOURCE_CHAIN_NAME = 'multiversx',
+  SOURCE_CHAIN_NAME = 'stacks',
+  NETWORK_MAINNET = 'mainnet',
+  STX_IDENTIFIER = 'STX',
 }

@@ -1,19 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { EventIdentifiers, Events } from '@mvx-monorepo/common/utils/event.enum';
-import { MessageApprovedStatus } from '@prisma/client';
-import { ITransactionEvent } from '@multiversx/sdk-core/out';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
-import { DecodingUtils } from '@mvx-monorepo/common/utils/decoding.utils';
-import { GatewayContract } from '@mvx-monorepo/common';
-import { Components } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
-import { TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
 import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
+import { Injectable, Logger } from '@nestjs/common';
+import { MessageApprovedStatus } from '@prisma/client';
+import { GatewayContract } from '@stacks-monorepo/common';
+import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import BigNumber from 'bignumber.js';
+import { getEventType, ScEvent } from '../../event-processor/types';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 import Event = Components.Schemas.Event;
 import MessageExecutedEvent = Components.Schemas.MessageExecutedEvent;
-import BigNumber from 'bignumber.js';
 
 @Injectable()
 export class GatewayProcessor {
@@ -27,41 +27,41 @@ export class GatewayProcessor {
   }
 
   async handleGatewayEvent(
-    rawEvent: ITransactionEvent,
-    transaction: TransactionOnNetwork,
+    rawEvent: ScEvent,
+    transaction: Transaction,
     index: number,
     fee: string,
     transactionValue: string,
   ): Promise<Event | undefined> {
-    const eventName = rawEvent.topics?.[0]?.toString();
+    const eventName = getEventType(rawEvent);
 
-    if (rawEvent.identifier === EventIdentifiers.CALL_CONTRACT && eventName === Events.CONTRACT_CALL_EVENT) {
-      return this.handleContractCallEvent(rawEvent, transaction.hash, index);
+    if (eventName === Events.CONTRACT_CALL_EVENT) {
+      return this.handleContractCallEvent(rawEvent, transaction.tx_id, index);
     }
 
-    if (rawEvent.identifier === EventIdentifiers.APPROVE_MESSAGES && eventName === Events.MESSAGE_APPROVED_EVENT) {
-      return this.handleMessageApprovedEvent(rawEvent, transaction.sender.bech32(), transaction.hash, index);
+    if (eventName === Events.MESSAGE_APPROVED_EVENT) {
+      return this.handleMessageApprovedEvent(rawEvent, transaction.sender_address, transaction.tx_id, index);
     }
 
-    if (rawEvent.identifier === EventIdentifiers.VALIDATE_MESSAGE && eventName === Events.MESSAGE_EXECUTED_EVENT) {
+    if (eventName === Events.MESSAGE_EXECUTED_EVENT) {
       return await this.handleMessageExecutedEvent(
         rawEvent,
-        transaction.sender.bech32(),
-        transaction.hash,
+        transaction.sender_address,
+        transaction.tx_id,
         index,
         fee,
         transactionValue,
       );
     }
 
-    if (rawEvent.identifier === EventIdentifiers.ROTATE_SIGNERS && eventName === Events.SIGNERS_ROTATED_EVENT) {
-      return this.handleSignersRotatedEvent(rawEvent, transaction.hash, index);
+    if (eventName === Events.SIGNERS_ROTATED_EVENT) {
+      return this.handleSignersRotatedEvent(rawEvent, transaction.tx_id, index);
     }
 
     return undefined;
   }
 
-  private handleContractCallEvent(rawEvent: ITransactionEvent, txHash: string, index: number): Event | undefined {
+  private handleContractCallEvent(rawEvent: ScEvent, txHash: string, index: number): Event | undefined {
     const contractCallEvent = this.gatewayContract.decodeContractCallEvent(rawEvent);
 
     const callEvent: CallEvent = {
@@ -69,7 +69,7 @@ export class GatewayProcessor {
       message: {
         messageID: DecodingUtils.getEventId(txHash, index),
         sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
-        sourceAddress: contractCallEvent.sender.bech32(),
+        sourceAddress: contractCallEvent.sender,
         destinationAddress: contractCallEvent.destinationAddress,
         payloadHash: BinaryUtils.hexToBase64(contractCallEvent.payloadHash),
       },
@@ -77,7 +77,7 @@ export class GatewayProcessor {
       payload: contractCallEvent.payload.toString('base64'),
       meta: {
         txID: txHash,
-        fromAddress: contractCallEvent.sender.bech32(),
+        fromAddress: contractCallEvent.sender,
         finalized: true,
       },
     };
@@ -93,12 +93,7 @@ export class GatewayProcessor {
     };
   }
 
-  private handleMessageApprovedEvent(
-    rawEvent: ITransactionEvent,
-    sender: string,
-    txHash: string,
-    index: number,
-  ): Event {
+  private handleMessageApprovedEvent(rawEvent: ScEvent, sender: string, txHash: string, index: number): Event {
     const event = this.gatewayContract.decodeMessageApprovedEvent(rawEvent);
 
     const messageApproved: MessageApprovedEvent = {
@@ -107,7 +102,7 @@ export class GatewayProcessor {
         messageID: event.messageId,
         sourceChain: event.sourceChain,
         sourceAddress: event.sourceAddress,
-        destinationAddress: event.contractAddress.bech32(),
+        destinationAddress: event.contractAddress,
         payloadHash: BinaryUtils.hexToBase64(event.payloadHash),
       },
       cost: {
@@ -132,7 +127,7 @@ export class GatewayProcessor {
   }
 
   private async handleMessageExecutedEvent(
-    rawEvent: ITransactionEvent,
+    rawEvent: ScEvent,
     sender: string,
     txHash: string,
     index: number,
@@ -183,7 +178,7 @@ export class GatewayProcessor {
   }
 
   // TODO: Properly implement this after the Axelar GMP API supports it
-  private handleSignersRotatedEvent(rawEvent: ITransactionEvent, txHash: string, index: number) {
+  private handleSignersRotatedEvent(rawEvent: ScEvent, txHash: string, index: number) {
     const weightedSigners = this.gatewayContract.decodeSignersRotatedEvent(rawEvent);
 
     this.logger.warn(

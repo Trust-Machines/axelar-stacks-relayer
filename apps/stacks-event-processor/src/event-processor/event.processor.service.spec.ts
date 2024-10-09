@@ -1,8 +1,11 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { ApiConfigService, CacheInfo } from '@mvx-monorepo/common';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
+import { ApiConfigService, CacheInfo } from '@stacks-monorepo/common';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Test } from '@nestjs/testing';
 import { EventProcessorService } from './event.processor.service';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
+import { bufferCV, serializeCV, tupleCV, stringAsciiCV } from '@stacks/transactions';
+import { hex } from '@scure/base';
 
 describe('EventProcessorService', () => {
   let redisHelper: DeepMocked<RedisHelper>;
@@ -15,7 +18,7 @@ describe('EventProcessorService', () => {
     apiConfigService = createMock();
 
     apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
-    apiConfigService.getContractGasService.mockReturnValue('mockGasServiceAddress');
+    apiConfigService.getContractGasService.mockReturnValue('mockGasAddress');
     apiConfigService.getHiroWsUrl.mockReturnValue('mockHiroWs');
 
     const moduleRef = await Test.createTestingModule({
@@ -39,6 +42,14 @@ describe('EventProcessorService', () => {
 
   describe('consumeEvents', () => {
     it('Should handle gateway event correctly', async () => {
+      const message = bufferCV(
+        serializeCV(
+          tupleCV({
+            type: stringAsciiCV(Events.CONTRACT_CALL_EVENT),
+          }),
+        ),
+      );
+
       const notification = {
         tx: {
           events: [
@@ -47,11 +58,11 @@ describe('EventProcessorService', () => {
               event_index: 0,
               tx_id: 'txHash',
               contract_log: {
-                contract_id: 'mockGatewayAddress',
-                topic: 'contract_call_event',
+                contract_id: 'mockGatewayAddress.contract_name',
+                topic: 'print',
                 value: {
-                  hex: 'mockHexValue',
-                  repr: 'mockReprValue',
+                  hex: `0x${hex.encode(message.buffer)}`,
+                  repr: '',
                 },
               },
             },
@@ -66,6 +77,14 @@ describe('EventProcessorService', () => {
     });
 
     it('Should handle gas service event correctly', async () => {
+      const message = bufferCV(
+        serializeCV(
+          tupleCV({
+            type: stringAsciiCV(Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT),
+          }),
+        ),
+      );
+
       const notification = {
         tx: {
           events: [
@@ -74,11 +93,11 @@ describe('EventProcessorService', () => {
               event_index: 0,
               tx_id: 'txHash',
               contract_log: {
-                contract_id: 'mockGasServiceAddress',
-                topic: 'gas_paid_for_contract_call_event',
+                contract_id: 'mockGasAddress.contract_name',
+                topic: 'print',
                 value: {
-                  hex: 'mockHexValue',
-                  repr: 'mockReprValue',
+                  hex: `0x${hex.encode(message.buffer)}`,
+                  repr: '',
                 },
               },
             },
@@ -93,6 +112,14 @@ describe('EventProcessorService', () => {
     });
 
     it('Should not consume invalid events', async () => {
+      const message = bufferCV(
+        serializeCV(
+          tupleCV({
+            type: stringAsciiCV('unrelated_event'),
+          }),
+        ),
+      );
+
       const notification = {
         tx: {
           events: [
@@ -102,10 +129,10 @@ describe('EventProcessorService', () => {
               tx_id: 'txHash',
               contract_log: {
                 contract_id: 'someOtherAddress',
-                topic: 'unrelated_event',
+                topic: 'print',
                 value: {
-                  hex: 'mockHexValue',
-                  repr: 'mockReprValue',
+                  hex: `0x${hex.encode(message.buffer)}`,
+                  repr: '',
                 },
               },
             },

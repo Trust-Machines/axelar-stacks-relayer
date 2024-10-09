@@ -23,6 +23,15 @@ export class ApiConfigService {
     return hiroUrl;
   }
 
+  getHiroApiUrl(): string {
+    const hiroUrl = this.configService.get<string>('HIRO_API_URL');
+    if (!hiroUrl) {
+      throw new Error('No HIRO API url present');
+    }
+
+    return hiroUrl;
+  }
+
   getGatewayUrl(): string {
     const gatewayUrl = this.configService.get<string>('GATEWAY_URL');
     if (!gatewayUrl) {
@@ -88,15 +97,6 @@ export class ApiConfigService {
     return contractIts;
   }
 
-  getContractWegldSwap(): string {
-    const contractWegldSwap = this.configService.get<string>('CONTRACT_WEGLD_SWAP');
-    if (!contractWegldSwap) {
-      throw new Error('No Contract Wegld Swap present');
-    }
-
-    return contractWegldSwap;
-  }
-
   getAxelarContractVotingVerifier(): string {
     const axelarContractVotingVerifier = this.configService.get<string>('AXELAR_CONTRACT_VOTING_VERIFIER');
     if (!axelarContractVotingVerifier) {
@@ -133,13 +133,13 @@ export class ApiConfigService {
     return clientKey;
   }
 
-  getChainId(): string {
-    const chainId = this.configService.get<string>('CHAIN_ID');
-    if (!chainId) {
-      throw new Error('No Chain Id present');
+  getStacksNetwork(): string {
+    const network = this.configService.get<string>('STACKS_NETWORK');
+    if (!network) {
+      throw new Error('No Stacks Network present');
     }
 
-    return chainId;
+    return network;
   }
 
   getWalletMnemonic(): string {

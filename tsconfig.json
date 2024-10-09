@@ -38,10 +38,10 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {
-      "@mvx-monorepo/common": [
+      "@stacks-monorepo/common": [
         "libs/common/src"
       ],
-      "@mvx-monorepo/common/*": [
+      "@stacks-monorepo/common/*": [
         "libs/common/src/*"
       ],
     }

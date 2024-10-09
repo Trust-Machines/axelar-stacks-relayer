@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { DatabaseModule, ApiModule } from '@mvx-monorepo/common';
-import { ContractsModule } from '@mvx-monorepo/common/contracts/contracts.module';
+import { DatabaseModule, ApiModule } from '@stacks-monorepo/common';
+import { ContractsModule } from '@stacks-monorepo/common/contracts/contracts.module';
 import { MessageApprovedProcessorService } from './message-approved.processor.service';
 
 @Module({

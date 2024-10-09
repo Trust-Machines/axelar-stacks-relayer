@@ -1,15 +1,11 @@
 import { Inject } from '@nestjs/common';
 import { CacheService } from '@multiversx/sdk-nestjs-cache';
-import { CacheInfo } from '@mvx-monorepo/common';
+import { CacheInfo } from '@stacks-monorepo/common';
 
 export function GetOrSetCache(cacheInfoFunc: (...args: any[]) => CacheInfo) {
   const injectCacheService = Inject(CacheService);
 
-  return (
-    target: any,
-    _key: string | symbol,
-    descriptor: PropertyDescriptor,
-  ) => {
+  return (target: any, _key: string | symbol, descriptor: PropertyDescriptor) => {
     injectCacheService(target, 'cacheService');
 
     const childMethod = descriptor.value;

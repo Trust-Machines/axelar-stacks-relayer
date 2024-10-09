@@ -1,5 +1,5 @@
-import { DynamicModuleUtils } from '@mvx-monorepo/common';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
+import { DynamicModuleUtils } from '@stacks-monorepo/common';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Module } from '@nestjs/common';
 
 @Module({

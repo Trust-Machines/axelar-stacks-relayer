@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { UserSigner } from '@multiversx/sdk-wallet/out';
 import {
   Address,
@@ -13,12 +13,12 @@ import {
   Transaction,
 } from '@multiversx/sdk-core/out';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { TransactionsHelper } from '@mvx-monorepo/common/contracts/transactions.helper';
-import { ApiConfigService, AxelarGmpApi } from '@mvx-monorepo/common';
-import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { ApiConfigService, AxelarGmpApi } from '@stacks-monorepo/common';
+import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
 import { Locker } from '@multiversx/sdk-nestjs-common';
-import { GasError } from '@mvx-monorepo/common/contracts/entities/gas.error';
-import { CannotExecuteMessageEvent, Event } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
+import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
+import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { AxiosError } from 'axios';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)

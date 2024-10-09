@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
 import { GatewayContract } from './gateway.contract';
 import { ApiNetworkProvider, ProxyNetworkProvider } from '@multiversx/sdk-network-providers/out';
-import { ResultsParser, TransactionWatcher } from '@multiversx/sdk-core/out';
-import { ContractLoader } from '@mvx-monorepo/common/contracts/contract.loader';
 import { join } from 'path';
-import { GasServiceContract } from '@mvx-monorepo/common/contracts/gas-service.contract';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { Mnemonic, UserSigner } from '@multiversx/sdk-wallet/out';
-import { TransactionsHelper } from '@mvx-monorepo/common/contracts/transactions.helper';
-import { WegldSwapContract } from '@mvx-monorepo/common/contracts/wegld-swap.contract';
-import { ApiConfigService } from '@mvx-monorepo/common/config';
-import { DynamicModuleUtils } from '@mvx-monorepo/common/utils';
-import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { WegldSwapContract } from '@stacks-monorepo/common/contracts/wegld-swap.contract';
+import { ApiConfigModule, ApiConfigService } from '@stacks-monorepo/common/config';
+import { DynamicModuleUtils } from '@stacks-monorepo/common/utils';
+import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
+import { StacksTestnet, StacksMainnet, StacksNetwork } from '@stacks/network';
+import { CONSTANTS } from '../utils/constants.enum';
 
 @Module({
   imports: [DynamicModuleUtils.getRedisModule()],
@@ -37,63 +37,36 @@ import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
       inject: [ApiConfigService],
     },
     {
-      provide: ResultsParser,
-      useValue: new ResultsParser(),
-    },
-    {
-      provide: TransactionWatcher,
-      useFactory: (api: ApiNetworkProvider) => new TransactionWatcher(api), // use api here not proxy since it returns proper transaction status
-      inject: [ApiNetworkProvider],
+      provide: ProviderKeys.STACKS_NETWORK,
+      useFactory: (apiConfigService: ApiConfigService) => {
+        if (apiConfigService.getStacksNetwork() === CONSTANTS.NETWORK_MAINNET) {
+          return new StacksMainnet();
+        }
+
+        return new StacksTestnet();
+      },
+      inject: [ApiConfigService],
     },
     {
       provide: GatewayContract,
-      useFactory: async (apiConfigService: ApiConfigService) => {
-        const contractLoader = new ContractLoader(join(__dirname, '../assets/gateway.abi.json'));
-
-        const smartContract = await contractLoader.getContract(apiConfigService.getContractGateway());
-        const abi = await contractLoader.getAbiRegistry();
-
-        return new GatewayContract(smartContract, abi, apiConfigService.getChainId());
+      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+        return new GatewayContract(apiConfigService.getContractGateway(), network);
       },
-      inject: [ApiConfigService],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
     },
     {
       provide: GasServiceContract,
-      useFactory: async (apiConfigService: ApiConfigService) => {
-        const contractLoader = new ContractLoader(join(__dirname, '../assets/gas-service.abi.json'));
-
-        const smartContract = await contractLoader.getContract(apiConfigService.getContractGasService());
-        const abi = await contractLoader.getAbiRegistry();
-
-        return new GasServiceContract(smartContract, abi);
+      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+        return new GasServiceContract(apiConfigService.getContractGasService(), network);
       },
-      inject: [ApiConfigService],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
     },
     {
       provide: ItsContract,
-      useFactory: async (apiConfigService: ApiConfigService) => {
-        const contractLoader = new ContractLoader(join(__dirname, '../assets/interchain-token-service.abi.json'));
-
-        const smartContract = await contractLoader.getContract(apiConfigService.getContractIts());
-
-        return new ItsContract(smartContract);
+      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+        return new ItsContract(apiConfigService.getContractGasService(), network);
       },
-      inject: [ApiConfigService],
-    },
-    {
-      provide: WegldSwapContract,
-      useFactory: async (
-        apiConfigService: ApiConfigService,
-        resultsParser: ResultsParser,
-        proxy: ProxyNetworkProvider,
-      ) => {
-        const contractLoader = new ContractLoader(join(__dirname, '../assets/wegld-swap.abi.json'));
-
-        const smartContract = await contractLoader.getContract(apiConfigService.getContractWegldSwap());
-
-        return new WegldSwapContract(smartContract, resultsParser, proxy);
-      },
-      inject: [ApiConfigService, ResultsParser, ProxyNetworkProvider],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
     },
     {
       provide: ProviderKeys.WALLET_SIGNER,
@@ -102,7 +75,7 @@ import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
 
         return new UserSigner(mnemonic);
       },
-      inject: [ApiConfigService, ResultsParser],
+      inject: [ApiConfigService],
     },
     TransactionsHelper,
   ],

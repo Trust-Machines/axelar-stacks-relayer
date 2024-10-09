@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@mvx-monorepo/common/database/prisma.service';
+import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
 import { MessageApproved, MessageApprovedStatus, Prisma } from '@prisma/client';
 
 @Injectable()

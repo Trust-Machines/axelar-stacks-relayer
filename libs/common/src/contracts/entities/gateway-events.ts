@@ -1,8 +1,7 @@
-import { IAddress } from '@multiversx/sdk-core/out';
 import BigNumber from 'bignumber.js';
 
 export interface ContractCallEvent {
-  sender: IAddress;
+  sender: string;
   destinationChain: string;
   destinationAddress: string;
   payloadHash: string;
@@ -14,7 +13,7 @@ export interface MessageApprovedEvent {
   sourceChain: string;
   messageId: string;
   sourceAddress: string;
-  contractAddress: IAddress;
+  contractAddress: string;
   payloadHash: string;
 }
 
@@ -24,11 +23,11 @@ export interface MessageExecutedEvent {
   messageId: string;
 }
 
-export interface WeightedSigners {
+export interface WeightedSignersEvent {
   signers: {
-    signer: string, // ed25519 public key
-    weight: BigNumber,
-  }[],
-  threshold: BigNumber,
+    signer: string; // ed25519 public key
+    weight: BigNumber;
+  }[];
+  threshold: BigNumber;
   nonce: string; // uint256 as 32 bytes hex
 }

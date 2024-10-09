@@ -3,8 +3,8 @@ import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers/out';
 import { Transaction, TransactionHash, TransactionWatcher } from '@multiversx/sdk-core/out';
 import { UserAddress } from '@multiversx/sdk-wallet/out/userAddress';
 import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { ApiConfigService } from '@mvx-monorepo/common/config';
-import { GasError } from '@mvx-monorepo/common/contracts/entities/gas.error';
+import { ApiConfigService } from '@stacks-monorepo/common/config';
+import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
 
 @Injectable()
 export class TransactionsHelper {
@@ -19,7 +19,8 @@ export class TransactionsHelper {
   ) {
     this.logger = new Logger(TransactionsHelper.name);
 
-    this.chainId = apiConfigService.getChainId();
+    // TODO
+    this.chainId = '';
   }
 
   async getAccountNonce(address: UserAddress): Promise<number> {

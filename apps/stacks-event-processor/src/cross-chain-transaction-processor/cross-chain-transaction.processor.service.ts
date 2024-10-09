@@ -1,17 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Locker } from '@multiversx/sdk-nestjs-common';
-import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@mvx-monorepo/common';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
-import { ApiNetworkProvider, TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
+import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
+import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@stacks-monorepo/common';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { GasServiceProcessor, GatewayProcessor } from './processors';
-import { AxiosError } from 'axios';
-import { MessageApprovedEvent } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
+import axios, { AxiosError } from 'axios';
+import { MessageApprovedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { getContractAddress, ScEvent } from '../event-processor/types';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
   private readonly contractGateway: string;
   private readonly contractGasService: string;
+  private readonly hiroApi: string;
   private readonly logger: Logger;
 
   constructor(
@@ -19,11 +21,11 @@ export class CrossChainTransactionProcessorService {
     private readonly gasServiceProcessor: GasServiceProcessor,
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly redisHelper: RedisHelper,
-    private readonly api: ApiNetworkProvider,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGateway = apiConfigService.getContractGateway();
     this.contractGasService = apiConfigService.getContractGasService();
+    this.hiroApi = apiConfigService.getHiroApiUrl();
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
@@ -36,18 +38,15 @@ export class CrossChainTransactionProcessorService {
     this.logger.debug('Running processCrossChainTransactions cron');
 
     const txHashes = await this.redisHelper.smembers(CacheInfo.CrossChainTransactions().key);
-
     for (const txHash of txHashes) {
       try {
         const { transaction, fee } = await this.getTransactionWithFee(txHash);
-
         // Wait for transaction to be finished
-        if (!transaction.isCompleted) {
+        if ((transaction.tx_status as any) === 'pending') {
           continue;
         }
 
-        // Only handle events if successful
-        if (transaction.status.isSuccessful()) {
+        if (transaction.tx_status === 'success') {
           await this.handleEvents(transaction, fee);
         }
 
@@ -58,22 +57,22 @@ export class CrossChainTransactionProcessorService {
     }
   }
 
-  private async handleEvents(transaction: TransactionOnNetwork, fee: string) {
+  private async handleEvents(transaction: Transaction, fee: string) {
     const eventsToSend = [];
 
     const approvalEvents = [];
 
-    for (const [index, rawEvent] of transaction.logs.events.entries()) {
-      const address = rawEvent.address.bech32();
+    const events = mapRawEventsToSmartContractEvents(transaction.events);
+
+    for (const [index, rawEvent] of events.entries()) {
+      const address = getContractAddress(rawEvent);
+      let transferAmount = '0';
+      if (transaction.tx_type === 'token_transfer') {
+        transferAmount = transaction.token_transfer.amount;
+      }
 
       if (address === this.contractGateway) {
-        const event = await this.gatewayProcessor.handleGatewayEvent(
-          rawEvent,
-          transaction,
-          index,
-          fee,
-          transaction.value,
-        );
+        const event = await this.gatewayProcessor.handleGatewayEvent(rawEvent, transaction, index, fee, transferAmount);
 
         if (event) {
           eventsToSend.push(event);
@@ -107,7 +106,7 @@ export class CrossChainTransactionProcessorService {
     }
 
     try {
-      await this.axelarGmpApi.postEvents(eventsToSend, transaction.hash);
+      await this.axelarGmpApi.postEvents(eventsToSend, transaction.tx_id);
     } catch (e) {
       this.logger.error('Could not send all events to GMP API...', e);
 
@@ -119,10 +118,10 @@ export class CrossChainTransactionProcessorService {
     }
   }
 
-  private async getTransactionWithFee(txHash: string): Promise<{ transaction: TransactionOnNetwork; fee: string }> {
-    const response = await this.api.doGetGeneric(`transactions/${txHash}`);
-    const transaction = TransactionOnNetwork.fromApiHttpResponse(txHash, response);
+  private async getTransactionWithFee(txHash: string): Promise<{ transaction: Transaction; fee: string }> {
+    const response = await axios.get(`${this.hiroApi}/extended/v1/tx/${txHash}`);
+    const transaction = response.data as Transaction;
 
-    return { transaction, fee: response.fee };
+    return { transaction, fee: transaction.fee_rate };
   }
 }

@@ -1,141 +1,77 @@
-import {
-  AbiRegistry,
-  BigUIntValue,
-  IAddress,
-  ITransactionEvent,
-  SmartContract,
-  StringValue,
-  Transaction,
-  VariadicValue,
-} from '@multiversx/sdk-core/out';
-import { Injectable } from '@nestjs/common';
-import { Events } from '../utils/event.enum';
+import { Injectable, NotImplementedException } from '@nestjs/common';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
   RefundedEvent,
-} from '@mvx-monorepo/common/contracts/entities/gas-service-events';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
-import { DecodingUtils } from '@mvx-monorepo/common/utils/decoding.utils';
+} from '@stacks-monorepo/common/contracts/entities/gas-service-events';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { StacksNetwork } from '@stacks/network';
+import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import BigNumber from 'bignumber.js';
-import { GasInfo } from '@mvx-monorepo/common/utils/gas.info';
+import {
+  DecodingUtils,
+  gasAddedDecoder,
+  gasPaidForContractCallDecoder,
+  refundedDecoder,
+} from '../utils/decoding.utils';
 
 @Injectable()
 export class GasServiceContract {
   constructor(
-    private readonly smartContract: SmartContract,
-    private readonly abi: AbiRegistry,
+    private readonly contract: string,
+    private readonly network: StacksNetwork,
   ) {}
 
-  collectFees(sender: IAddress, tokens: string[], amounts: BigNumber[]): Transaction {
-    return this.smartContract.methods
-      .collectFees([
-        sender.bech32(),
-        VariadicValue.fromItemsCounted(...tokens.map((token) => new StringValue(token))),
-        VariadicValue.fromItemsCounted(...amounts.map((amount) => new BigUIntValue(amount))),
-      ])
-      .withGasLimit(GasInfo.CollectFeesBase.value + GasInfo.CollectFeesExtra.value * tokens.length)
-      .withSender(sender)
-      .buildTransaction();
+  collectFees(sender: string, tokens: string[], amounts: BigNumber[]): Transaction {
+    // return this.smartContract.methods
+    //   .collectFees([
+    //     sender.bech32(),
+    //     VariadicValue.fromItemsCounted(...tokens.map((token) => new StringValue(token))),
+    //     VariadicValue.fromItemsCounted(...amounts.map((amount) => new BigUIntValue(amount))),
+    //   ])
+    //   .withGasLimit(GasInfo.CollectFeesBase.value + GasInfo.CollectFeesExtra.value * tokens.length)
+    //   .withSender(sender)
+    //   .buildTransaction();
+    throw new NotImplementedException('Method not implemented yet');
   }
 
   refund(
-    sender: IAddress,
+    sender: string,
     txHash: string,
     logIndex: string,
     receiver: string,
     token: string,
     amount: string,
   ): Transaction {
-    return this.smartContract.methods
-      .refund([Buffer.from(txHash, 'hex'), logIndex, receiver, token, amount])
-      .withGasLimit(GasInfo.Refund.value)
-      .withSender(sender)
-      .buildTransaction();
+    // return this.smartContract.methods
+    //   .refund([Buffer.from(txHash, 'hex'), logIndex, receiver, token, amount])
+    //   .withGasLimit(GasInfo.Refund.value)
+    //   .withSender(sender)
+    //   .buildTransaction();
+    throw new NotImplementedException('Method not implemented yet');
   }
 
-  decodeGasPaidForContractCallEvent(event: ITransactionEvent): GasPaidForContractCallEvent {
-    const eventDefinition = this.abi.getEvent(Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT);
-    const outcome = DecodingUtils.parseTransactionEvent(event, eventDefinition);
-
-    return {
-      sender: outcome.sender,
-      destinationChain: outcome.destination_chain.toString(),
-      destinationAddress: outcome.destination_contract_address.toString(),
-      data: {
-        payloadHash: DecodingUtils.decodeByteArrayToHex(outcome.data.hash),
-        gasToken: outcome.data.gas_token.toString(),
-        gasFeeAmount: outcome.data.gas_fee_amount,
-        refundAddress: outcome.data.refund_address,
-      },
-    };
+  decodeGasPaidForContractCallEvent(event: ScEvent): GasPaidForContractCallEvent {
+    return DecodingUtils.decodeEvent<GasPaidForContractCallEvent>(event, gasPaidForContractCallDecoder);
   }
 
-  decodeNativeGasPaidForContractCallEvent(event: ITransactionEvent): GasPaidForContractCallEvent {
-    const eventDefinition = this.abi.getEvent(Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT);
-    const outcome = DecodingUtils.parseTransactionEvent(event, eventDefinition);
-
-    return {
-      sender: outcome.sender,
-      destinationChain: outcome.destination_chain.toString(),
-      destinationAddress: outcome.destination_contract_address.toString(),
-      data: {
-        payloadHash: DecodingUtils.decodeByteArrayToHex(outcome.data.hash),
-        gasToken: null,
-        gasFeeAmount: outcome.data.value,
-        refundAddress: outcome.data.refund_address,
-      },
-    };
+  decodeNativeGasPaidForContractCallEvent(event: ScEvent): GasPaidForContractCallEvent {
+    return DecodingUtils.decodeEvent<GasPaidForContractCallEvent>(event, gasPaidForContractCallDecoder);
   }
 
-  decodeGasAddedEvent(event: ITransactionEvent): GasAddedEvent {
-    const eventDefinition = this.abi.getEvent(Events.GAS_ADDED_EVENT);
-    const outcome = DecodingUtils.parseTransactionEvent(event, eventDefinition);
-
-    return {
-      txHash: outcome.tx_hash.toString('hex'),
-      logIndex: outcome.log_index.toNumber(),
-      data: {
-        gasToken: outcome.data.gas_token.toString(),
-        gasFeeAmount: outcome.data.gas_fee_amount,
-        refundAddress: outcome.data.refund_address,
-      },
-    };
+  decodeGasAddedEvent(event: ScEvent): GasAddedEvent {
+    return DecodingUtils.decodeEvent<GasAddedEvent>(event, gasAddedDecoder);
   }
 
-  decodeNativeGasAddedEvent(event: ITransactionEvent): GasAddedEvent {
-    const eventDefinition = this.abi.getEvent(Events.NATIVE_GAS_ADDED_EVENT);
-    const outcome = DecodingUtils.parseTransactionEvent(event, eventDefinition);
-
-    return {
-      txHash: outcome.tx_hash.toString('hex'),
-      logIndex: outcome.log_index.toNumber(),
-      data: {
-        gasToken: null,
-        gasFeeAmount: outcome.data.value,
-        refundAddress: outcome.data.refund_address,
-      },
-    };
+  decodeNativeGasAddedEvent(event: ScEvent): GasAddedEvent {
+    return DecodingUtils.decodeEvent<GasAddedEvent>(event, gasAddedDecoder);
   }
 
-  decodeRefundedEvent(event: ITransactionEvent): RefundedEvent {
-    const eventDefinition = this.abi.getEvent(Events.REFUNDED_EVENT);
-    const outcome = DecodingUtils.parseTransactionEvent(event, eventDefinition);
-
-    const token = outcome.data.token.toString();
-
-    return {
-      txHash: outcome.tx_hash.toString('hex'),
-      logIndex: outcome.log_index.toNumber(),
-      data: {
-        receiver: outcome.data.receiver,
-        token: token === CONSTANTS.EGLD_IDENTIFIER ? null : token,
-        amount: outcome.data.amount,
-      },
-    };
+  decodeRefundedEvent(event: ScEvent): RefundedEvent {
+    return DecodingUtils.decodeEvent<RefundedEvent>(event, refundedDecoder);
   }
 
-  getContractAddress(): IAddress {
-    return this.smartContract.getAddress();
+  getContractAddress(): string {
+    return this.contract;
   }
 }

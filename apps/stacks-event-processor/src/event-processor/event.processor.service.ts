@@ -1,10 +1,11 @@
-import { ApiConfigService, CacheInfo } from '@mvx-monorepo/common';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
-import { Events } from '@mvx-monorepo/common/utils/event.enum';
+import { ApiConfigService, CacheInfo, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { connectWebSocketClient, StacksApiWebSocketClient } from '@stacks/blockchain-api-client';
 import { RpcAddressTxNotificationParams } from '@stacks/blockchain-api-client/src/types';
-import { ScEvent } from './types';
+import { getContractAddress, getEventType, ScEvent } from './types';
+import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
 
 @Injectable()
 export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
@@ -61,20 +62,7 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
 
   async consumeEvents(notification: RpcAddressTxNotificationParams) {
     try {
-      const events = notification.tx.events
-        .filter((event) => event.event_type === 'smart_contract_log')
-        .map((event) => {
-          if ('contract_log' in event) {
-            return {
-              event_index: event.event_index,
-              event_type: event.event_type,
-              tx_id: event.tx_id,
-              contract_log: event.contract_log,
-            } as ScEvent;
-          }
-          return null;
-        })
-        .filter((event) => event !== null) as ScEvent[];
+      const events = mapRawEventsToSmartContractEvents(notification.tx.events);
 
       const crossChainTransactions = new Set<string>();
 
@@ -100,9 +88,9 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleEvent(event: ScEvent): boolean {
-    const contractAddress = event.contract_log.contract_id.split('.')[0];
+    const contractAddress = getContractAddress(event);
     if (contractAddress === this.contractGasService) {
-      const eventName = event.contract_log.topic;
+      const eventName = getEventType(event);
 
       const validEvent =
         eventName === Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT ||
@@ -120,7 +108,7 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (contractAddress === this.contractGateway) {
-      const eventName = event.contract_log.topic;
+      const eventName = getEventType(event);
 
       const validEvent =
         eventName === Events.CONTRACT_CALL_EVENT ||

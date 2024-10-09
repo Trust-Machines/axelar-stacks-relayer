@@ -1,34 +1,33 @@
-import { IAddress } from '@multiversx/sdk-core/out';
 import BigNumber from 'bignumber.js';
 
 export interface GasPaidForContractCallEvent {
-  sender: IAddress;
+  sender: string;
   destinationChain: string;
   destinationAddress: string;
   data: {
     payloadHash: string;
     gasToken: string | null; // null if EGLD
     gasFeeAmount: BigNumber;
-    refundAddress: IAddress;
+    refundAddress: string;
   };
 }
 
 export interface GasAddedEvent {
-  txHash: string,
-  logIndex: number,
+  txHash: string;
+  logIndex: number;
   data: {
-    gasToken: string | null, // null if EGLD
-    gasFeeAmount: BigNumber,
-    refundAddress: IAddress,
-  }
+    gasToken: string | null; // null if EGLD
+    gasFeeAmount: BigNumber;
+    refundAddress: string;
+  };
 }
 
 export interface RefundedEvent {
-  txHash: string,
-  logIndex: number,
+  txHash: string;
+  logIndex: number;
   data: {
-    receiver: IAddress,
-    token: string | null, // null if EGLD
-    amount: BigNumber,
-  }
+    receiver: string;
+    token: string | null; // null if EGLD
+    amount: BigNumber;
+  };
 }

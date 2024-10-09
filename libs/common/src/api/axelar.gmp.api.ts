@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ApiConfigService } from '@mvx-monorepo/common/config';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
-import { Client as AxelarGmpApiClient, Components } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
+import { ApiConfigService } from '@stacks-monorepo/common/config';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { Client as AxelarGmpApiClient, Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
 import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;

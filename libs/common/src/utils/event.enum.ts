@@ -1,15 +1,8 @@
-export enum EventIdentifiers {
-  CALL_CONTRACT = 'callContract',
-  APPROVE_MESSAGES = 'approveMessages',
-  ROTATE_SIGNERS = 'rotateSigners',
-  VALIDATE_MESSAGE = 'validateMessage',
-}
-
 export enum Events {
-  CONTRACT_CALL_EVENT = 'contract_call_event',
-  MESSAGE_APPROVED_EVENT = 'message_approved_event',
-  SIGNERS_ROTATED_EVENT = 'signers_rotated_event',
-  MESSAGE_EXECUTED_EVENT = 'message_executed_event',
+  CONTRACT_CALL_EVENT = 'contract-call',
+  MESSAGE_APPROVED_EVENT = 'message-approved',
+  SIGNERS_ROTATED_EVENT = 'signers-rotated',
+  MESSAGE_EXECUTED_EVENT = 'message-executed',
 
   GAS_PAID_FOR_CONTRACT_CALL_EVENT = 'gas_paid_for_contract_call_event',
   NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT = 'native_gas_paid_for_contract_call_event',

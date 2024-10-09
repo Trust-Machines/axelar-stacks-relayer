@@ -1,10 +1,10 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
 import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { Events } from '@mvx-monorepo/common/utils/event.enum';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { AbiRegistry, Address, ResultsParser, SmartContract } from '@multiversx/sdk-core/out';
 import { TransactionEvent } from '@multiversx/sdk-network-providers/out';
-import { GasServiceContract } from '@mvx-monorepo/common/contracts/gas-service.contract';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
 
 import gasServiceAbi from '../assets/gas-service.abi.json';
 import BigNumber from 'bignumber.js';
@@ -46,7 +46,7 @@ describe('GasServiceContract', () => {
 
   const getGasPaidEvent = (event: string, data: Buffer): TransactionEvent =>
     TransactionEvent.fromHttpResponse({
-      address: 'mockGasServiceAddress',
+      address: 'mockGasAddress',
       identifier: 'any',
       data: data.toString('base64'),
       topics: [
@@ -128,7 +128,7 @@ describe('GasServiceContract', () => {
 
   const getGasAddedEvent = (event: string, data: Buffer): TransactionEvent =>
     TransactionEvent.fromHttpResponse({
-      address: 'mockGasServiceAddress',
+      address: 'mockGasAddress',
       identifier: 'any',
       data: data.toString('base64'),
       topics: [

@@ -1,9 +1,9 @@
-import { ApiConfigService } from '@mvx-monorepo/common';
+import { ApiConfigService } from '@stacks-monorepo/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { AxelarGmpApi } from '@mvx-monorepo/common/api/axelar.gmp.api';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
-import { Client as AxelarGmpApiClient, Components } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { Client as AxelarGmpApiClient, Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { AxiosResponse } from 'axios';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;

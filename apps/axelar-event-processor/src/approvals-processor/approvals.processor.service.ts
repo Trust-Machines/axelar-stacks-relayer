@@ -1,17 +1,17 @@
 import { BinaryUtils, Locker } from '@multiversx/sdk-nestjs-common';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { AxelarGmpApi } from '@mvx-monorepo/common/api/axelar.gmp.api';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import { RedisCacheService } from '@multiversx/sdk-nestjs-cache';
-import { CacheInfo, GasServiceContract } from '@mvx-monorepo/common';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
+import { CacheInfo, GasServiceContract } from '@stacks-monorepo/common';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { TransactionsHelper } from '@mvx-monorepo/common/contracts/transactions.helper';
-import { GatewayContract } from '@mvx-monorepo/common/contracts/gateway.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { PendingTransaction } from './entities/pending-transaction';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
-import { Components, VerifyTask } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { MessageApprovedStatus } from '@prisma/client';
 import { ApiNetworkProvider } from '@multiversx/sdk-network-providers/out';
 import BigNumber from 'bignumber.js';
@@ -178,16 +178,14 @@ export class ApprovalsProcessorService {
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
-    // The Amplifier for MultiversX encodes the executeData as hex, we need to decode it to string
-    // It will have the format `function@arg1HEX@arg2HEX...`
-    const decodedExecuteData = BinaryUtils.base64Decode(externalData);
+    const data = Buffer.from(externalData, 'base64');
 
     this.logger.debug(`Trying to execute Gateway transaction with externalData:`);
-    this.logger.debug(decodedExecuteData);
+    this.logger.debug(data);
 
     const nonce = await this.transactionsHelper.getAccountNonce(this.walletSigner.getAddress());
     const transaction = this.gatewayContract.buildTransactionExternalFunction(
-      decodedExecuteData,
+      data,
       this.walletSigner.getAddress(),
       nonce,
     );

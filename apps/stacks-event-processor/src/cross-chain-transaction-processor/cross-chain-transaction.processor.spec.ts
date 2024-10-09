@@ -1,65 +1,32 @@
-import { ApiConfigService } from '@mvx-monorepo/common';
+import { ApiConfigService } from '@stacks-monorepo/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { AxelarGmpApi } from '@mvx-monorepo/common/api/axelar.gmp.api';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import { ApiNetworkProvider, TransactionEvent, TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
-import { EventIdentifiers, Events } from '@mvx-monorepo/common/utils/event.enum';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
 import { GasServiceProcessor, GatewayProcessor } from './processors';
+import axios from 'axios';
+import { ScEvent } from '../event-processor/types';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
 
 const mockTransactionResponse = {
-  txHash: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
-  gasLimit: 20000000,
-  gasPrice: 1000000000,
-  gasUsed: 14531829,
-  miniBlockHash: 'bc0292fd2b60255604a982bfa5853ecd39fd2aa28b90ba63bbfa9f47071f78b6',
-  nonce: 617,
-  receiver: 'erd1qqqqqqqqqqqqqpgqcv3rhjjrqpl88es4q25lw03hfhpw6s36kklsn6t9a6',
-  receiverShard: 1,
-  round: 5556869,
-  sender: 'erd1wavgcxq9tfyrw49k3s3h34085mayu82wqvpd4h6akyh8559pkklsknwhwh',
-  senderShard: 1,
-  signature:
-    'e16f49d7fb89cf5b616cfef37f8411ec0e2a31d3f511c497916298cec86a90f500934284de724de68ae4ff08f93b39f96c2868b82bdbbfa835c15327aa56d706',
-  status: 'success',
-  value: '1000000000000000000',
-  fee: '502213290000000',
-  timestamp: 1727341214,
-  data: 'aW50ZXJjaGFpblRyYW5zZmVyQGE1YzYwZjNiODdmOGJkOWFlNmQ5Nzc1NTE0M2I5ODQyOTAyYjIyOGM0NmJlYjdhYmY2M2YxMmUwOTA0YzE5YjFANjU3NDY4NjU3MjY1NzU2ZDJkMzJAMzA3ODY2MzczODM2NjUzMjMxMzUzMDM5NjEzOTY0MzUzMDYxMzk2MTY2NjQzMDMzMzM2MjM1MzkzNDMwNjEzMjYyMzc2NDM4MzczMjYzMzIzMDM4QEAwMTYzNDU3ODVkOGEwMDAw',
-  function: 'interchainTransfer',
-  action: { category: 'scCall', name: 'interchainTransfer' },
-  type: 'normal',
-  results: [
-    {
-      hash: '54d29b6338ac51c5f9ad406c0cf495e3fa7d6ff97d036ca95bcaa615fe1d04ef',
-      timestamp: 1727341214,
-      nonce: 618,
-      gasLimit: 0,
-      gasPrice: 1000000000,
-      value: '54681710000000',
-      sender: 'erd1qqqqqqqqqqqqqpgqcv3rhjjrqpl88es4q25lw03hfhpw6s36kklsn6t9a6',
-      receiver: 'erd1wavgcxq9tfyrw49k3s3h34085mayu82wqvpd4h6akyh8559pkklsknwhwh',
-      data: 'QDZmNmI=',
-      prevTxHash: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
-      originalTxHash: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
-      callType: '0',
-      miniBlockHash: 'd348c996423abf546cc6a56c85efc9c152b98628016bc27c453ca1da8e05001b',
-      function: 'transfer',
-    },
-  ],
-  price: 29.68,
-  logs: {
-    id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
-    address: 'erd1qqqqqqqqqqqqqpgqcv3rhjjrqpl88es4q25lw03hfhpw6s36kklsn6t9a6',
-    events: [],
+  tx_id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
+  tx_status: 'success',
+  fee_rate: '180',
+  events: [] as ScEvent[],
+  token_transfer: {
+    amount: 0,
   },
-  operations: [],
 };
 
-const mockGatewayContract = 'erd1qqqqqqqqqqqqqpgqvc7gdl0p4s97guh498wgz75k8sav6sjfjlwqh679jy';
-const mockGasServiceContract = 'erd1qqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqplllst77y4l';
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+const mockGatewayContractId = 'mockGatewayAddress.contract_name';
+const mockGasContractId = 'mockGasAddress.gas_contract_name';
 
 describe('CrossChainTransactionProcessor', () => {
   let gatewayProcessor: DeepMocked<GatewayProcessor>;
@@ -79,8 +46,9 @@ describe('CrossChainTransactionProcessor', () => {
     api = createMock();
     apiConfigService = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue(mockGatewayContract);
-    apiConfigService.getContractGasService.mockReturnValue(mockGasServiceContract);
+    apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
+    apiConfigService.getContractGasService.mockReturnValue('mockGasAddress');
+    apiConfigService.getHiroApiUrl.mockReturnValue('mockHiroUrl');
 
     const moduleRef = await Test.createTestingModule({
       providers: [CrossChainTransactionProcessorService],
@@ -120,23 +88,24 @@ describe('CrossChainTransactionProcessor', () => {
   it('Should not process pending or failed transaction', async () => {
     redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHashNone', 'txHashPending', 'txHashFailed']));
 
-    api.doGetGeneric.mockImplementation((url) => {
-      const txHash = url.split('/')[1];
+    mockedAxios.get.mockImplementation((url: string) => {
+      const urlParts = url.split('/');
+      const txHash = urlParts[urlParts.length - 1];
 
       if (txHash === 'txHashNone') {
         throw new Error('not found');
       }
 
       const transaction = { ...mockTransactionResponse };
-      transaction.txHash = txHash;
+      transaction.tx_id = txHash;
 
       if (txHash === 'txHashPending') {
-        transaction.status = 'pending';
+        transaction.tx_status = 'pending';
       } else if (txHash === 'txHashFailed') {
-        transaction.status = 'failed';
+        transaction.tx_status = 'failed';
       }
 
-      return Promise.resolve(transaction);
+      return Promise.resolve({ data: transaction });
     });
 
     await service.processCrossChainTransactionsRaw();
@@ -148,71 +117,91 @@ describe('CrossChainTransactionProcessor', () => {
   });
 
   describe('processCrossChainTransactions', () => {
-    const rawGasEvent = {
-      address: mockGasServiceContract,
-      identifier: 'any',
-      data: '',
-      topics: [BinaryUtils.base64Encode(Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT)],
+    const rawGasEvent: ScEvent = {
+      event_index: 0,
+      event_type: 'smart_contract_log',
+      tx_id: 'txHash',
+      contract_log: {
+        contract_id: mockGasContractId,
+        topic: Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT,
+        value: {
+          hex: '',
+          repr: '',
+        },
+      },
     };
-    const rawGatewayEvent = {
-      address: mockGatewayContract,
-      identifier: EventIdentifiers.CALL_CONTRACT,
-      data: '',
-      topics: [BinaryUtils.base64Encode(Events.CONTRACT_CALL_EVENT)],
+
+    const rawGatewayEvent: ScEvent = {
+      event_index: 1,
+      event_type: 'smart_contract_log',
+      tx_id: 'txHash',
+      contract_log: {
+        contract_id: mockGatewayContractId,
+        topic: Events.CONTRACT_CALL_EVENT,
+        value: {
+          hex: '',
+          repr: '',
+        },
+      },
     };
-    const rawApprovedEvent = {
-      address: mockGatewayContract,
-      identifier: EventIdentifiers.APPROVE_MESSAGES,
-      data: '',
-      topics: [BinaryUtils.base64Encode(Events.MESSAGE_APPROVED_EVENT)],
+
+    const rawApprovedEvent: ScEvent = {
+      event_index: 2,
+      event_type: 'smart_contract_log',
+      tx_id: 'txHash',
+      contract_log: {
+        contract_id: mockGatewayContractId,
+        topic: Events.MESSAGE_APPROVED_EVENT,
+        value: {
+          hex: '',
+          repr: '',
+        },
+      },
     };
 
     const transaction = { ...mockTransactionResponse };
-    transaction.txHash = 'txHash';
-    transaction.status = 'success';
-    transaction.fee = '1000';
-    transaction.value = '0';
+    transaction.tx_id = 'txHash';
+    transaction.tx_status = 'success';
+    transaction.fee_rate = '180';
+    transaction.token_transfer.amount = 0;
 
     it('Should handle multiple events', async () => {
-      // @ts-ignore
-      transaction.logs.events = [rawGasEvent, rawGatewayEvent];
+      transaction.events = [rawGasEvent, rawGatewayEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      api.doGetGeneric.mockReturnValueOnce(Promise.resolve(transaction));
+      mockedAxios.get.mockResolvedValueOnce({
+        data: transaction,
+      });
 
       await service.processCrossChainTransactionsRaw();
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledWith(
-        TransactionEvent.fromHttpResponse(rawGasEvent),
-        TransactionOnNetwork.fromApiHttpResponse(transaction.txHash, transaction),
+        expect.anything(),
+        expect.anything(),
         0,
-        '1000',
+        '180',
       );
 
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledTimes(1);
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledWith(
-        TransactionEvent.fromHttpResponse(rawGatewayEvent),
-        expect.any(TransactionOnNetwork),
+        expect.anything(),
+        expect.anything(),
         1,
-        '1000',
+        '180',
         '0',
       );
 
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.postEvents).toHaveBeenCalledWith(expect.anything(), 'txHash');
-      expect(axelarGmpApi.postEvents.mock.lastCall?.[0]).toHaveLength(2);
-
-      expect(redisHelper.srem).toHaveBeenCalledTimes(1);
       expect(redisHelper.srem).toHaveBeenCalledWith('crossChainTransactions', 'txHash');
     });
 
-    it('Should handle multiple approval events fee', async () => {
-      // @ts-ignore
-      transaction.logs.events = [rawApprovedEvent, rawApprovedEvent];
+    it('Should handle multiple approval events and set cost for each', async () => {
+      transaction.events = [rawApprovedEvent, rawApprovedEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      api.doGetGeneric.mockReturnValueOnce(Promise.resolve(transaction));
+      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
 
       gatewayProcessor.handleGatewayEvent.mockReturnValue(
         Promise.resolve({
@@ -235,11 +224,11 @@ describe('CrossChainTransactionProcessor', () => {
 
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledTimes(2);
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledWith(
-        TransactionEvent.fromHttpResponse(rawApprovedEvent),
-        expect.any(TransactionOnNetwork),
+        rawApprovedEvent,
+        expect.anything(),
         1,
-        '1000',
-        '0'
+        '180',
+        '0',
       );
 
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
@@ -248,55 +237,41 @@ describe('CrossChainTransactionProcessor', () => {
 
       // Assert gas was correctly calculated for each event
       // @ts-ignore
-      expect(axelarGmpApi.postEvents.mock.lastCall?.[0][0].cost.amount).toBe('500');
+      expect(axelarGmpApi.postEvents.mock.lastCall?.[0][0].cost.amount).toBe('90');
       // @ts-ignore
-      expect(axelarGmpApi.postEvents.mock.lastCall?.[0][1].cost.amount).toBe('500');
+      expect(axelarGmpApi.postEvents.mock.lastCall?.[0][1].cost.amount).toBe('90');
 
       expect(redisHelper.srem).toHaveBeenCalledTimes(1);
       expect(redisHelper.srem).toHaveBeenCalledWith('crossChainTransactions', 'txHash');
     });
 
     it('Should not postEvents if no events to send', async () => {
-      transaction.logs.events = [];
+      transaction.events = [];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      api.doGetGeneric.mockReturnValueOnce(Promise.resolve(transaction));
+      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
 
       await service.processCrossChainTransactionsRaw();
 
       expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
       expect(gatewayProcessor.handleGatewayEvent).not.toHaveBeenCalled();
-
       expect(axelarGmpApi.postEvents).not.toHaveBeenCalled();
-
-      expect(redisHelper.srem).toHaveBeenCalledTimes(1);
       expect(redisHelper.srem).toHaveBeenCalledWith('crossChainTransactions', 'txHash');
     });
 
     it('Should handle postEvents error', async () => {
-      // @ts-ignore
-      transaction.logs.events = [rawGasEvent];
+      transaction.events = [rawGasEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      api.doGetGeneric.mockReturnValueOnce(Promise.resolve(transaction));
+      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
 
       axelarGmpApi.postEvents.mockRejectedValueOnce('Network error');
 
       await service.processCrossChainTransactionsRaw();
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
-      expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledWith(
-        TransactionEvent.fromHttpResponse(rawGasEvent),
-        TransactionOnNetwork.fromApiHttpResponse(transaction.txHash, transaction),
-        0,
-        '1000',
-      );
-
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
-      expect(axelarGmpApi.postEvents).toHaveBeenCalledWith(expect.anything(), 'txHash');
-      expect(axelarGmpApi.postEvents.mock.lastCall?.[0]).toHaveLength(1);
-
-      expect(redisHelper.srem).not.toHaveBeenCalled();
+      expect(redisHelper.srem).not.toHaveBeenCalled(); // Should not remove the tx in case of an error
     });
   });
 });

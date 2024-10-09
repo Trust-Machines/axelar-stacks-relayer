@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { IAddress, ResultsParser, SmartContract, TokenTransfer, Transaction } from '@multiversx/sdk-core/out';
-import { GasInfo } from '@mvx-monorepo/common/utils/gas.info';
+import { GasInfo } from '@stacks-monorepo/common/utils/gas.info';
 import BigNumber from 'bignumber.js';
 import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers/out';
 

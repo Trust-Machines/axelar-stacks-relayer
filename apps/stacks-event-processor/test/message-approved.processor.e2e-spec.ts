@@ -2,14 +2,14 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AccountOnNetwork, ProxyNetworkProvider, TransactionStatus } from '@multiversx/sdk-network-providers/out';
 import { MessageApprovedProcessorModule, MessageApprovedProcessorService } from '../src/message-approved-processor';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
-import { PrismaService } from '@mvx-monorepo/common/database/prisma.service';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Transaction, TransactionWatcher } from '@multiversx/sdk-core/out';
 import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
 import { AbiCoder } from 'ethers';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { AxelarGmpApi } from '@mvx-monorepo/common';
+import { AxelarGmpApi } from '@stacks-monorepo/common';
 
 const WALLET_SIGNER_ADDRESS = 'erd1fsk0cnaag2m78gunfddsvg0y042rf0maxxgz6kvm32kxcl25m0yq8s38vt';
 
