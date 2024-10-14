@@ -1,24 +1,23 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
+import { ApiConfigService, AxelarGmpApi, BinaryUtils, Locker } from '@stacks-monorepo/common';
+import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
+import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
+import { StacksNetwork } from '@stacks/network';
 import {
-  Address,
-  BytesValue,
-  ContractFunction,
-  Interaction,
-  SmartContract,
-  StringValue,
-  Transaction,
-} from '@multiversx/sdk-core/out';
-import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
-import { ApiConfigService, AxelarGmpApi } from '@stacks-monorepo/common';
-import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
-import { Locker } from '@multiversx/sdk-nestjs-common';
-import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
-import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+  AnchorMode,
+  bufferCV,
+  bufferCVFromString,
+  makeContractCall,
+  StacksTransaction,
+  stringAsciiCV,
+} from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { AxiosError } from 'axios';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
@@ -28,19 +27,18 @@ const MAX_NUMBER_OF_RETRIES: number = 3;
 export class MessageApprovedProcessorService {
   private readonly logger: Logger;
 
-  private readonly chainId: string;
   private readonly contractItsAddress: string;
 
   constructor(
     private readonly messageApprovedRepository: MessageApprovedRepository,
-    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: UserSigner,
+    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: string,
     private readonly transactionsHelper: TransactionsHelper,
     private readonly itsContract: ItsContract,
     private readonly axelarGmpApi: AxelarGmpApi,
     apiConfigService: ApiConfigService,
+    @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
   ) {
     this.logger = new Logger(MessageApprovedProcessorService.name);
-    this.chainId = apiConfigService.getChainId();
     this.contractItsAddress = apiConfigService.getContractIts();
   }
 
@@ -49,18 +47,12 @@ export class MessageApprovedProcessorService {
     await Locker.lock('processPendingMessageApproved', async () => {
       this.logger.debug('Running processPendingMessageApproved cron');
 
-      let accountNonce = null;
-
       // Always start processing from beginning (page 0) since the query will skip recently updated entries
       let entries;
       while ((entries = await this.messageApprovedRepository.findPending(0))?.length) {
-        if (accountNonce === null) {
-          accountNonce = await this.transactionsHelper.getAccountNonce(this.walletSigner.getAddress());
-        }
-
         this.logger.log(`Found ${entries.length} CallContractApproved transactions to execute`);
 
-        const transactionsToSend: Transaction[] = [];
+        const transactionsToSend: StacksTransaction[] = [];
         const entriesToUpdate: MessageApproved[] = [];
         const entriesWithTransactions: MessageApproved[] = [];
         for (const messageApproved of entries) {
@@ -89,13 +81,14 @@ export class MessageApprovedProcessorService {
           }
 
           try {
-            const transaction = await this.buildAndSignExecuteTransaction(messageApproved, accountNonce);
+            const transaction = await this.buildExecuteTransaction(messageApproved);
 
-            accountNonce++;
+            const gas = await this.transactionsHelper.getTransactionGas(transaction, messageApproved.retry);
+            transaction.setFee(gas);
 
             transactionsToSend.push(transaction);
 
-            messageApproved.executeTxHash = transaction.getHash().toString();
+            messageApproved.executeTxHash = transaction.txid();
             messageApproved.retry += 1;
 
             entriesWithTransactions.push(messageApproved);
@@ -130,9 +123,6 @@ export class MessageApprovedProcessorService {
 
             entriesToUpdate.push(entry);
           });
-        } else {
-          // re-retrieve account nonce in case sendTransactions failed because of nonce error
-          accountNonce = null;
         }
 
         if (entriesToUpdate.length) {
@@ -142,39 +132,28 @@ export class MessageApprovedProcessorService {
     });
   }
 
-  private async buildAndSignExecuteTransaction(
-    messageApproved: MessageApproved,
-    accountNonce: number,
-  ): Promise<Transaction> {
-    const interaction = await this.buildExecuteInteraction(messageApproved);
+  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<StacksTransaction> {
+    const contractId = messageApproved.contractAddress;
+    const contractSplit = contractId.split('.');
+    const [contractAddress, contractName] = [contractSplit[0], contractSplit[1]];
 
-    const transaction = interaction
-      .withSender(this.walletSigner.getAddress())
-      .withNonce(accountNonce)
-      .withChainID(this.chainId)
-      .buildTransaction();
+    if (contractAddress !== this.contractItsAddress) {
+      const tx = await makeContractCall({
+        contractAddress: contractAddress,
+        contractName: contractName,
+        functionName: 'execute',
+        functionArgs: [
+          bufferCVFromString(messageApproved.sourceChain),
+          bufferFromHex(BinaryUtils.stringToHex(messageApproved.messageId)),
+          bufferFromHex(BinaryUtils.stringToHex(messageApproved.sourceAddress)),
+          bufferCV(messageApproved.payload),
+        ],
+        senderKey: this.walletSigner,
+        network: this.network,
+        anchorMode: AnchorMode.Any,
+      });
 
-    const gas = await this.transactionsHelper.getTransactionGas(transaction, messageApproved.retry);
-    transaction.setGasLimit(gas);
-
-    const signature = await this.walletSigner.sign(transaction.serializeForSigning());
-    transaction.applySignature(signature);
-
-    return transaction;
-  }
-
-  private async buildExecuteInteraction(messageApproved: MessageApproved) {
-    if (messageApproved.contractAddress !== this.contractItsAddress) {
-      const contract = new SmartContract({ address: new Address(messageApproved.contractAddress) });
-
-      const args = [
-        new StringValue(messageApproved.sourceChain),
-        new StringValue(messageApproved.messageId),
-        new StringValue(messageApproved.sourceAddress),
-        new BytesValue(messageApproved.payload),
-      ];
-
-      return new Interaction(contract, new ContractFunction('execute'), args);
+      return tx;
     }
 
     // In case first transaction exists for ITS, wait for it to complete and mark it as successful if necessary
@@ -186,7 +165,8 @@ export class MessageApprovedProcessorService {
       }
     }
 
-    return this.itsContract.execute(
+    return await this.itsContract.execute(
+      this.walletSigner,
       messageApproved.sourceChain,
       messageApproved.messageId,
       messageApproved.sourceAddress,

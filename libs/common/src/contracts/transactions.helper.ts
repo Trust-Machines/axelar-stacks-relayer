@@ -1,88 +1,41 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers/out';
-import { Transaction, TransactionHash, TransactionWatcher } from '@multiversx/sdk-core/out';
-import { UserAddress } from '@multiversx/sdk-wallet/out/userAddress';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { ApiConfigService } from '@stacks-monorepo/common/config';
-import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
+import { broadcastTransaction, estimateContractFunctionCall, StacksTransaction } from '@stacks/transactions';
+import { HiroApiHelper } from '../helpers/hiro.api.helpers';
 
 @Injectable()
 export class TransactionsHelper {
   private readonly logger: Logger;
 
-  private readonly chainId: string;
-
-  constructor(
-    private readonly proxy: ProxyNetworkProvider,
-    private readonly transactionWatcher: TransactionWatcher,
-    apiConfigService: ApiConfigService,
-  ) {
+  constructor(private readonly hiroApiHelper: HiroApiHelper) {
     this.logger = new Logger(TransactionsHelper.name);
-
-    // TODO
-    this.chainId = '';
   }
 
-  async getAccountNonce(address: UserAddress): Promise<number> {
-    const accountOnNetwork = await this.proxy.getAccount(address);
+  async getTransactionGas(transaction: StacksTransaction, retry: number): Promise<bigint> {
+    const result = await estimateContractFunctionCall(transaction);
 
-    return accountOnNetwork.nonce;
-  }
-
-  async getTransactionGas(transaction: Transaction, retry: number): Promise<number> {
-    const result = await this.proxy.doPostGeneric('transaction/cost', transaction.toSendable());
-
-    if (!result?.txGasUnits) {
-      throw new GasError(`Could not get gas for transaction ${transaction.getHash()} ${JSON.stringify(result)}`);
+    if (!result) {
+      throw new Error(`Could not get gas for transaction ${transaction.txid()} ${JSON.stringify(result)}`);
     }
 
-    return Math.ceil((result.txGasUnits * (11 + retry * 2)) / 10); // add 10% extra gas initially, and more gas with each retry
+    // add 10% extra gas initially, and more gas with each retry
+    const extraGasPercent = 10 + retry * 2;
+    const extraGas = (result * BigInt(extraGasPercent)) / BigInt(100);
+
+    return extraGas;
   }
 
-  async signAndSendTransactionAndGetNonce(transaction: Transaction, signer: UserSigner) {
-    let accountNonce = null;
-    try {
-      accountNonce = await this.getAccountNonce(signer.getAddress());
-    } catch (e) {
-      this.logger.error(`Can get nonce for transaction...`);
-      this.logger.error(e);
-
-      throw e;
-    }
-
-    transaction.setNonce(accountNonce);
-
-    return this.signAndSendTransaction(transaction, signer);
+  async sendTransaction(transaction: StacksTransaction): Promise<string> {
+    const broadcastResponse = await broadcastTransaction(transaction);
+    return broadcastResponse.txid;
   }
 
-  async signAndSendTransaction(transaction: Transaction, signer: UserSigner) {
-    try {
-      transaction.setSender(signer.getAddress());
-      transaction.setChainID(this.chainId);
-
-      const signature = await signer.sign(transaction.serializeForSigning());
-      transaction.applySignature(signature);
-
-      const hash = await this.proxy.sendTransaction(transaction);
-
-      this.logger.log(`Sent transaction to proxy: ${transaction.getHash()}`);
-
-      return hash;
-    } catch (e) {
-      this.logger.error(`Can not sign or send transaction to proxy...`);
-      this.logger.error(e);
-
-      throw e;
-    }
-  }
-
-  async sendTransactions(transactions: Transaction[]) {
+  async sendTransactions(transactions: any[]) {
     if (!transactions.length) {
       return [];
     }
 
     try {
-      const hashes = await this.proxy.sendTransactions(transactions);
+      const hashes = await Promise.all(transactions.map((tx) => this.sendTransaction(tx)));
 
       this.logger.log(`Sent ${transactions.length} transactions to proxy: ${hashes}`);
 
@@ -97,14 +50,34 @@ export class TransactionsHelper {
 
   async awaitSuccess(txHash: string) {
     try {
-      const result = await this.transactionWatcher.awaitCompleted({ getHash: () => new TransactionHash(txHash) });
+      const result = await this.pollTransactionStatus(txHash);
 
-      return !result.status.isFailed() && !result.status.isInvalid();
-    } catch (e) {
-      this.logger.error(`Can not await transaction success`);
-      this.logger.error(e);
-
+      return result.tx_status === 'success';
+    } catch (error) {
+      this.logger.error(`Cannot await transaction success for txHash: ${txHash}`);
+      this.logger.error(error);
       return false;
     }
+  }
+
+  private async pollTransactionStatus(txHash: string): Promise<any> {
+    while (true) {
+      try {
+        const { transaction } = await this.hiroApiHelper.getTransactionWithFee(txHash);
+        const status = transaction.tx_status as any;
+
+        if (status !== 'pending') {
+          return transaction;
+        }
+
+        await this.delay(6000);
+      } catch (error) {
+        throw new Error(`Error while polling transaction status: ${error}`);
+      }
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

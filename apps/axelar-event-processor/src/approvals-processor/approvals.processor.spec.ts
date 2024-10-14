@@ -1,49 +1,45 @@
-import { CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
-import { ApprovalsProcessorService } from './approvals.processor.service';
-import { RedisCacheService } from '@multiversx/sdk-nestjs-cache';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { UserAddress } from '@multiversx/sdk-wallet/out/userAddress';
-import { Transaction } from '@multiversx/sdk-core/out';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
-import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { MessageApprovedStatus } from '@prisma/client';
-import { AccountOnNetwork, ApiNetworkProvider } from '@multiversx/sdk-network-providers/out';
-import BigNumber from 'bignumber.js';
+import { CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
+import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { ApprovalsProcessorService } from './approvals.processor.service';
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
 import RefundTask = Components.Schemas.RefundTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
+import { StacksTransaction } from '@stacks/transactions';
 
-const mockExternalData = BinaryUtils.base64Encode('approveMessages@61726731@61726732');
-const mockVerifyData = BinaryUtils.base64Encode('rotateSigners@1234@4321');
+const mockExternalData = Buffer.from('approveMessages@61726731@61726732').toString('base64');
+const mockVerifyData = Buffer.from('rotateSigners@1234@4321').toString('base64');
 
 describe('ApprovalsProcessorService', () => {
   let axelarGmpApi: DeepMocked<AxelarGmpApi>;
-  let redisCacheService: DeepMocked<RedisCacheService>;
-  let walletSigner: DeepMocked<UserSigner>;
+  let redisHelper: DeepMocked<RedisHelper>;
+  let walletSigner: string;
   let transactionsHelper: DeepMocked<TransactionsHelper>;
   let gatewayContract: DeepMocked<GatewayContract>;
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
   let gasServiceContract: DeepMocked<GasServiceContract>;
-  let api: DeepMocked<ApiNetworkProvider>;
+  let hiroApiHelper: DeepMocked<HiroApiHelper>;
 
   let service: ApprovalsProcessorService;
 
   beforeEach(async () => {
     axelarGmpApi = createMock();
-    redisCacheService = createMock();
-    walletSigner = createMock();
+    redisHelper = createMock();
     transactionsHelper = createMock();
     gatewayContract = createMock();
     messageApprovedRepository = createMock();
     gasServiceContract = createMock();
-    api = createMock();
+    hiroApiHelper = createMock();
+    walletSigner = 'mocked-wallet-signer';
 
     const moduleRef = await Test.createTestingModule({
       providers: [ApprovalsProcessorService],
@@ -53,8 +49,8 @@ describe('ApprovalsProcessorService', () => {
           return axelarGmpApi;
         }
 
-        if (token === RedisCacheService) {
-          return redisCacheService;
+        if (token === RedisHelper) {
+          return redisHelper;
         }
 
         if (token === ProviderKeys.WALLET_SIGNER) {
@@ -77,15 +73,15 @@ describe('ApprovalsProcessorService', () => {
           return gasServiceContract;
         }
 
-        if (token === ApiNetworkProvider) {
-          return api;
+        if (token === HiroApiHelper) {
+          return hiroApiHelper;
         }
 
         return null;
       })
       .compile();
 
-    redisCacheService.get.mockImplementation(() => {
+    redisHelper.get.mockImplementation(() => {
       return Promise.resolve(undefined);
     });
 
@@ -95,9 +91,7 @@ describe('ApprovalsProcessorService', () => {
   describe('handleNewTasks', () => {
     it('Should handle get tasks error', async () => {
       axelarGmpApi.getTasks.mockRejectedValueOnce(new Error('Network error'));
-
       await service.handleNewTasksRaw();
-
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(1);
     });
 
@@ -127,19 +121,24 @@ describe('ApprovalsProcessorService', () => {
             },
           ];
         }
-
         return Promise.resolve({
           data: {
             tasks,
           },
         });
       });
-
+      hiroApiHelper.getAccountBalance.mockResolvedValue({
+        stx: {
+          balance: '100',
+        },
+      } as any);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gasServiceContract.refund.mockResolvedValueOnce(transaction);
+      transactionsHelper.sendTransaction.mockResolvedValue('txHash');
       await service.handleNewTasksRaw();
-
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', undefined);
-      expect(redisCacheService.set).toHaveBeenCalledWith(
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
+      expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.LastTaskUUID().key,
         'lastUUID1',
         CacheInfo.LastTaskUUID().ttl,
@@ -164,38 +163,30 @@ describe('ApprovalsProcessorService', () => {
           },
         }),
       );
-
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
-
-      const transaction: DeepMocked<Transaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockReturnValueOnce(transaction);
-
-      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000));
-      transactionsHelper.signAndSendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000n));
 
       await service.handleNewTasksRaw();
 
-      expect(redisCacheService.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', undefined);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', 'UUID');
-
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(1);
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(
         'approveMessages@61726731@61726732',
-        userAddress,
-        1,
+        walletSigner,
       );
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0);
-      expect(transaction.setGasLimit).toHaveBeenCalledTimes(1);
-      expect(transaction.setGasLimit).toHaveBeenCalledWith(100_000_000);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledWith(transaction, walletSigner);
-
-      expect(redisCacheService.set).toHaveBeenCalledTimes(2);
-      expect(redisCacheService.set).toHaveBeenCalledWith(
+      expect(transaction.setFee).toHaveBeenCalledTimes(1);
+      expect(transaction.setFee).toHaveBeenCalledWith(100_000_000n);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledWith(transaction);
+      expect(redisHelper.set).toHaveBeenCalledTimes(2);
+      expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.PendingTransaction('txHash').key,
         {
           txHash: 'txHash',
@@ -204,12 +195,7 @@ describe('ApprovalsProcessorService', () => {
         },
         CacheInfo.PendingTransaction('txHash').ttl,
       );
-
-      expect(redisCacheService.set).toHaveBeenCalledWith(
-        CacheInfo.LastTaskUUID().key,
-        'UUID',
-        CacheInfo.LastTaskUUID().ttl,
-      );
+      expect(redisHelper.set).toHaveBeenCalledWith(CacheInfo.LastTaskUUID().key, 'UUID', CacheInfo.LastTaskUUID().ttl);
     });
 
     it('Should handle execute task', async () => {
@@ -221,7 +207,7 @@ describe('ApprovalsProcessorService', () => {
               {
                 type: 'EXECUTE',
                 task: {
-                  payload: BinaryUtils.hexToBase64('0123'),
+                  payload: Buffer.from('0123', 'hex').toString('base64'),
                   availableGasBalance: {
                     amount: '0',
                   },
@@ -230,7 +216,7 @@ describe('ApprovalsProcessorService', () => {
                     destinationAddress: 'destinationAddress',
                     sourceAddress: 'sourceAddress',
                     sourceChain: 'ethereum',
-                    payloadHash: BinaryUtils.hexToBase64('0234'),
+                    payloadHash: Buffer.from('0234', 'hex').toString('base64'),
                   },
                 } as ExecuteTask,
                 id: 'UUID',
@@ -240,9 +226,7 @@ describe('ApprovalsProcessorService', () => {
           },
         }),
       );
-
       await service.handleNewTasksRaw();
-
       expect(messageApprovedRepository.create).toHaveBeenCalledTimes(1);
       expect(messageApprovedRepository.create).toHaveBeenCalledWith({
         sourceChain: 'ethereum',
@@ -255,7 +239,7 @@ describe('ApprovalsProcessorService', () => {
         retry: 0,
         taskItemId: 'UUID',
       });
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
     it('Should handle execute task duplicate in database', async () => {
@@ -286,13 +270,10 @@ describe('ApprovalsProcessorService', () => {
           },
         }),
       );
-
       messageApprovedRepository.create.mockReturnValueOnce(Promise.resolve(null));
-
       await service.handleNewTasksRaw();
-
       expect(messageApprovedRepository.create).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
     it('Should not save last task uuid if error', async () => {
@@ -313,31 +294,24 @@ describe('ApprovalsProcessorService', () => {
           },
         }),
       );
-
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
-      const transaction: DeepMocked<Transaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockReturnValueOnce(transaction);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
       transactionsHelper.getTransactionGas.mockRejectedValueOnce(new Error('Network error'));
 
       await service.handleNewTasksRaw();
 
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0);
-
-      expect(redisCacheService.set).not.toHaveBeenCalled();
-
+      expect(redisHelper.set).not.toHaveBeenCalled();
       // Mock lastUUID
-      redisCacheService.get.mockImplementation(() => {
+      redisHelper.get.mockImplementation(() => {
         return Promise.resolve('lastUUID1');
       });
-
       // Will start processing tasks from lastUUID1
       await service.handleNewTasksRaw();
-
-      expect(redisCacheService.get).toHaveBeenCalledTimes(2);
+      expect(redisHelper.get).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', 'lastUUID1');
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'lastUUID1');
     });
 
     it('Should handle verify task', async () => {
@@ -365,38 +339,25 @@ describe('ApprovalsProcessorService', () => {
           },
         }),
       );
-
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
-
-      const transaction: DeepMocked<Transaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockReturnValueOnce(transaction);
-
-      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000));
-      transactionsHelper.signAndSendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
 
       await service.handleNewTasksRaw();
 
-      expect(redisCacheService.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', undefined);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', 'UUID');
-
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(1);
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(
         'rotateSigners@1234@4321',
-        userAddress,
-        1,
+        walletSigner,
       );
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0);
-      expect(transaction.setGasLimit).toHaveBeenCalledTimes(1);
-      expect(transaction.setGasLimit).toHaveBeenCalledWith(100_000_000);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledWith(transaction, walletSigner);
-
-      expect(redisCacheService.set).toHaveBeenCalledTimes(2);
-      expect(redisCacheService.set).toHaveBeenCalledWith(
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledWith(transaction);
+      expect(redisHelper.set).toHaveBeenCalledTimes(2);
+      expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.PendingTransaction('txHash').key,
         {
           txHash: 'txHash',
@@ -405,12 +366,7 @@ describe('ApprovalsProcessorService', () => {
         },
         CacheInfo.PendingTransaction('txHash').ttl,
       );
-
-      expect(redisCacheService.set).toHaveBeenCalledWith(
-        CacheInfo.LastTaskUUID().key,
-        'UUID',
-        CacheInfo.LastTaskUUID().ttl,
-      );
+      expect(redisHelper.set).toHaveBeenCalledWith(CacheInfo.LastTaskUUID().key, 'UUID', CacheInfo.LastTaskUUID().ttl);
     });
   });
 
@@ -418,24 +374,24 @@ describe('ApprovalsProcessorService', () => {
     it('Should handle undefined', async () => {
       const key = CacheInfo.PendingTransaction('txHashUndefined').key;
 
-      redisCacheService.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisCacheService.get.mockReturnValueOnce(Promise.resolve(undefined));
+      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
+      redisHelper.get.mockReturnValueOnce(Promise.resolve(undefined));
 
       await service.handlePendingTransactionsRaw();
 
-      expect(redisCacheService.scan).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.get).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.get).toHaveBeenCalledWith(key);
-      expect(redisCacheService.delete).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.delete).toHaveBeenCalledWith(key);
+      expect(redisHelper.scan).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledWith(key);
+      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
+      expect(redisHelper.delete).toHaveBeenCalledWith(key);
       expect(transactionsHelper.awaitSuccess).not.toHaveBeenCalled();
     });
 
     it('Should handle success', async () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
 
-      redisCacheService.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisCacheService.get.mockReturnValueOnce(
+      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData: mockExternalData,
@@ -446,11 +402,11 @@ describe('ApprovalsProcessorService', () => {
 
       await service.handlePendingTransactionsRaw();
 
-      expect(redisCacheService.scan).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.get).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.get).toHaveBeenCalledWith(key);
-      expect(redisCacheService.delete).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.delete).toHaveBeenCalledWith(key);
+      expect(redisHelper.scan).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledWith(key);
+      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
+      expect(redisHelper.delete).toHaveBeenCalledWith(key);
       expect(transactionsHelper.awaitSuccess).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.awaitSuccess).toHaveBeenCalledWith('txHashComplete');
       expect(transactionsHelper.getTransactionGas).not.toHaveBeenCalled();
@@ -460,8 +416,8 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
 
-      redisCacheService.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisCacheService.get.mockReturnValueOnce(
+      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -470,14 +426,11 @@ describe('ApprovalsProcessorService', () => {
       );
       transactionsHelper.awaitSuccess.mockReturnValueOnce(Promise.resolve(false));
 
-      const userAddress = UserAddress.fromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
 
-      const transaction: DeepMocked<Transaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockReturnValueOnce(transaction);
-
-      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000));
-      transactionsHelper.signAndSendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000n));
 
       await service.handlePendingTransactionsRaw();
 
@@ -486,19 +439,18 @@ describe('ApprovalsProcessorService', () => {
 
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(1);
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(
-        BinaryUtils.base64Decode(externalData),
-        userAddress,
-        1,
+        'approveMessages@61726731@61726732',
+        walletSigner,
       );
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 1);
-      expect(transaction.setGasLimit).toHaveBeenCalledTimes(1);
-      expect(transaction.setGasLimit).toHaveBeenCalledWith(100_000_000);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.signAndSendTransaction).toHaveBeenCalledWith(transaction, walletSigner);
+      expect(transaction.setFee).toHaveBeenCalledTimes(1);
+      expect(transaction.setFee).toHaveBeenCalledWith(100_000_000n);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledWith(transaction);
 
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.set).toHaveBeenCalledWith(
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.PendingTransaction('txHash').key,
         {
           txHash: 'txHash',
@@ -513,8 +465,8 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const executeData = Uint8Array.of(1, 2, 3, 4);
 
-      redisCacheService.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisCacheService.get.mockReturnValueOnce(
+      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData,
@@ -534,8 +486,8 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
 
-      redisCacheService.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisCacheService.get.mockReturnValueOnce(
+      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -544,12 +496,8 @@ describe('ApprovalsProcessorService', () => {
       );
       transactionsHelper.awaitSuccess.mockReturnValueOnce(Promise.resolve(false));
 
-      const userAddress = UserAddress.fromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
-
-      const transaction: DeepMocked<Transaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockReturnValueOnce(transaction);
-
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
       transactionsHelper.getTransactionGas.mockRejectedValueOnce(new Error('Network error'));
 
       await service.handlePendingTransactionsRaw();
@@ -559,8 +507,9 @@ describe('ApprovalsProcessorService', () => {
 
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 1);
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
-      expect(redisCacheService.set).toHaveBeenCalledWith(
+
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.PendingTransaction('txHashComplete').key,
         {
           txHash: 'txHashComplete',
@@ -573,26 +522,26 @@ describe('ApprovalsProcessorService', () => {
   });
 
   describe('processRefundTask', () => {
-    function assertRefundSuccess(userAddress: UserAddress, transaction: Transaction, token: string) {
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
+    function assertRefundSuccess(senderKey: string, transaction: StacksTransaction, token: string) {
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', undefined);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('multiversx', 'UUID');
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
+      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
 
       expect(gasServiceContract.refund).toHaveBeenCalledTimes(1);
       expect(gasServiceContract.refund).toHaveBeenCalledWith(
-        userAddress,
+        senderKey,
         'messageTxHash',
         '1',
         'recipientAddress',
         token,
         '1000',
       );
-      expect(transactionsHelper.signAndSendTransactionAndGetNonce).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.signAndSendTransactionAndGetNonce).toHaveBeenCalledWith(transaction, walletSigner);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledWith(transaction);
     }
 
-    it('Should handle process refund task EGLD success', async () => {
+    it('Should handle process refund task STX success', async () => {
       axelarGmpApi.getTasks.mockReturnValueOnce(
         // @ts-ignore
         Promise.resolve({
@@ -604,7 +553,6 @@ describe('ApprovalsProcessorService', () => {
                   refundRecipientAddress: 'recipientAddress',
                   remainingGasBalance: {
                     amount: '1000',
-                    tokenID: '',
                   },
                   message: {
                     messageID: '0xmessageTxHash-1',
@@ -622,24 +570,25 @@ describe('ApprovalsProcessorService', () => {
         }),
       );
 
-      api.getAccount.mockReturnValueOnce(Promise.resolve(new AccountOnNetwork({ balance: new BigNumber('1000') })));
+      hiroApiHelper.getAccountBalance.mockResolvedValue({
+        stx: {
+          balance: '10000',
+        },
+      } as any);
 
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gasServiceContract.refund.mockResolvedValueOnce(transaction);
 
-      const transaction: DeepMocked<Transaction> = createMock();
-      gasServiceContract.refund.mockReturnValueOnce(transaction);
-
-      transactionsHelper.signAndSendTransactionAndGetNonce.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
 
       await service.handleNewTasksRaw();
 
-      expect(api.getAccount).toHaveBeenCalledTimes(1);
+      expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      assertRefundSuccess(userAddress, transaction, 'EGLD');
+      assertRefundSuccess(walletSigner, transaction, 'STX');
     });
 
-    it('Should handle process refund task ESDT success', async () => {
+    it('Should handle process refund task TOKEN success', async () => {
       axelarGmpApi.getTasks.mockReturnValueOnce(
         // @ts-ignore
         Promise.resolve({
@@ -651,7 +600,7 @@ describe('ApprovalsProcessorService', () => {
                   refundRecipientAddress: 'recipientAddress',
                   remainingGasBalance: {
                     amount: '1000',
-                    tokenID: 'WEGLD-123456',
+                    tokenID: 'TOKEN-123456',
                   },
                   message: {
                     messageID: '0xmessageTxHash-1',
@@ -669,27 +618,26 @@ describe('ApprovalsProcessorService', () => {
         }),
       );
 
-      api.getFungibleTokenOfAccount.mockReturnValueOnce(
-        Promise.resolve({
-          identifier: 'WEGLD-123456',
-          balance: new BigNumber('2000'),
-          rawResponse: {},
-        }),
-      );
+      hiroApiHelper.getAccountBalance.mockResolvedValue({
+        fungible_tokens: {
+          'TOKEN-123456': {
+            balance: '10000',
+            total_sent: '0',
+            total_received: '10000',
+          },
+        },
+      } as any);
 
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gasServiceContract.refund.mockResolvedValueOnce(transaction);
 
-      const transaction: DeepMocked<Transaction> = createMock();
-      gasServiceContract.refund.mockReturnValueOnce(transaction);
-
-      transactionsHelper.signAndSendTransactionAndGetNonce.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
 
       await service.handleNewTasksRaw();
 
-      expect(api.getFungibleTokenOfAccount).toHaveBeenCalledTimes(1);
+      expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      assertRefundSuccess(userAddress, transaction, 'WEGLD-123456');
+      assertRefundSuccess(walletSigner, transaction, 'TOKEN-123456');
     });
 
     it('Should handle process refund balance too low', async () => {
@@ -722,28 +670,29 @@ describe('ApprovalsProcessorService', () => {
         }),
       );
 
-      api.getAccount.mockReturnValueOnce(Promise.resolve(new AccountOnNetwork({ balance: new BigNumber('999') })));
+      hiroApiHelper.getAccountBalance.mockResolvedValue({
+        stx: {
+          balance: '999',
+        },
+      } as any);
 
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gasServiceContract.refund.mockResolvedValueOnce(transaction);
 
-      const transaction: DeepMocked<Transaction> = createMock();
-      gasServiceContract.refund.mockReturnValueOnce(transaction);
-
-      transactionsHelper.signAndSendTransactionAndGetNonce.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
 
       await service.handleNewTasksRaw();
 
-      expect(api.getAccount).toHaveBeenCalledTimes(1);
+      expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
 
       expect(gasServiceContract.refund).not.toHaveBeenCalled();
-      expect(transactionsHelper.signAndSendTransactionAndGetNonce).not.toHaveBeenCalled();
+      expect(transactionsHelper.sendTransaction).not.toHaveBeenCalled();
     });
 
-    it('Should handle process refund task ESDT exception', async () => {
+    it('Should handle process refund task TOKEN exception', async () => {
       axelarGmpApi.getTasks.mockReturnValueOnce(
         // @ts-ignore
         Promise.resolve({
@@ -773,25 +722,30 @@ describe('ApprovalsProcessorService', () => {
         }),
       );
 
-      api.getFungibleTokenOfAccount.mockRejectedValue(new Error('No wegld token for address'));
+      hiroApiHelper.getAccountBalance.mockResolvedValue({
+        fungible_tokens: {
+          'TOKEN-123456': {
+            balance: '10000',
+            total_sent: '0',
+            total_received: '10000',
+          },
+        },
+      } as any);
 
-      const userAddress = UserAddress.newFromBech32('erd1qqqqqqqqqqqqqpgqhe8t5jewej70zupmh44jurgn29psua5l2jps3ntjj3');
-      walletSigner.getAddress.mockReturnValueOnce(userAddress);
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gasServiceContract.refund.mockResolvedValueOnce(transaction);
 
-      const transaction: DeepMocked<Transaction> = createMock();
-      gasServiceContract.refund.mockReturnValueOnce(transaction);
-
-      transactionsHelper.signAndSendTransactionAndGetNonce.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
 
       await service.handleNewTasksRaw();
 
-      expect(api.getFungibleTokenOfAccount).toHaveBeenCalledTimes(1);
+      expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      expect(redisCacheService.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
 
       expect(gasServiceContract.refund).not.toHaveBeenCalled();
-      expect(transactionsHelper.signAndSendTransactionAndGetNonce).not.toHaveBeenCalled();
+      expect(transactionsHelper.sendTransaction).not.toHaveBeenCalled();
     });
   });
 });

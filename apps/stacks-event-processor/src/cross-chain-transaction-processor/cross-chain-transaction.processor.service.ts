@@ -8,12 +8,12 @@ import axios, { AxiosError } from 'axios';
 import { MessageApprovedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { getContractAddress, ScEvent } from '../event-processor/types';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
   private readonly contractGateway: string;
   private readonly contractGasService: string;
-  private readonly hiroApi: string;
   private readonly logger: Logger;
 
   constructor(
@@ -21,11 +21,11 @@ export class CrossChainTransactionProcessorService {
     private readonly gasServiceProcessor: GasServiceProcessor,
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly redisHelper: RedisHelper,
+    private readonly hiroApiHelper: HiroApiHelper,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGateway = apiConfigService.getContractGateway();
     this.contractGasService = apiConfigService.getContractGasService();
-    this.hiroApi = apiConfigService.getHiroApiUrl();
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
@@ -40,7 +40,7 @@ export class CrossChainTransactionProcessorService {
     const txHashes = await this.redisHelper.smembers(CacheInfo.CrossChainTransactions().key);
     for (const txHash of txHashes) {
       try {
-        const { transaction, fee } = await this.getTransactionWithFee(txHash);
+        const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
         // Wait for transaction to be finished
         if ((transaction.tx_status as any) === 'pending') {
           continue;
@@ -116,12 +116,5 @@ export class CrossChainTransactionProcessorService {
 
       throw e;
     }
-  }
-
-  private async getTransactionWithFee(txHash: string): Promise<{ transaction: Transaction; fee: string }> {
-    const response = await axios.get(`${this.hiroApi}/extended/v1/tx/${txHash}`);
-    const transaction = response.data as Transaction;
-
-    return { transaction, fee: transaction.fee_rate };
   }
 }

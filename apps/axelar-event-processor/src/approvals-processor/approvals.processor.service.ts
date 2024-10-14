@@ -1,20 +1,18 @@
-import { BinaryUtils, Locker } from '@multiversx/sdk-nestjs-common';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { RedisCacheService } from '@multiversx/sdk-nestjs-cache';
-import { CacheInfo, GasServiceContract } from '@stacks-monorepo/common';
-import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
-import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
-import { PendingTransaction } from './entities/pending-transaction';
-import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { MessageApprovedStatus } from '@prisma/client';
-import { ApiNetworkProvider } from '@multiversx/sdk-network-providers/out';
+import { CacheInfo, GasServiceContract, Locker } from '@stacks-monorepo/common';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
+import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import BigNumber from 'bignumber.js';
+import { PendingTransaction } from './entities/pending-transaction';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
@@ -28,13 +26,13 @@ export class ApprovalsProcessorService {
 
   constructor(
     private readonly axelarGmpApi: AxelarGmpApi,
-    private readonly redisCacheService: RedisCacheService,
-    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: UserSigner,
+    private readonly redisHelper: RedisHelper,
+    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: string,
     private readonly transactionsHelper: TransactionsHelper,
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly gasServiceContract: GasServiceContract,
-    private readonly api: ApiNetworkProvider,
+    private readonly hiroApiHelper: HiroApiHelper,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
@@ -50,9 +48,9 @@ export class ApprovalsProcessorService {
   }
 
   async handleNewTasksRaw() {
-    let lastTaskUUID = (await this.redisCacheService.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
+    let lastTaskUUID = (await this.redisHelper.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
 
-    this.logger.debug(`Trying to process tasks for multiversx starting from id: ${lastTaskUUID}`);
+    this.logger.debug(`Trying to process tasks for stacks starting from id: ${lastTaskUUID}`);
 
     // Process as many tasks as possible until no tasks are left or there is an error
     let tasks: TaskItem[] = [];
@@ -74,7 +72,7 @@ export class ApprovalsProcessorService {
 
             lastTaskUUID = task.id;
 
-            await this.redisCacheService.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
+            await this.redisHelper.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
 
@@ -93,11 +91,11 @@ export class ApprovalsProcessorService {
   }
 
   async handlePendingTransactionsRaw() {
-    const keys = await this.redisCacheService.scan(CacheInfo.PendingTransaction('*').key);
+    const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
     for (const key of keys) {
-      const cachedValue = await this.redisCacheService.get<PendingTransaction>(key);
+      const cachedValue = await this.redisHelper.get<PendingTransaction>(key);
 
-      await this.redisCacheService.delete(key);
+      await this.redisHelper.delete(key);
 
       if (cachedValue === undefined) {
         continue;
@@ -127,7 +125,7 @@ export class ApprovalsProcessorService {
         this.logger.error(e);
 
         // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
-        await this.redisCacheService.set<PendingTransaction>(
+        await this.redisHelper.set<PendingTransaction>(
           CacheInfo.PendingTransaction(txHash).key,
           {
             txHash,
@@ -178,24 +176,19 @@ export class ApprovalsProcessorService {
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
-    const data = Buffer.from(externalData, 'base64');
+    const data = Buffer.from(externalData, 'base64').toString('utf-8');
 
-    this.logger.debug(`Trying to execute Gateway transaction with externalData:`);
-    this.logger.debug(data);
+    this.logger.log(`Trying to execute Gateway transaction with externalData:`);
+    this.logger.log(data);
 
-    const nonce = await this.transactionsHelper.getAccountNonce(this.walletSigner.getAddress());
-    const transaction = this.gatewayContract.buildTransactionExternalFunction(
-      data,
-      this.walletSigner.getAddress(),
-      nonce,
-    );
+    const transaction = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
 
     const gas = await this.transactionsHelper.getTransactionGas(transaction, retry);
-    transaction.setGasLimit(gas);
+    transaction.setFee(gas);
 
-    const txHash = await this.transactionsHelper.signAndSendTransaction(transaction, this.walletSigner);
+    const txHash = await this.transactionsHelper.sendTransaction(transaction);
 
-    await this.redisCacheService.set<PendingTransaction>(
+    await this.redisHelper.set<PendingTransaction>(
       CacheInfo.PendingTransaction(txHash).key,
       {
         txHash,
@@ -214,7 +207,7 @@ export class ApprovalsProcessorService {
       status: MessageApprovedStatus.PENDING,
       sourceAddress: response.message.sourceAddress,
       contractAddress: response.message.destinationAddress,
-      payloadHash: BinaryUtils.base64ToHex(response.message.payloadHash),
+      payloadHash: Buffer.from(response.message.payloadHash, 'base64').toString('hex'),
       payload: Buffer.from(response.payload, 'base64'),
       retry: 0,
       taskItemId,
@@ -232,23 +225,20 @@ export class ApprovalsProcessorService {
   private async processRefundTask(response: RefundTask) {
     let tokenBalance: BigNumber;
 
+    const addressBalance = await this.hiroApiHelper.getAccountBalance(this.gasServiceContract.getContractAddress());
+
     try {
       if (response.remainingGasBalance.tokenID) {
-        const token = await this.api.getFungibleTokenOfAccount(
-          this.gasServiceContract.getContractAddress(),
-          response.remainingGasBalance.tokenID,
-        );
+        const token = addressBalance.fungible_tokens[response.remainingGasBalance.tokenID];
 
-        tokenBalance = token.balance;
+        tokenBalance = new BigNumber(token?.balance ?? 0);
       } else {
-        const account = await this.api.getAccount(this.gasServiceContract.getContractAddress());
-
-        tokenBalance = account.balance;
+        tokenBalance = new BigNumber(addressBalance.stx.balance ?? 0);
       }
 
       if (tokenBalance.lt(response.remainingGasBalance.amount)) {
         throw new Error(
-          `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.EGLD_IDENTIFIER}` +
+          `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
             ` in gas service contract ${this.gasServiceContract.getContractAddress()}. Needed ${response.remainingGasBalance.amount},` +
             ` but balance is ${tokenBalance.toFixed()}`,
         );
@@ -265,17 +255,17 @@ export class ApprovalsProcessorService {
 
     const [messageTxHash, logIndex] = response.message.messageID.split('-');
 
-    const transaction = this.gasServiceContract.refund(
-      this.walletSigner.getAddress(),
+    const transaction = await this.gasServiceContract.refund(
+      this.walletSigner,
       messageTxHash.slice(2), // Remove 0x from start
       logIndex,
       response.refundRecipientAddress,
-      response.remainingGasBalance.tokenID || CONSTANTS.EGLD_IDENTIFIER,
+      response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER,
       response.remainingGasBalance.amount,
     );
 
     // TODO: Handle retries in case of transaction failing?
-    const txHash = await this.transactionsHelper.signAndSendTransactionAndGetNonce(transaction, this.walletSigner);
+    const txHash = await this.transactionsHelper.sendTransaction(transaction);
 
     this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);
   }

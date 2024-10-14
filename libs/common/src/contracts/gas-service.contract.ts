@@ -14,41 +14,64 @@ import {
   gasPaidForContractCallDecoder,
   refundedDecoder,
 } from '../utils/decoding.utils';
+import {
+  AnchorMode,
+  bufferCV,
+  bufferCVFromString,
+  listCV,
+  makeContractCall,
+  principalCV,
+  StacksTransaction,
+} from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
+import { BinaryUtils } from '../utils';
 
 @Injectable()
 export class GasServiceContract {
   constructor(
     private readonly contract: string,
+    private readonly contractName: string,
     private readonly network: StacksNetwork,
   ) {}
 
-  collectFees(sender: string, tokens: string[], amounts: BigNumber[]): Transaction {
-    // return this.smartContract.methods
-    //   .collectFees([
-    //     sender.bech32(),
-    //     VariadicValue.fromItemsCounted(...tokens.map((token) => new StringValue(token))),
-    //     VariadicValue.fromItemsCounted(...amounts.map((amount) => new BigUIntValue(amount))),
-    //   ])
-    //   .withGasLimit(GasInfo.CollectFeesBase.value + GasInfo.CollectFeesExtra.value * tokens.length)
-    //   .withSender(sender)
-    //   .buildTransaction();
-    throw new NotImplementedException('Method not implemented yet');
+  async collectFees(sender: string, tokens: string[], amounts: BigNumber[]): Promise<StacksTransaction> {
+    return await makeContractCall({
+      contractAddress: this.contract,
+      contractName: this.contractName,
+      functionName: 'collectFees',
+      functionArgs: [
+        listCV([...tokens.map((token) => bufferCVFromString(token))]),
+        listCV([...amounts.map((amount) => bufferFromHex(BinaryUtils.stringToHex(amount.toFixed())))]),
+      ],
+      senderKey: sender,
+      network: this.network,
+      anchorMode: AnchorMode.Any,
+    });
   }
 
-  refund(
+  async refund(
     sender: string,
     txHash: string,
     logIndex: string,
     receiver: string,
     token: string,
     amount: string,
-  ): Transaction {
-    // return this.smartContract.methods
-    //   .refund([Buffer.from(txHash, 'hex'), logIndex, receiver, token, amount])
-    //   .withGasLimit(GasInfo.Refund.value)
-    //   .withSender(sender)
-    //   .buildTransaction();
-    throw new NotImplementedException('Method not implemented yet');
+  ): Promise<StacksTransaction> {
+    return await makeContractCall({
+      contractAddress: this.contract,
+      contractName: this.contractName,
+      functionName: 'refund',
+      functionArgs: [
+        bufferFromHex(txHash),
+        bufferFromHex(BinaryUtils.stringToHex(logIndex)),
+        principalCV(receiver),
+        bufferCVFromString(token),
+        bufferFromHex(BinaryUtils.stringToHex(amount)),
+      ],
+      senderKey: sender,
+      network: this.network,
+      anchorMode: AnchorMode.Any,
+    });
   }
 
   decodeGasPaidForContractCallEvent(event: ScEvent): GasPaidForContractCallEvent {

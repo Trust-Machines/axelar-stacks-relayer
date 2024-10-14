@@ -1,8 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { Address } from '@multiversx/sdk-core/out';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
 import { Test } from '@nestjs/testing';
 import { MessageApprovedStatus } from '@prisma/client';
+import { hex } from '@scure/base';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   ContractCallEvent,
@@ -15,15 +14,13 @@ import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repo
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
 import { ScEvent } from '../../event-processor/types';
 import { GatewayProcessor } from './gateway.processor';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
-import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
-import { bufferFromHex } from '@stacks/transactions/dist/cl';
-import { hex } from '@scure/base';
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';
 
@@ -165,7 +162,7 @@ describe('GatewayProcessor', () => {
       expect(event.message.sourceChain).toBe(CONSTANTS.SOURCE_CHAIN_NAME);
       expect(event.message.sourceAddress).toBe(contractCallEvent.sender);
       expect(event.message.destinationAddress).toBe(contractCallEvent.destinationAddress);
-      expect(event.message.payloadHash).toBe(BinaryUtils.hexToBase64(contractCallEvent.payloadHash));
+      expect(event.message.payloadHash).toBe(Buffer.from(contractCallEvent.payloadHash, 'base64').toString('hex'));
       expect(event.destinationChain).toBe(contractCallEvent.destinationChain);
       expect(event.payload).toBe(contractCallEvent.payload.toString('base64'));
       expect(event.meta).toEqual({
@@ -220,7 +217,7 @@ describe('GatewayProcessor', () => {
       expect(event.message.sourceChain).toBe('ethereum');
       expect(event.message.sourceAddress).toBe('sourceAddress');
       expect(event.message.destinationAddress).toBe('SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C');
-      expect(event.message.payloadHash).toBe(BinaryUtils.hexToBase64(contractCallEvent.payloadHash));
+      expect(event.message.payloadHash).toBe(Buffer.from(contractCallEvent.payloadHash, 'base64').toString('hex'));
       expect(event.cost).toEqual({
         amount: '0',
       });

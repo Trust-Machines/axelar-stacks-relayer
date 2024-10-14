@@ -1,4 +1,3 @@
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageApprovedStatus } from '@prisma/client';
 import { GatewayContract } from '@stacks-monorepo/common';
@@ -71,7 +70,7 @@ export class GatewayProcessor {
         sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
         sourceAddress: contractCallEvent.sender,
         destinationAddress: contractCallEvent.destinationAddress,
-        payloadHash: BinaryUtils.hexToBase64(contractCallEvent.payloadHash),
+        payloadHash: Buffer.from(contractCallEvent.payloadHash, 'base64').toString('hex'),
       },
       destinationChain: contractCallEvent.destinationChain,
       payload: contractCallEvent.payload.toString('base64'),
@@ -103,7 +102,7 @@ export class GatewayProcessor {
         sourceChain: event.sourceChain,
         sourceAddress: event.sourceAddress,
         destinationAddress: event.contractAddress,
-        payloadHash: BinaryUtils.hexToBase64(event.payloadHash),
+        payloadHash: Buffer.from(event.payloadHash, 'base64').toString('hex'),
       },
       cost: {
         amount: '0', // This will be set later since multiple approvals can happen in the same transaction

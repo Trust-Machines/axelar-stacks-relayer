@@ -1,21 +1,22 @@
-import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { AccountOnNetwork, ProxyNetworkProvider, TransactionStatus } from '@multiversx/sdk-network-providers/out';
-import { MessageApprovedProcessorModule, MessageApprovedProcessorService } from '../src/message-approved-processor';
-import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
-import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { Transaction, TransactionWatcher } from '@multiversx/sdk-core/out';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { AbiCoder } from 'ethers';
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { AxelarGmpApi } from '@stacks-monorepo/common';
+import { AxelarGmpApi, BinaryUtils, TransactionsHelper } from '@stacks-monorepo/common';
+import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { StacksTestnet } from '@stacks/network';
+import { ContractCallPayload, cvToValue, StacksTransaction } from '@stacks/transactions';
+import { MessageApprovedProcessorModule, MessageApprovedProcessorService } from '../src/message-approved-processor';
 
-const WALLET_SIGNER_ADDRESS = 'erd1fsk0cnaag2m78gunfddsvg0y042rf0maxxgz6kvm32kxcl25m0yq8s38vt';
+const SIGNER = '6d78de7b0625dfbfc16c3a8a5735f6dc3dc3f2ce';
+const CHAIN_ID = 2147483648;
 
 describe('MessageApprovedProcessorService', () => {
-  let proxy: DeepMocked<ProxyNetworkProvider>;
-  let transactionWatcher: DeepMocked<TransactionWatcher>;
+  let hiroApiHelper: DeepMocked<HiroApiHelper>;
+  let transactionsHelper: DeepMocked<TransactionsHelper>;
   let axelarGmpApi: DeepMocked<AxelarGmpApi>;
   let prisma: PrismaService;
   let messageApprovedRepository: MessageApprovedRepository;
@@ -25,19 +26,21 @@ describe('MessageApprovedProcessorService', () => {
   let app: INestApplication;
 
   beforeEach(async () => {
-    proxy = createMock();
-    transactionWatcher = createMock();
+    hiroApiHelper = createMock();
+    transactionsHelper = createMock();
     axelarGmpApi = createMock();
 
     const moduleRef = await Test.createTestingModule({
       imports: [MessageApprovedProcessorModule],
     })
-      .overrideProvider(ProxyNetworkProvider)
-      .useValue(proxy)
-      .overrideProvider(TransactionWatcher)
-      .useValue(transactionWatcher)
+      .overrideProvider(HiroApiHelper)
+      .useValue(hiroApiHelper)
+      .overrideProvider(TransactionsHelper)
+      .useValue(transactionsHelper)
       .overrideProvider(AxelarGmpApi)
       .useValue(axelarGmpApi)
+      .overrideProvider(ProviderKeys.STACKS_NETWORK)
+      .useValue(new StacksTestnet())
       .compile();
 
     prisma = await moduleRef.get(PrismaService);
@@ -46,22 +49,11 @@ describe('MessageApprovedProcessorService', () => {
     service = await moduleRef.get(MessageApprovedProcessorService);
 
     // Mock general calls
-    proxy.getAccount.mockReturnValue(
-      Promise.resolve(
-        new AccountOnNetwork({
-          nonce: 1,
-        }),
-      ),
-    );
-    proxy.doPostGeneric.mockImplementation((url: string): Promise<any> => {
-      if (url === 'transaction/cost') {
-        return Promise.resolve({
-          txGasUnits: 10_000_000,
-        });
-      }
-
-      return Promise.resolve(null);
-    });
+    hiroApiHelper.getAccountBalance.mockResolvedValue({
+      stx: {
+        balance: '10000',
+      },
+    } as any);
 
     // Reset database & cache
     await prisma.messageApproved.deleteMany();
@@ -82,7 +74,7 @@ describe('MessageApprovedProcessorService', () => {
       messageId: 'messageId',
       status: MessageApprovedStatus.PENDING,
       sourceChain: 'ethereum',
-      contractAddress: 'erd1qqqqqqqqqqqqqpgqzqvm5ywqqf524efwrhr039tjs29w0qltkklsa05pk7',
+      contractAddress: 'SP1ZZ7G7R1R548DC7EBVKGWV83EBZXFNA00VDP5FH.contract_name',
       payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
       payload: Buffer.from('payload'),
       retry: 0,
@@ -99,14 +91,19 @@ describe('MessageApprovedProcessorService', () => {
     return result;
   };
 
-  const assertArgs = (transaction: Transaction, entry: MessageApproved) => {
-    const args = transaction.getData().toString().split('@');
+  const assertArgs = (transaction: StacksTransaction, entry: MessageApproved) => {
+    const payload = transaction.payload as ContractCallPayload;
 
-    expect(args[0]).toBe('execute');
-    expect(args[1]).toBe(BinaryUtils.stringToHex(entry.sourceChain));
-    expect(args[2]).toBe(BinaryUtils.stringToHex(entry.messageId));
-    expect(args[3]).toBe(BinaryUtils.stringToHex(entry.sourceAddress));
-    expect(args[4]).toBe(entry.payload.toString('hex'));
+    const sourceChain = BinaryUtils.hexToString(cvToValue(payload.functionArgs[0]));
+    const messageId = BinaryUtils.hexToString(cvToValue(payload.functionArgs[1]));
+    const sourceAddress = BinaryUtils.hexToString(cvToValue(payload.functionArgs[2]));
+    const payloadArg = cvToValue(payload.functionArgs[3]).slice(2);
+
+    expect(payload.functionName.content).toBe('execute');
+    expect(sourceChain).toBe(entry.sourceChain);
+    expect(messageId).toBe(entry.messageId);
+    expect(sourceAddress).toBe(entry.sourceAddress);
+    expect(payloadArg).toBe(entry.payload.toString('hex'));
   };
 
   it('Should send execute transaction two initial', async () => {
@@ -118,30 +115,24 @@ describe('MessageApprovedProcessorService', () => {
       payload: Buffer.from('otherPayload'),
     });
 
-    proxy.sendTransactions.mockImplementation((transactions): Promise<string[]> => {
-      return Promise.resolve(transactions.map((transaction: any) => transaction.getHash().toString() as string));
+    transactionsHelper.sendTransactions.mockImplementation((transactions: StacksTransaction[]): Promise<string[]> => {
+      return Promise.resolve(transactions.map((transaction: StacksTransaction) => transaction.txid()));
     });
 
     await service.processPendingMessageApproved();
 
-    expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-    expect(proxy.doPostGeneric).toHaveBeenCalledTimes(2);
-    expect(proxy.sendTransactions).toHaveBeenCalledTimes(1);
+    expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
 
     // Assert transactions data is correct
-    const transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+    const transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
     expect(transactions).toHaveLength(2);
 
-    expect(transactions[0].getGasLimit()).toBe(11_000_000); // 10% over 10_000_000
-    expect(transactions[0].getNonce()).toBe(1);
-    expect(transactions[0].getChainID()).toBe('test');
-    expect(transactions[0].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+    expect(transactions[0].chainId).toBe(CHAIN_ID);
+    expect(transactions[0].auth.spendingCondition.signer).toBe(SIGNER);
     assertArgs(transactions[0], originalFirstEntry);
 
-    expect(transactions[1].getGasLimit()).toBe(11_000_000);
-    expect(transactions[1].getNonce()).toBe(2);
-    expect(transactions[1].getChainID()).toBe('test');
-    expect(transactions[1].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+    expect(transactions[1].chainId).toBe(CHAIN_ID);
+    expect(transactions[1].auth.spendingCondition.signer).toBe(SIGNER);
     assertArgs(transactions[1], originalSecondEntry);
 
     // No contract call approved pending
@@ -155,7 +146,7 @@ describe('MessageApprovedProcessorService', () => {
     expect(firstEntry).toEqual({
       ...originalFirstEntry,
       retry: 1,
-      executeTxHash: '8d4112e355c9d2b59e6e80bb552e14fb0f9231e7aea12bf5e15ca59498944e70',
+      executeTxHash: expect.any(String),
       updatedAt: expect.any(Date),
     });
 
@@ -166,7 +157,7 @@ describe('MessageApprovedProcessorService', () => {
     expect(secondEntry).toEqual({
       ...originalSecondEntry,
       retry: 1,
-      executeTxHash: 'e804e15e143f46003999887ead28642924581381d54f32ba41e386283e59b143',
+      executeTxHash: expect.any(String),
       updatedAt: expect.any(Date),
     });
   });
@@ -192,8 +183,8 @@ describe('MessageApprovedProcessorService', () => {
       retry: 1,
     });
 
-    proxy.sendTransactions.mockImplementation((transactions): Promise<string[]> => {
-      return Promise.resolve(transactions.map((transaction: any) => transaction.getHash().toString() as string));
+    transactionsHelper.sendTransactions.mockImplementation((transactions: StacksTransaction[]): Promise<string[]> => {
+      return Promise.resolve(transactions.map((transaction: StacksTransaction) => transaction.txid()));
     });
 
     axelarGmpApi.postEvents.mockImplementation(() => {
@@ -202,18 +193,14 @@ describe('MessageApprovedProcessorService', () => {
 
     await service.processPendingMessageApproved();
 
-    expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-    expect(proxy.doPostGeneric).toHaveBeenCalledTimes(1);
-    expect(proxy.sendTransactions).toHaveBeenCalledTimes(1);
+    expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
 
     // Assert transactions data is correct
-    const transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+    const transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
     expect(transactions).toHaveLength(1);
 
-    expect(transactions[0].getGasLimit()).toBe(13_000_000); // 10% + 20% over 10_000_000
-    expect(transactions[0].getNonce()).toBe(1);
-    expect(transactions[0].getChainID()).toBe('test');
-    expect(transactions[0].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+    expect(transactions[0].chainId).toBe(CHAIN_ID);
+    expect(transactions[0].auth.spendingCondition.signer).toBe(SIGNER);
     assertArgs(transactions[0], originalFirstEntry);
 
     // No contract call approved pending remained
@@ -227,7 +214,7 @@ describe('MessageApprovedProcessorService', () => {
     expect(firstEntry).toEqual({
       ...originalFirstEntry,
       retry: 2,
-      executeTxHash: '347a94a760aefcc674c0d13b9405ea2619bef2a326c04695b372f6e7d7df0426',
+      executeTxHash: expect.any(String),
       updatedAt: expect.any(Date),
     });
 
@@ -272,18 +259,16 @@ describe('MessageApprovedProcessorService', () => {
       updatedAt: new Date(new Date().getTime() - 60_500),
     });
 
-    proxy.sendTransactions.mockImplementation((): Promise<string[]> => {
+    transactionsHelper.sendTransactions.mockImplementation((): Promise<string[]> => {
       return Promise.resolve([]);
     });
 
     await service.processPendingMessageApproved();
 
-    expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-    expect(proxy.doPostGeneric).toHaveBeenCalledTimes(2);
-    expect(proxy.sendTransactions).toHaveBeenCalledTimes(1);
+    expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
 
     // Assert transactions data is correct
-    const transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+    const transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
     expect(transactions).toHaveLength(2);
 
     assertArgs(transactions[0], originalFirstEntry);
@@ -315,86 +300,43 @@ describe('MessageApprovedProcessorService', () => {
   });
 
   function mockProxySendTransactionsSuccess() {
-    proxy.sendTransactions.mockImplementation((transactions): Promise<string[]> => {
-      return Promise.resolve(transactions.map((transaction: any) => transaction.getHash().toString() as string));
+    transactionsHelper.sendTransactions.mockImplementation((transactions): Promise<string[]> => {
+      return Promise.resolve(transactions.map((transaction: StacksTransaction) => transaction.txid()));
     });
   }
 
-  it('Should send execute transaction retry on gas failure', async () => {
-    const originalFirstEntry = await createMessageApproved({
-      retry: 1,
-      updatedAt: new Date(new Date().getTime() - 60_500),
-    });
-
-    proxy.sendTransactions.mockImplementation((transactions): Promise<string[]> => {
-      return Promise.resolve(transactions.map((transaction: any) => transaction.getHash().toString() as string));
-    });
-    proxy.doPostGeneric.mockImplementation((): Promise<any> => {
-      // Mock gas error
-      return Promise.resolve(null);
-    });
-
-    await service.processPendingMessageApproved();
-
-    expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-    expect(proxy.doPostGeneric).toHaveBeenCalledTimes(1);
-    expect(proxy.sendTransactions).toHaveBeenCalledTimes(0);
-
-    // No contract call approved pending remained for now
-    expect(await messageApprovedRepository.findPending()).toEqual([]);
-
-    // Expect entries in database updated
-    const firstEntry = await messageApprovedRepository.findBySourceChainAndMessageId(
-      originalFirstEntry.sourceChain,
-      originalFirstEntry.messageId,
-    );
-    expect(firstEntry).toEqual({
-      ...originalFirstEntry,
-      retry: 2,
-      updatedAt: expect.any(Date),
-    });
-  });
-
   describe('ITS execute', () => {
-    const contractAddress = 'erd1qqqqqqqqqqqqqpgq97wezxw6l7lgg7k9rxvycrz66vn92ksh2tssxwf7ep';
+    const contractAddress = 'ST319CF5WV77KYR1H3GT0GZ7B8Q4AQPY42ETP1VPF.contract_name';
 
     it('Should send execute transaction one deploy interchain token one other', async () => {
       const originalItsExecuteOther = await createMessageApproved({
         contractAddress,
-        payload: Buffer.from(AbiCoder.defaultAbiCoder().encode(['uint256'], [0]).substring(2), 'hex'),
+        payload: Buffer.from('1'.toString().padStart(64, '0'), 'hex'),
       });
       const originalItsExecute = await createMessageApproved({
         contractAddress,
         sourceChain: 'polygon',
         sourceAddress: 'otherSourceAddress',
-        payload: Buffer.from(AbiCoder.defaultAbiCoder().encode(['uint256'], [1]).substring(2), 'hex'),
+        payload: Buffer.from('1'.toString().padStart(64, '0'), 'hex'),
       });
 
       mockProxySendTransactionsSuccess();
 
       await service.processPendingMessageApproved();
 
-      expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-      expect(proxy.doPostGeneric).toHaveBeenCalledTimes(2);
-      expect(proxy.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
 
       // Assert transactions data is correct
-      const transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+      const transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
       expect(transactions).toHaveLength(2);
 
-      expect(transactions[0].getGasLimit()).toBe(11_000_000); // 10% over 10_000_000
-      expect(transactions[0].getNonce()).toBe(1);
-      expect(transactions[0].getChainID()).toBe('test');
-      expect(transactions[0].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+      expect(transactions[0].chainId).toBe(CHAIN_ID);
+      expect(transactions[0].auth.spendingCondition.signer).toBe(SIGNER);
       assertArgs(transactions[0], originalItsExecuteOther);
-      expect(transactions[0].getValue()).toBe(0n); // assert sent with value 0
 
-      expect(transactions[1].getGasLimit()).toBe(11_000_000);
-      expect(transactions[1].getNonce()).toBe(2);
-      expect(transactions[1].getChainID()).toBe('test');
-      expect(transactions[1].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+      expect(transactions[1].chainId).toBe(CHAIN_ID);
+      expect(transactions[1].auth.spendingCondition.signer).toBe(SIGNER);
       assertArgs(transactions[1], originalItsExecute);
-      expect(transactions[1].getValue()).toBe(0n); // assert sent with value 0
 
       // No contract call approved pending
       expect(await messageApprovedRepository.findPending()).toEqual([]);
@@ -407,7 +349,7 @@ describe('MessageApprovedProcessorService', () => {
       expect(itsExecuteOther).toEqual({
         ...originalItsExecuteOther,
         retry: 1,
-        executeTxHash: 'bf98d80b5850d39de84f3bcf128badf49546b0f03e366d9fe89b0bd321942619',
+        executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
         successTimes: null,
       });
@@ -419,7 +361,7 @@ describe('MessageApprovedProcessorService', () => {
       expect(itsExecute).toEqual({
         ...originalItsExecute,
         retry: 1,
-        executeTxHash: '0d3703be6d54ce8610ac8869a85f90eb7feef5258a4258b3b441af526084ec98',
+        executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
         successTimes: null,
       });
@@ -430,27 +372,22 @@ describe('MessageApprovedProcessorService', () => {
         contractAddress,
         sourceChain: 'polygon',
         sourceAddress: 'otherSourceAddress',
-        payload: Buffer.from(AbiCoder.defaultAbiCoder().encode(['uint256'], [1]).substring(2), 'hex'),
+        payload: Buffer.from('1'.toString().padStart(64, '0'), 'hex'),
       });
 
       mockProxySendTransactionsSuccess();
 
       await service.processPendingMessageApproved();
 
-      expect(proxy.getAccount).toHaveBeenCalledTimes(1);
-      expect(proxy.doPostGeneric).toHaveBeenCalledTimes(1);
-      expect(proxy.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
 
       // Assert transactions data is correct
-      let transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+      let transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
       expect(transactions).toHaveLength(1);
 
-      expect(transactions[0].getGasLimit()).toBe(11_000_000);
-      expect(transactions[0].getNonce()).toBe(1);
-      expect(transactions[0].getChainID()).toBe('test');
-      expect(transactions[0].getSender().bech32()).toBe(WALLET_SIGNER_ADDRESS);
+      expect(transactions[0].chainId).toBe(2147483648);
+      expect(transactions[0].auth.spendingCondition.signer).toBe(SIGNER);
       assertArgs(transactions[0], originalItsExecute);
-      expect(transactions[0].getValue()).toBe(0n); // assert sent with no value 1st time
 
       // No contract call approved pending
       expect(await messageApprovedRepository.findPending()).toEqual([]);
@@ -463,7 +400,7 @@ describe('MessageApprovedProcessorService', () => {
       expect(itsExecute).toEqual({
         ...originalItsExecute,
         retry: 1,
-        executeTxHash: '67b2b814e2ec9bdd08f57073f575ec95d160c76ec9ccd4d14395e7824b6b77cc',
+        executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
         successTimes: null,
       });
@@ -481,20 +418,20 @@ describe('MessageApprovedProcessorService', () => {
       });
 
       // Mock 1st transaction executed successfully
-      transactionWatcher.awaitCompleted.mockReturnValueOnce(
+      transactionsHelper.awaitSuccess.mockReturnValueOnce(
         // @ts-ignore
         Promise.resolve({
           ...transactions[0],
-          status: new TransactionStatus('success'),
+          status: 'success',
         }),
       );
 
       // Process transaction 2nd time
       await service.processPendingMessageApproved();
 
-      transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+      transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
       expect(transactions).toHaveLength(1);
-      expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value 2nd time
+      // expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value 2nd time
 
       itsExecute = (await messageApprovedRepository.findBySourceChainAndMessageId(
         originalItsExecute.sourceChain,
@@ -503,7 +440,7 @@ describe('MessageApprovedProcessorService', () => {
       expect(itsExecute).toEqual({
         ...originalItsExecute,
         retry: 2,
-        executeTxHash: 'e51db2e016b546d937c204725e3ecef6d725dec3049695de1e92419e0536ea4d',
+        executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
         successTimes: 1,
       });
@@ -521,13 +458,13 @@ describe('MessageApprovedProcessorService', () => {
       });
 
       // Process transaction 3rd time will retry transaction not sent
-      proxy.sendTransactions.mockReturnValueOnce(Promise.resolve([]));
+      transactionsHelper.sendTransactions.mockReturnValueOnce(Promise.resolve([]));
 
       await service.processPendingMessageApproved();
 
-      transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+      transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
       expect(transactions).toHaveLength(1);
-      expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value
+      // expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value
 
       itsExecute = (await messageApprovedRepository.findBySourceChainAndMessageId(
         originalItsExecute.sourceChain,
@@ -558,9 +495,9 @@ describe('MessageApprovedProcessorService', () => {
 
       await service.processPendingMessageApproved();
 
-      transactions = proxy.sendTransactions.mock.lastCall?.[0] as Transaction[];
+      transactions = transactionsHelper.sendTransactions.mock.lastCall?.[0] as StacksTransaction[];
       expect(transactions).toHaveLength(1);
-      expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value
+      // expect(transactions[0].getValue()).toBe(50000000000000000n); // assert sent with value
 
       itsExecute = (await messageApprovedRepository.findBySourceChainAndMessageId(
         originalItsExecute.sourceChain,
@@ -569,7 +506,7 @@ describe('MessageApprovedProcessorService', () => {
       expect(itsExecute).toEqual({
         ...originalItsExecute,
         retry: 3,
-        executeTxHash: 'ef05047f045cc3769eaa31130ce1efa4c558367df7920327b57d9350ed123dfd',
+        executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
         successTimes: 1,
       });

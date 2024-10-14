@@ -13,27 +13,28 @@ import {
   weightedSignersDecoder,
 } from '@stacks-monorepo/common/utils/decoding.utils';
 import { StacksNetwork } from '@stacks/network';
+import { AnchorMode, makeContractCall, StacksTransaction } from '@stacks/transactions';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
-import BigNumber from 'bignumber.js';
 
 @Injectable()
 export class GatewayContract {
   constructor(
     private readonly contract: string,
+    private readonly contractName: string,
     private readonly network: StacksNetwork,
   ) {}
 
-  buildTransactionExternalFunction(externalData: string, sender: string, nonce: number): any {
-    // TODO: implement Stacks transaction
-    return {
-      sender,
-      nonce,
-      // receiver: this.smartContract.getAddress(),
-      receiver: '',
-      // data: new TransactionPayload(externalData),
-      gasLimit: 0, // These will actually be set before sending the transaction to the chain
-      // chainID: this.chainId,
-    };
+  async buildTransactionExternalFunction(externalData: string, senderKey: string): Promise<StacksTransaction> {
+    return await makeContractCall({
+      contractAddress: this.contract,
+      contractName: this.contractName,
+      functionName: 'TODO',
+      functionArgs: [],
+      senderKey,
+      network: this.network,
+      anchorMode: AnchorMode.Any,
+    });
+    // TODO: implement Stacks transaction function name and function args
   }
 
   decodeContractCallEvent(event: ScEvent): ContractCallEvent {

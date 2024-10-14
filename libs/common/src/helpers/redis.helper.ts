@@ -27,6 +27,32 @@ export class RedisHelper {
     return undefined;
   }
 
+  async scan(pattern: string): Promise<string[]> {
+    const found: string[] = [];
+    let cursor = '0';
+    do {
+      const reply = await this.redis.scan(cursor, 'MATCH', pattern);
+
+      cursor = reply[0];
+      found.push(...reply[1]);
+    } while (cursor !== '0');
+
+    return found;
+  }
+
+  async delete(key: string): Promise<void> {
+    try {
+      await this.redis.del(key);
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error('RedisCache - An error occurred while trying to delete from redis cache.', {
+          cacheKey: key,
+          error: error?.toString(),
+        });
+      }
+    }
+  }
+
   async set<T>(key: string, value: T, ttl: number | null = null, cacheNullable: boolean = true): Promise<void> {
     if (value === undefined) {
       return;

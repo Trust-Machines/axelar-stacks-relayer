@@ -1,25 +1,22 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { GasServiceProcessor } from './gas-service.processor';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { Address, ITransactionEvent } from '@multiversx/sdk-core/out';
+import { Test, TestingModule } from '@nestjs/testing';
+import { hex } from '@scure/base';
 import { ApiConfigService, GatewayContract } from '@stacks-monorepo/common';
-import { TransactionEvent, TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
+import { Components, GasRefundedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
   RefundedEvent,
 } from '@stacks-monorepo/common/contracts/entities/gas-service-events';
-import BigNumber from 'bignumber.js';
-import { Components, GasRefundedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
-import GasCreditEvent = Components.Schemas.GasCreditEvent;
-import { ScEvent } from '../../event-processor/types';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
-import { bufferCV, serializeCV, tupleCV, stringAsciiCV } from '@stacks/transactions';
-import { hex } from '@scure/base';
+import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
+import BigNumber from 'bignumber.js';
+import { ScEvent } from '../../event-processor/types';
+import { GasServiceProcessor } from './gas-service.processor';
+import GasCreditEvent = Components.Schemas.GasCreditEvent;
 
 const mockGasContractId = 'mockGasAddress.contract_name';
 const mockGatewayContractId = 'mockGatewayAddress.contract_name';

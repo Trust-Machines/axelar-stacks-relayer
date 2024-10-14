@@ -32,15 +32,6 @@ export class ApiConfigService {
     return hiroUrl;
   }
 
-  getGatewayUrl(): string {
-    const gatewayUrl = this.configService.get<string>('GATEWAY_URL');
-    if (!gatewayUrl) {
-      throw new Error('No Gateway url present');
-    }
-
-    return gatewayUrl;
-  }
-
   getRedisUrl(): string {
     const redisUrl = this.configService.get<string>('REDIS_URL');
     if (!redisUrl) {
@@ -71,30 +62,57 @@ export class ApiConfigService {
   }
 
   getContractGateway(): string {
-    const contractGateway = this.configService.get<string>('CONTRACT_GATEWAY');
+    const contractGateway = this.configService.get<string>('CONTRACT_ID_GATEWAY');
     if (!contractGateway) {
       throw new Error('No Contract Gateway present');
     }
 
-    return contractGateway;
+    return contractGateway.split('.')[0];
+  }
+
+  getGatewayContractName(): string {
+    const contractGateway = this.configService.get<string>('CONTRACT_ID_GATEWAY');
+    if (!contractGateway) {
+      throw new Error('No Contract Gateway present');
+    }
+
+    return contractGateway.split('.')[1];
   }
 
   getContractGasService(): string {
-    const contractGasService = this.configService.get<string>('CONTRACT_GAS_SERVICE');
+    const contractGasService = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE');
     if (!contractGasService) {
       throw new Error('No Contract Gas Service present');
     }
 
-    return contractGasService;
+    return contractGasService.split('.')[0];
+  }
+
+  getGasServiceContractName(): string {
+    const contractGasService = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE');
+    if (!contractGasService) {
+      throw new Error('No Contract Gas Service present');
+    }
+
+    return contractGasService.split('.')[1];
   }
 
   getContractIts(): string {
-    const contractIts = this.configService.get<string>('CONTRACT_ITS');
+    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS');
     if (!contractIts) {
       throw new Error('No Contract ITS present');
     }
 
-    return contractIts;
+    return contractIts.split('.')[0];
+  }
+
+  getItsContractName(): string {
+    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS');
+    if (!contractIts) {
+      throw new Error('No Contract ITS present');
+    }
+
+    return contractIts.split('.')[1];
   }
 
   getAxelarContractVotingVerifier(): string {
@@ -142,13 +160,13 @@ export class ApiConfigService {
     return network;
   }
 
-  getWalletMnemonic(): string {
-    const walletMnemonic = this.configService.get<string>('WALLET_MNEMONIC');
-    if (!walletMnemonic) {
-      throw new Error('No Wallet Mnemonic present');
+  getWalletPrivateKey(): string {
+    const privateKey = this.configService.get<string>('WALLET_PRIVATE_KEY');
+    if (!privateKey) {
+      throw new Error('No Wallet Private Key present');
     }
 
-    return walletMnemonic;
+    return privateKey;
   }
 
   getPoolLimit(): number {

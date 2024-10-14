@@ -1,16 +1,13 @@
-import { ApiConfigService } from '@stacks-monorepo/common';
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
+import { ApiConfigService } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { ApiNetworkProvider, TransactionEvent, TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
-import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { GasServiceProcessor, GatewayProcessor } from './processors';
-import axios from 'axios';
 import { ScEvent } from '../event-processor/types';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
+import { GasServiceProcessor, GatewayProcessor } from './processors';
 
 const mockTransactionResponse = {
   tx_id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
@@ -22,9 +19,6 @@ const mockTransactionResponse = {
   },
 };
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
-
 const mockGatewayContractId = 'mockGatewayAddress.contract_name';
 const mockGasContractId = 'mockGasAddress.gas_contract_name';
 
@@ -33,8 +27,8 @@ describe('CrossChainTransactionProcessor', () => {
   let gasServiceProcessor: DeepMocked<GasServiceProcessor>;
   let axelarGmpApi: DeepMocked<AxelarGmpApi>;
   let redisHelper: DeepMocked<RedisHelper>;
-  let api: DeepMocked<ApiNetworkProvider>;
   let apiConfigService: DeepMocked<ApiConfigService>;
+  let hiroApi: DeepMocked<HiroApiHelper>;
 
   let service: CrossChainTransactionProcessorService;
 
@@ -43,12 +37,11 @@ describe('CrossChainTransactionProcessor', () => {
     gasServiceProcessor = createMock();
     axelarGmpApi = createMock();
     redisHelper = createMock();
-    api = createMock();
     apiConfigService = createMock();
+    hiroApi = createMock();
 
     apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
     apiConfigService.getContractGasService.mockReturnValue('mockGasAddress');
-    apiConfigService.getHiroApiUrl.mockReturnValue('mockHiroUrl');
 
     const moduleRef = await Test.createTestingModule({
       providers: [CrossChainTransactionProcessorService],
@@ -70,12 +63,12 @@ describe('CrossChainTransactionProcessor', () => {
           return redisHelper;
         }
 
-        if (token === ApiNetworkProvider) {
-          return api;
-        }
-
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === HiroApiHelper) {
+          return hiroApi;
         }
 
         return null;
@@ -88,15 +81,12 @@ describe('CrossChainTransactionProcessor', () => {
   it('Should not process pending or failed transaction', async () => {
     redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHashNone', 'txHashPending', 'txHashFailed']));
 
-    mockedAxios.get.mockImplementation((url: string) => {
-      const urlParts = url.split('/');
-      const txHash = urlParts[urlParts.length - 1];
-
+    hiroApi.getTransactionWithFee.mockImplementation((txHash: string) => {
       if (txHash === 'txHashNone') {
         throw new Error('not found');
       }
 
-      const transaction = { ...mockTransactionResponse };
+      const transaction = { ...(mockTransactionResponse as any) };
       transaction.tx_id = txHash;
 
       if (txHash === 'txHashPending') {
@@ -105,7 +95,7 @@ describe('CrossChainTransactionProcessor', () => {
         transaction.tx_status = 'failed';
       }
 
-      return Promise.resolve({ data: transaction });
+      return Promise.resolve({ transaction, fee: transaction.fee_rate });
     });
 
     await service.processCrossChainTransactionsRaw();
@@ -159,7 +149,7 @@ describe('CrossChainTransactionProcessor', () => {
       },
     };
 
-    const transaction = { ...mockTransactionResponse };
+    const transaction = { ...(mockTransactionResponse as any) };
     transaction.tx_id = 'txHash';
     transaction.tx_status = 'success';
     transaction.fee_rate = '180';
@@ -169,8 +159,9 @@ describe('CrossChainTransactionProcessor', () => {
       transaction.events = [rawGasEvent, rawGatewayEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      mockedAxios.get.mockResolvedValueOnce({
-        data: transaction,
+      hiroApi.getTransactionWithFee.mockResolvedValueOnce({
+        transaction: transaction,
+        fee: transaction.fee_rate,
       });
 
       await service.processCrossChainTransactionsRaw();
@@ -201,7 +192,10 @@ describe('CrossChainTransactionProcessor', () => {
       transaction.events = [rawApprovedEvent, rawApprovedEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
+      hiroApi.getTransactionWithFee.mockResolvedValueOnce({
+        transaction: transaction,
+        fee: transaction.fee_rate,
+      });
 
       gatewayProcessor.handleGatewayEvent.mockReturnValue(
         Promise.resolve({
@@ -249,7 +243,10 @@ describe('CrossChainTransactionProcessor', () => {
       transaction.events = [];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
+      hiroApi.getTransactionWithFee.mockResolvedValueOnce({
+        transaction: transaction,
+        fee: transaction.fee_rate,
+      });
 
       await service.processCrossChainTransactionsRaw();
 
@@ -263,7 +260,10 @@ describe('CrossChainTransactionProcessor', () => {
       transaction.events = [rawGasEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
-      mockedAxios.get.mockReturnValueOnce(Promise.resolve({ data: transaction }));
+      hiroApi.getTransactionWithFee.mockResolvedValueOnce({
+        transaction: transaction,
+        fee: transaction.fee_rate,
+      });
 
       axelarGmpApi.postEvents.mockRejectedValueOnce('Network error');
 
