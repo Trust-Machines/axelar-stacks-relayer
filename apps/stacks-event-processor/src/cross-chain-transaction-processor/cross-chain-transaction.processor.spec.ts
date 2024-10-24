@@ -113,7 +113,7 @@ describe('CrossChainTransactionProcessor', () => {
       tx_id: 'txHash',
       contract_log: {
         contract_id: mockGasContractId,
-        topic: Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT,
+        topic: Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT,
         value: {
           hex: '',
           repr: '',

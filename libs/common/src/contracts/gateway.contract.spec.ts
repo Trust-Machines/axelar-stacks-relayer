@@ -9,6 +9,7 @@ import { bufferCV, serializeCV, tupleCV, bufferCVFromString, principalCV, listCV
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { hex } from '@scure/base';
 import BigNumber from 'bignumber.js';
+import { getMockScEvent } from './gas-service.contract.spec';
 
 describe('GatewayContract', () => {
   let contract: GatewayContract;
@@ -63,19 +64,7 @@ describe('GatewayContract', () => {
       ),
     );
 
-    const mockScEvent: ScEvent = {
-      tx_id: '1',
-      event_index: 0,
-      event_type: 'smart_contract_log',
-      contract_log: {
-        contract_id: '',
-        topic: 'print',
-        value: {
-          hex: `0x${hex.encode(message.buffer)}`,
-          repr: '',
-        },
-      },
-    };
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
       const result = contract.decodeContractCallEvent(mockScEvent);
@@ -102,28 +91,16 @@ describe('GatewayContract', () => {
         tupleCV({
           'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
           'source-chain': bufferCVFromString('ethereum'),
-          'message-id': bufferFromHex('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
-          'source-address': bufferFromHex('000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'),
-          'contract-address': bufferFromHex('000F9B4FF55aFcC3C4f9f325EE890c0C806E8FCC'),
+          'message-id': bufferCVFromString('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          'source-address': bufferCVFromString('000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'),
+          'contract-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
           'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
           type: bufferCVFromString('contract-call'),
         }),
       ),
     );
 
-    const mockScEvent: ScEvent = {
-      tx_id: '1',
-      event_index: 0,
-      event_type: 'smart_contract_log',
-      contract_log: {
-        contract_id: '',
-        topic: 'print',
-        value: {
-          hex: `0x${hex.encode(message.buffer)}`,
-          repr: '',
-        },
-      },
-    };
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
       const result = contract.decodeMessageApprovedEvent(mockScEvent);
@@ -131,9 +108,9 @@ describe('GatewayContract', () => {
       expect(result).toEqual({
         commandId: '0x0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
         sourceChain: 'ethereum',
-        sourceAddress: '0x000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'.toLowerCase(),
-        messageId: '0xfe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
-        contractAddress: '0x000F9B4FF55aFcC3C4f9f325EE890c0C806E8FCC'.toLowerCase(),
+        sourceAddress: '000E91D671C29c2DBBc81D16adA4a8bDd6fE518F',
+        messageId: 'fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
+        contractAddress: 'SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV',
         payloadHash: '0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
       });
     });
@@ -172,19 +149,7 @@ describe('GatewayContract', () => {
       ),
     );
 
-    const mockScEvent: ScEvent = {
-      tx_id: '1',
-      event_index: 0,
-      event_type: 'smart_contract_log',
-      contract_log: {
-        contract_id: '',
-        topic: 'print',
-        value: {
-          hex: `0x${hex.encode(message.buffer)}`,
-          repr: '',
-        },
-      },
-    };
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
       const result = contract.decodeSignersRotatedEvent(mockScEvent);
@@ -211,25 +176,13 @@ describe('GatewayContract', () => {
         tupleCV({
           'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
           'source-chain': bufferCVFromString('ethereum'),
-          'message-id': bufferFromHex('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          'message-id': bufferCVFromString('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
           type: bufferCVFromString('message-executed'),
         }),
       ),
     );
 
-    const mockScEvent: ScEvent = {
-      tx_id: '1',
-      event_index: 0,
-      event_type: 'smart_contract_log',
-      contract_log: {
-        contract_id: '',
-        topic: 'print',
-        value: {
-          hex: `0x${hex.encode(message.buffer)}`,
-          repr: '',
-        },
-      },
-    };
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
       const result = contract.decodeMessageExecutedEvent(mockScEvent);
@@ -237,7 +190,7 @@ describe('GatewayContract', () => {
       expect(result).toEqual({
         commandId: '0x0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
         sourceChain: 'ethereum',
-        messageId: '0xfe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
+        messageId: 'fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
       });
     });
 

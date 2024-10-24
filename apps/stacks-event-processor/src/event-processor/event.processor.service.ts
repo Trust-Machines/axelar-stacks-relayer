@@ -93,9 +93,7 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
       const eventName = getEventType(event);
 
       const validEvent =
-        eventName === Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT ||
         eventName === Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT ||
-        eventName === Events.GAS_ADDED_EVENT ||
         eventName === Events.NATIVE_GAS_ADDED_EVENT ||
         eventName === Events.REFUNDED_EVENT;
 

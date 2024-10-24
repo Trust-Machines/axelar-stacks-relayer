@@ -260,7 +260,6 @@ export class ApprovalsProcessorService {
       messageTxHash.slice(2), // Remove 0x from start
       logIndex,
       response.refundRecipientAddress,
-      response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER,
       response.remainingGasBalance.amount,
     );
 

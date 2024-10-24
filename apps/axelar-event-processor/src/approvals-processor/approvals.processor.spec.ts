@@ -534,7 +534,6 @@ describe('ApprovalsProcessorService', () => {
         'messageTxHash',
         '1',
         'recipientAddress',
-        token,
         '1000',
       );
       expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
@@ -704,7 +703,7 @@ describe('ApprovalsProcessorService', () => {
                   refundRecipientAddress: 'recipientAddress',
                   remainingGasBalance: {
                     amount: '1000',
-                    tokenID: 'WEGLD-123456',
+                    tokenID: 'TOKEN-123456',
                   },
                   message: {
                     messageID: '0xmessageTxHash-1',
@@ -725,7 +724,7 @@ describe('ApprovalsProcessorService', () => {
       hiroApiHelper.getAccountBalance.mockResolvedValue({
         fungible_tokens: {
           'TOKEN-123456': {
-            balance: '10000',
+            balance: '999',
             total_sent: '0',
             total_received: '10000',
           },

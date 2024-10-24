@@ -42,8 +42,8 @@ export const contractCallDecoder = (json: any): ContractCallEvent => ({
 export const messageApprovedDecoder = (json: any): MessageApprovedEvent => ({
   commandId: json['command-id'].value,
   sourceChain: DecodingUtils.decodeHexToAscii(json['source-chain'].value),
-  messageId: json['message-id'].value,
-  sourceAddress: json['source-address'].value,
+  messageId: DecodingUtils.decodeHexToAscii(json['message-id'].value),
+  sourceAddress: DecodingUtils.decodeHexToAscii(json['source-address'].value),
   contractAddress: json['contract-address'].value,
   payloadHash: json['payload-hash'].value,
 });
@@ -51,7 +51,7 @@ export const messageApprovedDecoder = (json: any): MessageApprovedEvent => ({
 export const messageExecutedDecoder = (json: any): MessageExecutedEvent => ({
   commandId: json['command-id'].value,
   sourceChain: DecodingUtils.decodeHexToAscii(json['source-chain'].value),
-  messageId: json['message-id'].value,
+  messageId: DecodingUtils.decodeHexToAscii(json['message-id'].value),
 });
 
 export const weightedSignersDecoder = (json: any): WeightedSignersEvent => ({
@@ -67,30 +67,21 @@ export const gasPaidForContractCallDecoder = (json: any): GasPaidForContractCall
   sender: json['sender'].value,
   destinationChain: DecodingUtils.decodeHexToAscii(json['destination-chain'].value),
   destinationAddress: DecodingUtils.decodeHexToAscii(json['destination-contract-address'].value),
-  data: {
-    payloadHash: json['payload-hash'].value,
-    gasToken: json['gas-token'] ? DecodingUtils.decodeHexToAscii(json['gas-token'].value) : null,
-    gasFeeAmount: new BigNumber(json['gas-fee-amount'].value),
-    refundAddress: DecodingUtils.decodeHexToAscii(json['refund-address'].value),
-  },
+  payloadHash: json['payload-hash'].value,
+  amount: new BigNumber(json['amount'].value),
+  refundAddress: json['refund-address'].value,
 });
 
 export const gasAddedDecoder = (json: any): GasAddedEvent => ({
   txHash: json['tx-hash'].value,
-  logIndex: parseInt(json['log-index'].value, 10),
-  data: {
-    gasToken: json['gas-token'] ? DecodingUtils.decodeHexToAscii(json['gas-token'].value) : null,
-    gasFeeAmount: new BigNumber(json['gas-fee-amount'].value),
-    refundAddress: DecodingUtils.decodeHexToAscii(json['refund-address'].value),
-  },
+  logIndex: parseInt(json['log-index'].value),
+  amount: new BigNumber(json['amount'].value),
+  refundAddress: json['refund-address'].value,
 });
 
 export const refundedDecoder = (json: any): RefundedEvent => ({
   txHash: json['tx-hash'].value,
-  logIndex: parseInt(json['log-index'].value, 10),
-  data: {
-    receiver: DecodingUtils.decodeHexToAscii(json['receiver'].value),
-    token: json['token'] ? DecodingUtils.decodeHexToAscii(json['token'].value) : null,
-    amount: new BigNumber(json['amount'].value),
-  },
+  logIndex: parseInt(json['log-index'].value),
+  receiver: json['receiver'].value,
+  amount: new BigNumber(json['amount'].value),
 });

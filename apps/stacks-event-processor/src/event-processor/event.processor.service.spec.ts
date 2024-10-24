@@ -80,7 +80,7 @@ describe('EventProcessorService', () => {
       const message = bufferCV(
         serializeCV(
           tupleCV({
-            type: stringAsciiCV(Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT),
+            type: stringAsciiCV(Events.NATIVE_GAS_ADDED_EVENT),
           }),
         ),
       );

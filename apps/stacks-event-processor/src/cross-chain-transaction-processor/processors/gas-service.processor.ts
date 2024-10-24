@@ -32,23 +32,6 @@ export class GasServiceProcessor {
   handleGasServiceEvent(rawEvent: ScEvent, transaction: Transaction, index: number, fee: string): Event | undefined {
     const eventName = getEventType(rawEvent);
 
-    if (eventName === Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
-      const gasEvent = this.gasServiceContract.decodeGasPaidForContractCallEvent(rawEvent);
-
-      const callContractIndex = this.findCorrespondingCallContractEvent(transaction, index, gasEvent);
-
-      if (callContractIndex === -1) {
-        this.logger.warn(
-          `Received Gas Paid For Contract Call event but could not find corresponding Call Contract event. Transaction: ${transaction.tx_id}`,
-          gasEvent,
-        );
-
-        return undefined;
-      }
-
-      return this.handleGasPaidEvent(gasEvent, transaction.tx_id, index, callContractIndex);
-    }
-
     if (eventName === Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
       const gasEvent = this.gasServiceContract.decodeNativeGasPaidForContractCallEvent(rawEvent);
 
@@ -64,12 +47,6 @@ export class GasServiceProcessor {
       }
 
       return this.handleGasPaidEvent(gasEvent, transaction.tx_id, index, callContractIndex);
-    }
-
-    if (eventName === Events.GAS_ADDED_EVENT) {
-      const event = this.gasServiceContract.decodeGasAddedEvent(rawEvent);
-
-      return this.handleGasAddedEvent(event, transaction.sender_address, transaction.tx_id, index);
     }
 
     if (eventName === Events.NATIVE_GAS_ADDED_EVENT) {
@@ -96,10 +73,10 @@ export class GasServiceProcessor {
     const gasCreditEvent: GasCreditEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(txHash, contractCallIndex),
-      refundAddress: event.data.refundAddress,
+      refundAddress: event.refundAddress,
       payment: {
-        tokenID: event.data.gasToken,
-        amount: event.data.gasFeeAmount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       meta: {
         txID: txHash,
@@ -123,10 +100,10 @@ export class GasServiceProcessor {
     const gasCreditEvent: GasCreditEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(event.txHash, event.logIndex),
-      refundAddress: event.data.refundAddress,
+      refundAddress: event.refundAddress,
       payment: {
-        tokenID: event.data.gasToken,
-        amount: event.data.gasFeeAmount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       meta: {
         txID: txHash,
@@ -156,10 +133,10 @@ export class GasServiceProcessor {
     const gasRefundedEvent: GasRefundedEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(event.txHash, event.logIndex),
-      recipientAddress: event.data.receiver,
+      recipientAddress: event.receiver,
       refundedAmount: {
-        tokenID: event.data.token,
-        amount: event.data.amount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       cost: {
         amount: fee,
@@ -201,7 +178,7 @@ export class GasServiceProcessor {
           gasEvent.sender === contractCallEvent.sender &&
           gasEvent.destinationChain === contractCallEvent.destinationChain &&
           gasEvent.destinationAddress === contractCallEvent.destinationAddress &&
-          gasEvent.data.payloadHash === contractCallEvent.payloadHash
+          gasEvent.payloadHash === contractCallEvent.payloadHash
         );
       }
 

@@ -2,32 +2,23 @@ import BigNumber from 'bignumber.js';
 
 export interface GasPaidForContractCallEvent {
   sender: string;
+  amount: BigNumber;
+  refundAddress: string;
   destinationChain: string;
   destinationAddress: string;
-  data: {
-    payloadHash: string;
-    gasToken: string | null; // null if EGLD
-    gasFeeAmount: BigNumber;
-    refundAddress: string;
-  };
+  payloadHash: string;
 }
 
 export interface GasAddedEvent {
+  amount: BigNumber;
+  refundAddress: string;
   txHash: string;
   logIndex: number;
-  data: {
-    gasToken: string | null; // null if EGLD
-    gasFeeAmount: BigNumber;
-    refundAddress: string;
-  };
 }
 
 export interface RefundedEvent {
   txHash: string;
   logIndex: number;
-  data: {
-    receiver: string;
-    token: string | null; // null if EGLD
-    amount: BigNumber;
-  };
+  receiver: string;
+  amount: BigNumber;
 }

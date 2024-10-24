@@ -1,11 +1,19 @@
-import { Injectable, NotImplementedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
   RefundedEvent,
 } from '@stacks-monorepo/common/contracts/entities/gas-service-events';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { StacksNetwork } from '@stacks/network';
+import {
+  AnchorMode,
+  bufferCVFromString,
+  listCV,
+  makeContractCall,
+  principalCV,
+  StacksTransaction,
+  uintCV,
+} from '@stacks/transactions';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import BigNumber from 'bignumber.js';
 import {
@@ -14,17 +22,7 @@ import {
   gasPaidForContractCallDecoder,
   refundedDecoder,
 } from '../utils/decoding.utils';
-import {
-  AnchorMode,
-  bufferCV,
-  bufferCVFromString,
-  listCV,
-  makeContractCall,
-  principalCV,
-  StacksTransaction,
-} from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
-import { BinaryUtils } from '../utils';
 
 @Injectable()
 export class GasServiceContract {
@@ -34,15 +32,12 @@ export class GasServiceContract {
     private readonly network: StacksNetwork,
   ) {}
 
-  async collectFees(sender: string, tokens: string[], amounts: BigNumber[]): Promise<StacksTransaction> {
+  async collectFees(sender: string, receiver: string, amount: string): Promise<StacksTransaction> {
     return await makeContractCall({
       contractAddress: this.contract,
       contractName: this.contractName,
       functionName: 'collectFees',
-      functionArgs: [
-        listCV([...tokens.map((token) => bufferCVFromString(token))]),
-        listCV([...amounts.map((amount) => bufferFromHex(BinaryUtils.stringToHex(amount.toFixed())))]),
-      ],
+      functionArgs: [principalCV(receiver), uintCV(amount)],
       senderKey: sender,
       network: this.network,
       anchorMode: AnchorMode.Any,
@@ -54,7 +49,6 @@ export class GasServiceContract {
     txHash: string,
     logIndex: string,
     receiver: string,
-    token: string,
     amount: string,
   ): Promise<StacksTransaction> {
     return await makeContractCall({
@@ -62,11 +56,10 @@ export class GasServiceContract {
       contractName: this.contractName,
       functionName: 'refund',
       functionArgs: [
-        bufferFromHex(txHash),
-        bufferFromHex(BinaryUtils.stringToHex(logIndex)),
+        bufferFromHex(Buffer.from(txHash, 'hex').toString()),
+        uintCV(logIndex),
         principalCV(receiver),
-        bufferCVFromString(token),
-        bufferFromHex(BinaryUtils.stringToHex(amount)),
+        uintCV(amount),
       ],
       senderKey: sender,
       network: this.network,
@@ -74,16 +67,8 @@ export class GasServiceContract {
     });
   }
 
-  decodeGasPaidForContractCallEvent(event: ScEvent): GasPaidForContractCallEvent {
-    return DecodingUtils.decodeEvent<GasPaidForContractCallEvent>(event, gasPaidForContractCallDecoder);
-  }
-
   decodeNativeGasPaidForContractCallEvent(event: ScEvent): GasPaidForContractCallEvent {
     return DecodingUtils.decodeEvent<GasPaidForContractCallEvent>(event, gasPaidForContractCallDecoder);
-  }
-
-  decodeGasAddedEvent(event: ScEvent): GasAddedEvent {
-    return DecodingUtils.decodeEvent<GasAddedEvent>(event, gasAddedDecoder);
   }
 
   decodeNativeGasAddedEvent(event: ScEvent): GasAddedEvent {

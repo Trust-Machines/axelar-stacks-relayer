@@ -84,15 +84,13 @@ describe('GasServiceProcessor', () => {
     const result = service.handleGasServiceEvent(rawEvent, createMock(), 0, '100');
 
     expect(result).toBeUndefined();
-    expect(gasServiceContract.decodeGasPaidForContractCallEvent).not.toHaveBeenCalled();
     expect(gasServiceContract.decodeNativeGasPaidForContractCallEvent).not.toHaveBeenCalled();
-    expect(gasServiceContract.decodeGasAddedEvent).not.toHaveBeenCalled();
     expect(gasServiceContract.decodeNativeGasAddedEvent).not.toHaveBeenCalled();
     expect(gasServiceContract.decodeRefundedEvent).not.toHaveBeenCalled();
   });
 
   const getMockGasPaid = (
-    eventName: string = Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT,
+    eventName: string = Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT,
     gasToken: string | null = 'STX',
   ) => {
     const message = bufferCV(
@@ -121,12 +119,9 @@ describe('GasServiceProcessor', () => {
       sender: 'senderAddress',
       destinationChain: 'ethereum',
       destinationAddress: 'destinationAddress',
-      data: {
-        payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
-        gasToken,
-        gasFeeAmount: new BigNumber('654321'),
-        refundAddress: 'refundAddress',
-      },
+      payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
+      amount: new BigNumber('654321'),
+      refundAddress: 'refundAddress',
     };
 
     return { rawEvent, event };
@@ -200,23 +195,6 @@ describe('GasServiceProcessor', () => {
     });
   }
 
-  describe('Handle event gas paid for contract call', () => {
-    const { rawEvent, event } = getMockGasPaid();
-
-    it('Should handle', () => {
-      gasServiceContract.decodeGasPaidForContractCallEvent.mockReturnValueOnce(event);
-      gatewayContract.decodeContractCallEvent.mockReturnValueOnce(contractCallEvent);
-
-      assertEventGasPaidForContractCall(rawEvent);
-    });
-
-    it('Should not handle if contract call event not found', () => {
-      gasServiceContract.decodeGasPaidForContractCallEvent.mockReturnValueOnce(event);
-
-      assertEventGasPaidForContractCall(rawEvent, false);
-    });
-  });
-
   describe('Handle event native gas paid for contract call', () => {
     const { rawEvent, event } = getMockGasPaid(Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT, null);
 
@@ -234,7 +212,7 @@ describe('GasServiceProcessor', () => {
     });
   });
 
-  const getMockGasAdded = (eventName: string = Events.GAS_ADDED_EVENT, gasToken: string | null = 'STX') => {
+  const getMockGasAdded = (eventName: string = Events.NATIVE_GAS_ADDED_EVENT, gasToken: string | null = 'STX') => {
     const message = bufferCV(
       serializeCV(
         tupleCV({
@@ -260,11 +238,8 @@ describe('GasServiceProcessor', () => {
     const event: GasAddedEvent = {
       txHash: 'txHash',
       logIndex: 1,
-      data: {
-        gasToken,
-        gasFeeAmount: new BigNumber('1000'),
-        refundAddress: 'refundAddress',
-      },
+      amount: new BigNumber('1000'),
+      refundAddress: 'refundAddress',
     };
 
     return { rawEvent, event };
@@ -295,16 +270,6 @@ describe('GasServiceProcessor', () => {
       finalized: true,
     });
   }
-
-  describe('Handle event gas added', () => {
-    const { rawEvent, event } = getMockGasAdded();
-
-    it('Should handle', () => {
-      gasServiceContract.decodeGasAddedEvent.mockReturnValueOnce(event);
-
-      assertGasAddedEvent(rawEvent);
-    });
-  });
 
   describe('Handle event native gas added', () => {
     const { rawEvent, event } = getMockGasAdded(Events.NATIVE_GAS_ADDED_EVENT, null);
@@ -342,11 +307,8 @@ describe('GasServiceProcessor', () => {
     const refundedEvent: RefundedEvent = {
       txHash: 'txHash',
       logIndex: 1,
-      data: {
-        token: null,
-        amount: new BigNumber('500'),
-        receiver: 'senderAddress',
-      },
+      amount: new BigNumber('500'),
+      receiver: 'senderAddress',
     };
 
     it('Should handle', () => {
