@@ -173,9 +173,7 @@ describe('GatewayProcessor', () => {
       expect(event.message.sourceChain).toBe(CONSTANTS.SOURCE_CHAIN_NAME);
       expect(event.message.sourceAddress).toBe(contractCallEvent.sender);
       expect(event.message.destinationAddress).toBe(contractCallEvent.destinationAddress);
-      expect(event.message.payloadHash).toBe(
-        Buffer.from(contractCallEvent.payloadHash.slice(2), 'hex').toString('base64'),
-      );
+      expect(event.message.payloadHash).toBe(BinaryUtils.hexToBase64(contractCallEvent.payloadHash));
       expect(event.destinationChain).toBe(contractCallEvent.destinationChain);
       expect(event.payload).toBe(contractCallEvent.payload.toString('base64'));
       expect(event.meta).toEqual({

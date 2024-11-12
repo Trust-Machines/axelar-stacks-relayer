@@ -38,7 +38,7 @@ import RefundTask = Components.Schemas.RefundTask;
 const MAX_NUMBER_OF_RETRIES = 3;
 const CONSTRUCT_PROOF_POLL_TIMEOUT_MILLIS = 10_000;
 const CONSTRUCT_PROOF_POLL_INTERVAL = 3_000;
-const AXELAR_CHAIN = 'axelarnet'; // TODO: Update it to 'axelar'
+export const AXELAR_CHAIN = 'axelarnet'; // TODO: Update it to 'axelar'
 
 @Injectable()
 export class ApprovalsProcessorService {

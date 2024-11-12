@@ -13,7 +13,7 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { StacksTransaction } from '@stacks/transactions';
 import { randomUUID } from 'crypto';
-import { ApprovalsProcessorService } from './approvals.processor.service';
+import { ApprovalsProcessorService, AXELAR_CHAIN } from './approvals.processor.service';
 import { PendingConstructProof } from './entities/pending-construct-proof';
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
@@ -857,8 +857,8 @@ describe('ApprovalsProcessorService', () => {
     it('should add multiple entries in Redis for multiple messages if sourceAddress is a Axelar ITS', async () => {
       const response = {
         messages: [
-          { source_chain: 'axelar', message_id: 'msg1', payload: 'payload1', source_address: AXELAR_ITS_CONTRACT },
-          { source_chain: 'axelar', message_id: 'msg2', payload: 'payload2', source_address: AXELAR_ITS_CONTRACT },
+          { source_chain: AXELAR_CHAIN, message_id: 'msg1', payload: 'payload1', source_address: AXELAR_ITS_CONTRACT },
+          { source_chain: AXELAR_CHAIN, message_id: 'msg2', payload: 'payload2', source_address: AXELAR_ITS_CONTRACT },
         ],
       };
 
