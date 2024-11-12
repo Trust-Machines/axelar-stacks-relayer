@@ -7,6 +7,7 @@ import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { TransactionsHelper } from '../transactions.helper';
 import { DeployInterchainToken } from './messages/hub.message.types';
 import { TokenType } from './types/token-type';
+import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 
 @Injectable()
 export class NativeInterchainTokenContract implements OnModuleInit {
@@ -74,7 +75,7 @@ export class NativeInterchainTokenContract implements OnModuleInit {
         stringAsciiCV(message.symbol),
         uintCV(message.decimals),
         optionalCVOf(), // token uri
-        optionalCVOf(message.minter !== '0x' ? principalCV(message.minter) : undefined),
+        optionalCVOf(isEmptyData(message.minter) ? undefined : principalCV(message.minter)),
       ],
       senderKey,
       network: this.network,

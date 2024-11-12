@@ -39,6 +39,7 @@ import { TokenType } from './types/token-type';
 import { TokenInfo } from './types/token.info';
 import { delay } from '@stacks-monorepo/common/utils/await-success';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 
 const GAS_VALUE = 10n; // TODO: Check these values before going on mainnet
 const GAS_VALUE_VERIFY = 100n;
@@ -151,7 +152,9 @@ export class ItsContract {
 
     const innerMessage = message.payload as InterchainTransfer;
 
-    const destinationContract = innerMessage.data ? principalCV(innerMessage.data) : optionalCVOf();
+    const destinationContract = optionalCVOf(
+      isEmptyData(innerMessage.data) ? undefined : principalCV(innerMessage.data),
+    );
     const payload = HubMessage.clarityEncode(message);
 
     return await this.transactionsHelper.makeContractCall({
