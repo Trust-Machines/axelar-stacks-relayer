@@ -1,23 +1,25 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ApiConfigService } from '@stacks-monorepo/common/config';
-import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { Client as AxelarGmpApiClient, Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import {
+  Client as AxelarGmpApiClient,
+  BroadcastID,
+  BroadcastRequest,
+  Components,
+} from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { ApiConfigService } from '../config';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
 import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;
 
 @Injectable()
 export class AxelarGmpApi {
-  // @ts-ignore
-  private readonly axelarContractVotingVerifier: string;
   private readonly logger: Logger;
 
   constructor(
     @Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient,
-    apiConfigService: ApiConfigService,
+    private readonly apiConfigService: ApiConfigService,
   ) {
-    this.axelarContractVotingVerifier = apiConfigService.getAxelarContractVotingVerifier();
     this.logger = new Logger(AxelarGmpApi.name);
   }
 
@@ -65,5 +67,25 @@ export class AxelarGmpApi {
       after: lastUUID,
       limit,
     });
+  }
+
+  async broadcastMsgExecuteContract(request: BroadcastRequest) {
+    const response = await this.apiClient.broadcastMsgExecuteContract(
+      {
+        wasmContractAddress: this.apiConfigService.getMultisigProverContract(),
+      },
+      request,
+    );
+
+    return response.data.broadcastID;
+  }
+
+  async getMsgExecuteContractBroadcastStatus(id: BroadcastID): Promise<Components.Schemas.BroadcastStatus> {
+    const response = await this.apiClient.getMsgExecuteContractBroadcastStatus({
+      wasmContractAddress: this.apiConfigService.getMultisigProverContract(),
+      broadcastID: id,
+    });
+
+    return response.data.status;
   }
 }

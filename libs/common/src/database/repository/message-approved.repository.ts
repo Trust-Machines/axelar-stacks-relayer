@@ -24,8 +24,8 @@ export class MessageApprovedRepository {
   }
 
   findPending(page: number = 0, take: number = 10): Promise<MessageApproved[] | null> {
-    // Last updated more than one minute ago, if retrying
-    const lastUpdatedAt = new Date(new Date().getTime() - 60_000);
+    // Last updated more than six minutes ago, if retrying
+    const lastUpdatedAt = new Date(new Date().getTime() - 360_000);
 
     return this.prisma.messageApproved.findMany({
       where: {

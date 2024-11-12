@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   ContractCallEvent,
+  GatewayExternalData,
   MessageApprovedEvent,
   MessageExecutedEvent,
   WeightedSignersEvent,
@@ -13,28 +14,43 @@ import {
   weightedSignersDecoder,
 } from '@stacks-monorepo/common/utils/decoding.utils';
 import { StacksNetwork } from '@stacks/network';
-import { AnchorMode, makeContractCall, StacksTransaction } from '@stacks/transactions';
+import { AnchorMode, SignedContractCallOptions, StacksTransaction } from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { splitContractId } from '../utils/split-contract-id';
+import { TransactionsHelper } from './transactions.helper';
 
 @Injectable()
 export class GatewayContract {
-  constructor(
-    private readonly contract: string,
-    private readonly contractName: string,
-    private readonly network: StacksNetwork,
-  ) {}
+  private readonly contractAddress;
+  private readonly contractName;
 
-  async buildTransactionExternalFunction(externalData: string, senderKey: string): Promise<StacksTransaction> {
-    return await makeContractCall({
-      contractAddress: this.contract,
+  constructor(
+    contract: string,
+    private readonly network: StacksNetwork,
+    private readonly transactionsHelper: TransactionsHelper,
+  ) {
+    [this.contractAddress, this.contractName] = splitContractId(contract);
+  }
+
+  async buildTransactionExternalFunction(
+    externalData: GatewayExternalData,
+    senderKey: string,
+    fee?: bigint,
+  ): Promise<StacksTransaction> {
+    const opts: SignedContractCallOptions = {
+      contractAddress: this.contractAddress,
       contractName: this.contractName,
-      functionName: 'TODO',
-      functionArgs: [],
+      functionName: externalData.function,
+      functionArgs: [bufferFromHex(externalData.data), bufferFromHex(externalData.proof)],
       senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,
-    });
-    // TODO: implement Stacks transaction function name and function args
+    };
+    if (fee) {
+      opts.fee = fee;
+    }
+    return await this.transactionsHelper.makeContractCall(opts, fee === undefined);
   }
 
   decodeContractCallEvent(event: ScEvent): ContractCallEvent {

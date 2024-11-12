@@ -1,38 +1,34 @@
+import { DeepMocked, createMock } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { StacksNetwork } from '@stacks/network';
-import { DeepMocked, createMock } from '@golevelup/ts-jest';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { bufferCV, listCV, principalCV, serializeCV, stringAsciiCV, tupleCV, uintCV } from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
+import BigNumber from 'bignumber.js';
 import { ApiConfigService } from '../config';
 import { ProviderKeys } from '../utils/provider.enum';
-import { bufferCV, serializeCV, tupleCV, bufferCVFromString, principalCV, listCV, uintCV } from '@stacks/transactions';
-import { bufferFromHex } from '@stacks/transactions/dist/cl';
-import { hex } from '@scure/base';
-import BigNumber from 'bignumber.js';
 import { getMockScEvent } from './gas-service.contract.spec';
+import { TransactionsHelper } from './transactions.helper';
 
 describe('GatewayContract', () => {
   let contract: GatewayContract;
   let mockNetwork: DeepMocked<StacksNetwork>;
   let mockApiConfigService: DeepMocked<ApiConfigService>;
+  let mockTransactionsHelper: DeepMocked<TransactionsHelper>;
 
   beforeEach(async () => {
     mockNetwork = createMock<StacksNetwork>();
     mockApiConfigService = createMock<ApiConfigService>();
+    mockTransactionsHelper = createMock<TransactionsHelper>();
 
-    mockApiConfigService.getContractGateway.mockReturnValue('mockContractAddress');
-    mockApiConfigService.getGatewayContractName.mockReturnValue('mockContractName');
+    mockApiConfigService.getContractGateway.mockReturnValue('mockContractAddress.mockContractName');
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         {
           provide: GatewayContract,
-          useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-            return new GatewayContract(
-              apiConfigService.getContractGateway(),
-              apiConfigService.getGatewayContractName(),
-              network,
-            );
+          useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+            return new GatewayContract(apiConfigService.getContractGateway(), network, mockTransactionsHelper);
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
         },
@@ -55,11 +51,11 @@ describe('GatewayContract', () => {
       serializeCV(
         tupleCV({
           sender: principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
-          'destination-chain': bufferCVFromString('ethereum'),
-          'destination-contract-address': bufferCVFromString('destinationAddress'),
+          'destination-chain': stringAsciiCV('ethereum'),
+          'destination-contract-address': stringAsciiCV('destinationAddress'),
           'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
           payload: bufferCV(Buffer.from('payload')),
-          type: bufferCVFromString('contract-call'),
+          type: stringAsciiCV('contract-call'),
         }),
       ),
     );
@@ -90,12 +86,12 @@ describe('GatewayContract', () => {
       serializeCV(
         tupleCV({
           'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
-          'source-chain': bufferCVFromString('ethereum'),
-          'message-id': bufferCVFromString('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
-          'source-address': bufferCVFromString('000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'),
+          'source-chain': stringAsciiCV('ethereum'),
+          'message-id': stringAsciiCV('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          'source-address': stringAsciiCV('000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'),
           'contract-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
           'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
-          type: bufferCVFromString('contract-call'),
+          type: stringAsciiCV('contract-call'),
         }),
       ),
     );
@@ -144,7 +140,9 @@ describe('GatewayContract', () => {
             threshold: uintCV(3),
             nonce: bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
           }),
-          type: bufferCVFromString('signers-rotated'),
+          type: stringAsciiCV('signers-rotated'),
+          epoch: uintCV(1),
+          'signers-hash': bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
         }),
       ),
     );
@@ -175,9 +173,9 @@ describe('GatewayContract', () => {
       serializeCV(
         tupleCV({
           'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
-          'source-chain': bufferCVFromString('ethereum'),
-          'message-id': bufferCVFromString('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
-          type: bufferCVFromString('message-executed'),
+          'source-chain': stringAsciiCV('ethereum'),
+          'message-id': stringAsciiCV('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          type: stringAsciiCV('message-executed'),
         }),
       ),
     );

@@ -1,72 +1,106 @@
-import { ApiConfigService, CacheInfo, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { connectWebSocketClient, StacksApiWebSocketClient } from '@stacks/blockchain-api-client';
-import { RpcAddressTxNotificationParams } from '@stacks/blockchain-api-client/src/types';
-import { getContractAddress, getEventType, ScEvent } from './types';
-import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
+import { getEventType, ScEvent } from './types';
 
 @Injectable()
-export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
+export class EventProcessorService {
   private readonly contractGateway: string;
   private readonly contractGasService: string;
-  private readonly hiroWs: string;
 
-  private client?: StacksApiWebSocketClient;
-  private gatewaySubscription?: any;
-  private gasSubscription?: any;
+  private contractGatewayEventsKey: string;
+  private contractGasServiceEventsKey: string;
 
   private readonly logger: Logger;
 
   constructor(
+    private readonly hiroApiHelper: HiroApiHelper,
     private readonly redisHelper: RedisHelper,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGateway = apiConfigService.getContractGateway();
     this.contractGasService = apiConfigService.getContractGasService();
-    this.hiroWs = apiConfigService.getHiroWsUrl();
+    this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGateway).key;
+    this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasService).key;
+
     this.logger = new Logger(EventProcessorService.name);
   }
 
-  async onModuleInit() {
-    await this.subscribeToEvents();
+  @Cron(CronExpression.EVERY_10_SECONDS)
+  async pollEvents() {
+    await Locker.lock('eventsPolling', async () => {
+      const [gatewayLastProcessedEvent, gasLastProcessedEvent] = await Promise.all([
+        this.redisHelper.get<string>(this.contractGatewayEventsKey),
+        this.redisHelper.get<string>(this.contractGasServiceEventsKey),
+      ]);
+
+      await this.getContractEvents(this.contractGateway, this.contractGatewayEventsKey, gatewayLastProcessedEvent);
+      await this.getContractEvents(this.contractGasService, this.contractGasServiceEventsKey, gasLastProcessedEvent);
+    });
   }
 
-  async onModuleDestroy() {
-    await this.unsubscribe();
-  }
+  private async getContractEvents(contractId: string, redisKey: string, lastProcessedEventKey: string | undefined) {
+    let offset = 0;
+    const limit = 20;
+    let latestEventKey: string | null = null;
 
-  private async subscribeToEvents() {
-    this.client = await connectWebSocketClient(this.hiroWs);
-
-    this.gatewaySubscription = await this.client.subscribeAddressTransactions(
-      this.contractGateway,
-      async (notification: RpcAddressTxNotificationParams) => {
-        await this.consumeEvents(notification);
-      },
+    this.logger.debug(
+      `${contractId} start fetching events, offset: ${offset}, limit: ${limit}, lastProcessedEventKey: ${lastProcessedEventKey}`,
     );
 
-    this.gasSubscription = await this.client.subscribeAddressTransactions(
-      this.gasSubscription,
-      async (notification: RpcAddressTxNotificationParams) => {
-        await this.consumeEvents(notification);
-      },
-    );
+    while (true) {
+      try {
+        const events = await this.hiroApiHelper.getContractEvents(contractId, offset, limit);
+        if (events.length === 0) {
+          this.logger.debug(`${contractId} no events for offset: ${offset} and limit: ${limit}`);
+          break;
+        }
+
+        const firstEventKey = `${events[0].tx_id}-${events[0].event_index}`;
+
+        if (firstEventKey === lastProcessedEventKey) {
+          this.logger.debug(`${contractId} there are no new events`);
+          break;
+        }
+
+        if (!latestEventKey) {
+          latestEventKey = firstEventKey;
+        }
+
+        await this.consumeEvents(events, lastProcessedEventKey);
+
+        offset += limit;
+      } catch (error) {
+        this.logger.error(`Failed to get events for ${contractId}`);
+        this.logger.error(error);
+        break;
+      }
+    }
+
+    if (latestEventKey) {
+      this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
+      await this.updateLastProcessedEventKey(redisKey, latestEventKey);
+    }
   }
 
-  private async unsubscribe() {
-    await this.gatewaySubscription?.unsubscribe();
-    await this.gasSubscription?.unsubscribe();
+  private async updateLastProcessedEventKey(redisKey: string, lastProcessedEventKey: string) {
+    await this.redisHelper.set(redisKey, lastProcessedEventKey);
   }
 
-  async consumeEvents(notification: RpcAddressTxNotificationParams) {
+  async consumeEvents(events: ScEvent[], lastProcessedEventKey: string | undefined) {
     try {
-      const events = mapRawEventsToSmartContractEvents(notification.tx.events);
-
       const crossChainTransactions = new Set<string>();
 
       for (const event of events) {
+        const eventKey = `${event.tx_id}-${event.event_index}`;
+
+        if (eventKey === lastProcessedEventKey) {
+          break;
+        }
+
         const shouldHandle = this.handleEvent(event);
 
         if (shouldHandle) {
@@ -78,9 +112,7 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
         await this.redisHelper.sadd(CacheInfo.CrossChainTransactions().key, ...crossChainTransactions);
       }
     } catch (error) {
-      this.logger.error(
-        `An unhandled error occurred when consuming events for tx id ${notification.tx_id}: ${JSON.stringify(notification.tx.events)}`,
-      );
+      this.logger.error(`An unhandled error occurred when consuming events: ${JSON.stringify(events)}`);
       this.logger.error(error);
 
       throw error;
@@ -88,7 +120,7 @@ export class EventProcessorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleEvent(event: ScEvent): boolean {
-    const contractAddress = getContractAddress(event);
+    const contractAddress = event.contract_log.contract_id;
     if (contractAddress === this.contractGasService) {
       const eventName = getEventType(event);
 

@@ -6,20 +6,23 @@ import { EventProcessorService } from './event.processor.service';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { bufferCV, serializeCV, tupleCV, stringAsciiCV } from '@stacks/transactions';
 import { hex } from '@scure/base';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { ScEvent } from './types';
 
 describe('EventProcessorService', () => {
   let redisHelper: DeepMocked<RedisHelper>;
   let apiConfigService: DeepMocked<ApiConfigService>;
+  let hiroApiHelper: DeepMocked<HiroApiHelper>;
 
   let service: EventProcessorService;
 
   beforeEach(async () => {
     redisHelper = createMock();
     apiConfigService = createMock();
+    hiroApiHelper = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
-    apiConfigService.getContractGasService.mockReturnValue('mockGasAddress');
-    apiConfigService.getHiroWsUrl.mockReturnValue('mockHiroWs');
+    apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress.contract_name');
+    apiConfigService.getContractGasService.mockReturnValue('mockGasAddress.contract_name');
 
     const moduleRef = await Test.createTestingModule({
       providers: [EventProcessorService],
@@ -31,6 +34,10 @@ describe('EventProcessorService', () => {
 
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === HiroApiHelper) {
+          return hiroApiHelper;
         }
 
         return null;
@@ -50,27 +57,23 @@ describe('EventProcessorService', () => {
         ),
       );
 
-      const notification = {
-        tx: {
-          events: [
-            {
-              event_type: 'smart_contract_log',
-              event_index: 0,
-              tx_id: 'txHash',
-              contract_log: {
-                contract_id: 'mockGatewayAddress.contract_name',
-                topic: 'print',
-                value: {
-                  hex: `0x${hex.encode(message.buffer)}`,
-                  repr: '',
-                },
-              },
+      const events: ScEvent[] = [
+        {
+          event_type: 'smart_contract_log',
+          event_index: 0,
+          tx_id: 'txHash',
+          contract_log: {
+            contract_id: 'mockGatewayAddress.contract_name',
+            topic: 'print',
+            value: {
+              hex: `0x${hex.encode(message.buffer)}`,
+              repr: '',
             },
-          ],
+          },
         },
-      };
+      ];
 
-      await service.consumeEvents(notification as any);
+      await service.consumeEvents(events, undefined);
 
       expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
       expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
@@ -85,27 +88,23 @@ describe('EventProcessorService', () => {
         ),
       );
 
-      const notification = {
-        tx: {
-          events: [
-            {
-              event_type: 'smart_contract_log',
-              event_index: 0,
-              tx_id: 'txHash',
-              contract_log: {
-                contract_id: 'mockGasAddress.contract_name',
-                topic: 'print',
-                value: {
-                  hex: `0x${hex.encode(message.buffer)}`,
-                  repr: '',
-                },
-              },
+      const events: ScEvent[] = [
+        {
+          event_type: 'smart_contract_log',
+          event_index: 0,
+          tx_id: 'txHash',
+          contract_log: {
+            contract_id: 'mockGasAddress.contract_name',
+            topic: 'print',
+            value: {
+              hex: `0x${hex.encode(message.buffer)}`,
+              repr: '',
             },
-          ],
+          },
         },
-      };
+      ];
 
-      await service.consumeEvents(notification as any);
+      await service.consumeEvents(events, undefined);
 
       expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
       expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
@@ -120,27 +119,23 @@ describe('EventProcessorService', () => {
         ),
       );
 
-      const notification = {
-        tx: {
-          events: [
-            {
-              event_type: 'smart_contract_log',
-              event_index: 0,
-              tx_id: 'txHash',
-              contract_log: {
-                contract_id: 'someOtherAddress',
-                topic: 'print',
-                value: {
-                  hex: `0x${hex.encode(message.buffer)}`,
-                  repr: '',
-                },
-              },
+      const events: ScEvent[] = [
+        {
+          event_type: 'smart_contract_log',
+          event_index: 0,
+          tx_id: 'txHash',
+          contract_log: {
+            contract_id: 'someOtherAddress',
+            topic: 'print',
+            value: {
+              hex: `0x${hex.encode(message.buffer)}`,
+              repr: '',
             },
-          ],
+          },
         },
-      };
+      ];
 
-      await service.consumeEvents(notification as any);
+      await service.consumeEvents(events, undefined);
 
       expect(redisHelper.sadd).not.toHaveBeenCalled();
     });

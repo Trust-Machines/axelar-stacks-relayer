@@ -4,19 +4,12 @@ import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, AxelarGmpApi, BinaryUtils, Locker } from '@stacks-monorepo/common';
 import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
-import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
+import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
-import {
-  AnchorMode,
-  bufferCV,
-  bufferCVFromString,
-  makeContractCall,
-  StacksTransaction,
-  stringAsciiCV,
-} from '@stacks/transactions';
+import { AnchorMode, bufferCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { AxiosError } from 'axios';
 
@@ -82,9 +75,13 @@ export class MessageApprovedProcessorService {
 
           try {
             const transaction = await this.buildExecuteTransaction(messageApproved);
+            if (!transaction) {
+              // this will only happen for ITS if an invalid message type is received
+              messageApproved.status = MessageApprovedStatus.FAILED;
 
-            const gas = await this.transactionsHelper.getTransactionGas(transaction, messageApproved.retry);
-            transaction.setFee(gas);
+              entriesToUpdate.push(messageApproved);
+              continue;
+            }
 
             transactionsToSend.push(transaction);
 
@@ -132,19 +129,19 @@ export class MessageApprovedProcessorService {
     });
   }
 
-  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<StacksTransaction> {
+  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<StacksTransaction | null> {
     const contractId = messageApproved.contractAddress;
     const contractSplit = contractId.split('.');
     const [contractAddress, contractName] = [contractSplit[0], contractSplit[1]];
 
-    if (contractAddress !== this.contractItsAddress) {
-      const tx = await makeContractCall({
+    if (contractId !== this.contractItsAddress) {
+      const tx = await this.transactionsHelper.makeContractCall({
         contractAddress: contractAddress,
         contractName: contractName,
         functionName: 'execute',
         functionArgs: [
-          bufferCVFromString(messageApproved.sourceChain),
-          bufferFromHex(BinaryUtils.stringToHex(messageApproved.messageId)),
+          stringAsciiCV(messageApproved.sourceChain),
+          stringAsciiCV(messageApproved.messageId),
           bufferFromHex(BinaryUtils.stringToHex(messageApproved.sourceAddress)),
           bufferCV(messageApproved.payload),
         ],
@@ -156,22 +153,13 @@ export class MessageApprovedProcessorService {
       return tx;
     }
 
-    // In case first transaction exists for ITS, wait for it to complete and mark it as successful if necessary
-    if (messageApproved.executeTxHash && !messageApproved.successTimes) {
-      const success = await this.transactionsHelper.awaitSuccess(messageApproved.executeTxHash);
-
-      if (success) {
-        messageApproved.successTimes = 1;
-      }
-    }
-
     return await this.itsContract.execute(
       this.walletSigner,
       messageApproved.sourceChain,
       messageApproved.messageId,
       messageApproved.sourceAddress,
-      messageApproved.payload,
-      messageApproved.successTimes || 0,
+      messageApproved.contractAddress,
+      messageApproved.payload.toString('hex'),
     );
   }
 
@@ -186,7 +174,7 @@ export class MessageApprovedProcessorService {
       eventID: messageApproved.messageId,
       taskItemID: messageApproved.taskItemId || '',
       reason: 'ERROR',
-      details: '',
+      details: 'CANNOT_EXECUTE_MESSAGE',
     };
 
     try {
@@ -202,7 +190,7 @@ export class MessageApprovedProcessorService {
       this.logger.error('Could not send all events to GMP API...', e);
 
       if (e instanceof AxiosError) {
-        this.logger.error(e.response);
+        this.logger.error(e.response?.data);
       }
 
       throw e;

@@ -421,8 +421,11 @@ describe('MessageApprovedProcessorService', () => {
       transactionsHelper.awaitSuccess.mockReturnValueOnce(
         // @ts-ignore
         Promise.resolve({
-          ...transactions[0],
-          status: 'success',
+          success: true,
+          transaction: {
+            ...transactions[0],
+            status: 'success',
+          },
         }),
       );
 

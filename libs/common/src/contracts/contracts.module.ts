@@ -1,16 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ApiConfigService } from '@stacks-monorepo/common/config';
 import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
-import { ItsContract } from '@stacks-monorepo/common/contracts/its.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
-import { DynamicModuleUtils } from '@stacks-monorepo/common/utils';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksMainnet, StacksNetwork, StacksTestnet } from '@stacks/network';
+import { HelpersModule } from '../helpers/helpers.module';
 import { CONSTANTS } from '../utils/constants.enum';
 import { GatewayContract } from './gateway.contract';
+import { ItsContract } from './ITS/its.contract';
+import { TokenManagerContract } from './ITS/token-manager.contract';
+import { NativeInterchainTokenContract } from './ITS/native-interchain-token.contract';
+import { HiroApiHelper } from '../helpers/hiro.api.helpers';
 
 @Module({
-  imports: [DynamicModuleUtils.getRedisModule()],
+  imports: [HelpersModule],
   providers: [
     {
       provide: ProviderKeys.STACKS_NETWORK,
@@ -25,32 +28,84 @@ import { GatewayContract } from './gateway.contract';
     },
     {
       provide: GatewayContract,
-      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-        return new GatewayContract(
-          apiConfigService.getContractGateway(),
-          apiConfigService.getGatewayContractName(),
-          network,
-        );
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        network: StacksNetwork,
+        transactionsHelper: TransactionsHelper,
+      ) => {
+        return new GatewayContract(apiConfigService.getContractGateway(), network, transactionsHelper);
       },
-      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },
     {
       provide: GasServiceContract,
-      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-        return new GasServiceContract(
-          apiConfigService.getContractGasService(),
-          apiConfigService.getGasServiceContractName(),
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        network: StacksNetwork,
+        transactionsHelper: TransactionsHelper,
+      ) => {
+        return new GasServiceContract(apiConfigService.getContractGasService(), network, transactionsHelper);
+      },
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
+    },
+    {
+      provide: TokenManagerContract,
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        hiroApiHelper: HiroApiHelper,
+        network: StacksNetwork,
+        transactionsHelper: TransactionsHelper,
+      ) => {
+        return new TokenManagerContract(
+          apiConfigService.getContractTokenManagerTemplate(),
+          hiroApiHelper,
           network,
+          transactionsHelper,
         );
       },
-      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
+      inject: [ApiConfigService, HiroApiHelper, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
+    },
+    {
+      provide: NativeInterchainTokenContract,
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        hiroApiHelper: HiroApiHelper,
+        network: StacksNetwork,
+        transactionsHelper: TransactionsHelper,
+      ) => {
+        return new NativeInterchainTokenContract(
+          apiConfigService.getContractIdNativeInterchainTokenTemplate(),
+          hiroApiHelper,
+          network,
+          transactionsHelper,
+        );
+      },
+      inject: [ApiConfigService, HiroApiHelper, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },
     {
       provide: ItsContract,
-      useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-        return new ItsContract(apiConfigService.getContractIts(), apiConfigService.getItsContractName(), network);
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        network: StacksNetwork,
+        tokenManager: TokenManagerContract,
+        nativeInterchainTokenContract: NativeInterchainTokenContract,
+        transactionsHelper: TransactionsHelper,
+      ) => {
+        return new ItsContract(
+          apiConfigService.getContractIts(),
+          network,
+          tokenManager,
+          nativeInterchainTokenContract,
+          transactionsHelper,
+        );
       },
-      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
+      inject: [
+        ApiConfigService,
+        ProviderKeys.STACKS_NETWORK,
+        TokenManagerContract,
+        NativeInterchainTokenContract,
+        TransactionsHelper,
+      ],
     },
     {
       provide: ProviderKeys.WALLET_SIGNER,

@@ -16,10 +16,6 @@ export interface ScEvent {
   contract_log: ContractLog;
 }
 
-export function getContractAddress(event: ScEvent): string {
-  return event.contract_log.contract_id.split('.')[0];
-}
-
 export function getEventType(event: ScEvent): string {
   return DecodingUtils.decodeType(event.contract_log.value.hex);
 }

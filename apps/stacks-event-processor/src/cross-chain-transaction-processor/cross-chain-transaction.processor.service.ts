@@ -1,14 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
 import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@stacks-monorepo/common';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
-import { GasServiceProcessor, GatewayProcessor } from './processors';
-import axios, { AxiosError } from 'axios';
 import { MessageApprovedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
-import { getContractAddress, ScEvent } from '../event-processor/types';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { AxiosError } from 'axios';
+import { GasServiceProcessor, GatewayProcessor } from './processors';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
@@ -65,14 +64,20 @@ export class CrossChainTransactionProcessorService {
     const events = mapRawEventsToSmartContractEvents(transaction.events);
 
     for (const [index, rawEvent] of events.entries()) {
-      const address = getContractAddress(rawEvent);
+      const address = rawEvent.contract_log.contract_id;
       let transferAmount = '0';
       if (transaction.tx_type === 'token_transfer') {
         transferAmount = transaction.token_transfer.amount;
       }
 
       if (address === this.contractGateway) {
-        const event = await this.gatewayProcessor.handleGatewayEvent(rawEvent, transaction, index, fee, transferAmount);
+        const event = await this.gatewayProcessor.handleGatewayEvent(
+          rawEvent,
+          transaction,
+          rawEvent.event_index,
+          fee,
+          transferAmount,
+        );
 
         if (event) {
           eventsToSend.push(event);
@@ -111,7 +116,7 @@ export class CrossChainTransactionProcessorService {
       this.logger.error('Could not send all events to GMP API...', e);
 
       if (e instanceof AxiosError) {
-        this.logger.error(e.response);
+        this.logger.error(e.response?.data);
       }
 
       throw e;

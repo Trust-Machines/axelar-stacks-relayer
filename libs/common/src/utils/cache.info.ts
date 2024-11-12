@@ -16,10 +16,31 @@ export class CacheInfo {
     };
   }
 
+  static PendingConstructProof(id: string): CacheInfo {
+    return {
+      key: `pendingConstructProof:${id}`,
+      ttl: Constants.oneMinute() * 10,
+    };
+  }
+
   static CrossChainTransactions(): CacheInfo {
     return {
       key: `crossChainTransactions`,
       ttl: Constants.oneWeek(),
+    };
+  }
+
+  static ContractLastProcessedEvent(contractId: string): CacheInfo {
+    return {
+      key: `contractLastProcessedEvent${contractId}`,
+      ttl: Constants.oneMonth(),
+    };
+  }
+
+  static WalletNonce(address: string): CacheInfo {
+    return {
+      key: `nonce:${address}`,
+      ttl: Constants.oneMinute() * 5,
     };
   }
 }

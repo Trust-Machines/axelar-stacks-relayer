@@ -33,7 +33,7 @@ describe('GasServiceProcessor', () => {
     gatewayContract = createMock();
     apiConfigService = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress');
+    apiConfigService.getContractGateway.mockReturnValue(mockGatewayContractId);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [GasServiceProcessor],
@@ -89,10 +89,7 @@ describe('GasServiceProcessor', () => {
     expect(gasServiceContract.decodeRefundedEvent).not.toHaveBeenCalled();
   });
 
-  const getMockGasPaid = (
-    eventName: string = Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT,
-    gasToken: string | null = 'STX',
-  ) => {
+  const getMockGasPaid = (eventName: string = Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT) => {
     const message = bufferCV(
       serializeCV(
         tupleCV({
@@ -146,6 +143,7 @@ describe('GasServiceProcessor', () => {
 
     const transaction = createMock<Transaction>();
     transaction.tx_id = 'txHash';
+    transaction.block_time_iso = '11.05.2024';
 
     if (isValid) {
       transaction.events = [
@@ -181,8 +179,8 @@ describe('GasServiceProcessor', () => {
 
     const event = result as GasCreditEvent;
 
-    expect(event.eventID).toBe('0xtxHash-0');
-    expect(event.messageID).toBe('0xtxHash-1');
+    expect(event.eventID).toBe('txHash-0');
+    expect(event.messageID).toBe('txHash-1');
     expect(event.refundAddress).toBe('refundAddress');
     expect(event.payment).toEqual({
       tokenID,
@@ -192,11 +190,12 @@ describe('GasServiceProcessor', () => {
       txID: 'txHash',
       fromAddress: 'senderAddress',
       finalized: true,
+      timestamp: '11.05.2024',
     });
   }
 
   describe('Handle event native gas paid for contract call', () => {
-    const { rawEvent, event } = getMockGasPaid(Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT, null);
+    const { rawEvent, event } = getMockGasPaid(Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT);
 
     it('Should handle', () => {
       gasServiceContract.decodeNativeGasPaidForContractCallEvent.mockReturnValueOnce(event);
@@ -212,7 +211,7 @@ describe('GasServiceProcessor', () => {
     });
   });
 
-  const getMockGasAdded = (eventName: string = Events.NATIVE_GAS_ADDED_EVENT, gasToken: string | null = 'STX') => {
+  const getMockGasAdded = (eventName: string = Events.NATIVE_GAS_ADDED_EVENT) => {
     const message = bufferCV(
       serializeCV(
         tupleCV({
@@ -249,6 +248,7 @@ describe('GasServiceProcessor', () => {
     const transaction = createMock<Transaction>();
     transaction.tx_id = 'txHash';
     transaction.sender_address = 'senderAddress';
+    transaction.block_time_iso = '11.05.2024';
 
     const result = service.handleGasServiceEvent(rawEvent, transaction, 0, '100');
 
@@ -257,8 +257,8 @@ describe('GasServiceProcessor', () => {
 
     const event = result as GasCreditEvent;
 
-    expect(event.eventID).toBe('0xtxHash-0');
-    expect(event.messageID).toBe('0xtxHash-1');
+    expect(event.eventID).toBe('txHash-0');
+    expect(event.messageID).toBe('txHash-1');
     expect(event.refundAddress).toBe('refundAddress');
     expect(event.payment).toEqual({
       tokenID,
@@ -268,11 +268,12 @@ describe('GasServiceProcessor', () => {
       txID: 'txHash',
       fromAddress: 'senderAddress',
       finalized: true,
+      timestamp: '11.05.2024',
     });
   }
 
   describe('Handle event native gas added', () => {
-    const { rawEvent, event } = getMockGasAdded(Events.NATIVE_GAS_ADDED_EVENT, null);
+    const { rawEvent, event } = getMockGasAdded(Events.NATIVE_GAS_ADDED_EVENT);
 
     it('Should handle', () => {
       gasServiceContract.decodeNativeGasAddedEvent.mockReturnValueOnce(event);
@@ -317,6 +318,7 @@ describe('GasServiceProcessor', () => {
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
       transaction.sender_address = 'senderAddress';
+      transaction.block_time_iso = '11.05.2024';
 
       const result = service.handleGasServiceEvent(rawEvent, transaction, 0, '100');
 
@@ -325,8 +327,8 @@ describe('GasServiceProcessor', () => {
 
       const event = result as GasRefundedEvent;
 
-      expect(event.eventID).toBe('0xtxHash-0');
-      expect(event.messageID).toBe('0xtxHash-1');
+      expect(event.eventID).toBe('txHash-0');
+      expect(event.messageID).toBe('txHash-1');
       expect(event.recipientAddress).toBe('senderAddress');
       expect(event.refundedAmount).toEqual({
         tokenID: null,
@@ -339,6 +341,7 @@ describe('GasServiceProcessor', () => {
         txID: 'txHash',
         fromAddress: 'senderAddress',
         finalized: true,
+        timestamp: '11.05.2024',
       });
     });
   });

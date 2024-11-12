@@ -4,20 +4,13 @@ import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-servic
 
 import { hex } from '@scure/base';
 import { StacksNetwork } from '@stacks/network';
-import {
-  BufferCV,
-  bufferCV,
-  bufferCVFromString,
-  principalCV,
-  serializeCV,
-  tupleCV,
-  uintCV,
-} from '@stacks/transactions';
+import { BufferCV, bufferCV, stringAsciiCV, principalCV, serializeCV, tupleCV, uintCV } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import BigNumber from 'bignumber.js';
 import { ApiConfigService } from '../config';
 import { ProviderKeys } from '../utils/provider.enum';
+import { TransactionsHelper } from './transactions.helper';
 
 export function getMockScEvent(message: BufferCV): ScEvent {
   return {
@@ -39,24 +32,21 @@ describe('GasServiceContract', () => {
   let contract: GasServiceContract;
   let mockNetwork: DeepMocked<StacksNetwork>;
   let mockApiConfigService: DeepMocked<ApiConfigService>;
+  let mockTransactionsHelper: DeepMocked<TransactionsHelper>;
 
   beforeEach(async () => {
     mockNetwork = createMock<StacksNetwork>();
     mockApiConfigService = createMock<ApiConfigService>();
+    mockTransactionsHelper = createMock<TransactionsHelper>();
 
-    mockApiConfigService.getContractGasService.mockReturnValue('mockContractAddress');
-    mockApiConfigService.getGasServiceContractName.mockReturnValue('mockContractName');
+    mockApiConfigService.getContractGasService.mockReturnValue('mockContractAddress.mockContractName');
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         {
           provide: GasServiceContract,
-          useFactory: async (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-            return new GasServiceContract(
-              apiConfigService.getContractGasService(),
-              apiConfigService.getGasServiceContractName(),
-              network,
-            );
+          useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+            return new GasServiceContract(apiConfigService.getContractGasService(), network, mockTransactionsHelper);
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
         },
@@ -81,10 +71,10 @@ describe('GasServiceContract', () => {
           sender: principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
           amount: uintCV(1000),
           'refund-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
-          'destination-chain': bufferCVFromString('ethereum'),
-          'destination-contract-address': bufferCVFromString('destinationAddress'),
+          'destination-chain': stringAsciiCV('ethereum'),
+          'destination-address': stringAsciiCV('destinationAddress'),
           'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
-          type: bufferCVFromString('native-gas-paid-for-contract-call'),
+          type: stringAsciiCV('native-gas-paid-for-contract-call'),
         }),
       ),
     );
@@ -119,7 +109,7 @@ describe('GasServiceContract', () => {
           'refund-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
           'tx-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
           'log-index': uintCV(1),
-          type: bufferCVFromString('native-gas-added'),
+          type: stringAsciiCV('native-gas-added'),
         }),
       ),
     );
@@ -152,7 +142,7 @@ describe('GasServiceContract', () => {
           amount: uintCV(1000),
           'tx-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
           'log-index': uintCV(1),
-          type: bufferCVFromString('refunded'),
+          type: stringAsciiCV('refunded'),
         }),
       ),
     );

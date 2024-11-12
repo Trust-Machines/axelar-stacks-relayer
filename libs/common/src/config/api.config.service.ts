@@ -67,16 +67,7 @@ export class ApiConfigService {
       throw new Error('No Contract Gateway present');
     }
 
-    return contractGateway.split('.')[0];
-  }
-
-  getGatewayContractName(): string {
-    const contractGateway = this.configService.get<string>('CONTRACT_ID_GATEWAY');
-    if (!contractGateway) {
-      throw new Error('No Contract Gateway present');
-    }
-
-    return contractGateway.split('.')[1];
+    return contractGateway;
   }
 
   getContractGasService(): string {
@@ -85,16 +76,7 @@ export class ApiConfigService {
       throw new Error('No Contract Gas Service present');
     }
 
-    return contractGasService.split('.')[0];
-  }
-
-  getGasServiceContractName(): string {
-    const contractGasService = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE');
-    if (!contractGasService) {
-      throw new Error('No Contract Gas Service present');
-    }
-
-    return contractGasService.split('.')[1];
+    return contractGasService;
   }
 
   getContractIts(): string {
@@ -103,25 +85,43 @@ export class ApiConfigService {
       throw new Error('No Contract ITS present');
     }
 
-    return contractIts.split('.')[0];
+    return contractIts;
   }
 
-  getItsContractName(): string {
-    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS');
-    if (!contractIts) {
-      throw new Error('No Contract ITS present');
+  getContractIdNativeInterchainTokenTemplate(): string {
+    const contract = this.configService.get<string>('CONTRACT_ID_NATIVE_INTERCHAIN_TOKEN_TEMPLATE');
+    if (!contract) {
+      throw new Error('No Contract Native Interchain Token Template present');
     }
 
-    return contractIts.split('.')[1];
+    return contract;
   }
 
-  getAxelarContractVotingVerifier(): string {
-    const axelarContractVotingVerifier = this.configService.get<string>('AXELAR_CONTRACT_VOTING_VERIFIER');
-    if (!axelarContractVotingVerifier) {
-      throw new Error('No Axelar Contract Voting Verifier present');
+  getContractTokenManagerTemplate(): string {
+    const contract = this.configService.get<string>('CONTRACT_ID_TOKEN_MANAGER_TEMPLATE');
+    if (!contract) {
+      throw new Error('No Contract Token Manager Template present');
     }
 
-    return axelarContractVotingVerifier;
+    return contract;
+  }
+
+  getAxelarContractIts(): string {
+    const axelarContractIts = this.configService.get<string>('AXELAR_CONTRACT_ITS');
+    if (!axelarContractIts) {
+      throw new Error('No Axelar Contract ITS present');
+    }
+
+    return axelarContractIts;
+  }
+
+  getMultisigProverContract(): string {
+    const contract = this.configService.get<string>('AXELAR_MULTISIG_PROVER_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Multisig Prover present');
+    }
+
+    return contract;
   }
 
   getAxelarGmpApiUrl(): string {

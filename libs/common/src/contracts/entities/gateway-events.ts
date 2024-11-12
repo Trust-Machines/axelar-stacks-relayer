@@ -29,5 +29,29 @@ export interface WeightedSignersEvent {
     weight: BigNumber;
   }[];
   threshold: BigNumber;
-  nonce: string; // uint256 as 32 bytes hex
+  nonce: string; // uint256 as 32 bytes hex,
+  epoch: number;
+  signersHash: Buffer;
+}
+
+export interface GatewayExternalData {
+  function: string;
+  data: string;
+  proof: string;
+}
+
+export interface VerifyInterchainTokenEvent {
+  tokenAddress: string;
+}
+
+export interface VerifyTokenManagerEvent {
+  tokenManagerAddress: string;
+  tokenId: string;
+  tokenType: number;
+  operator: string;
+}
+
+export interface TokenManagerParams {
+  operator?: string;
+  tokenAddress: string;
 }

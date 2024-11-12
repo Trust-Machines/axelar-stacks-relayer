@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageApprovedStatus } from '@prisma/client';
-import { GatewayContract } from '@stacks-monorepo/common';
+import { ApiConfigService, BinaryUtils, GatewayContract } from '@stacks-monorepo/common';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
@@ -13,6 +13,10 @@ import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 import Event = Components.Schemas.Event;
 import MessageExecutedEvent = Components.Schemas.MessageExecutedEvent;
+import SignersRotatedEvent = Components.Schemas.SignersRotatedEvent;
+import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
+import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
+import { ethers } from 'ethers';
 
 @Injectable()
 export class GatewayProcessor {
@@ -21,6 +25,7 @@ export class GatewayProcessor {
   constructor(
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
+    private readonly apiConfigService: ApiConfigService,
   ) {
     this.logger = new Logger(GatewayProcessor.name);
   }
@@ -35,11 +40,17 @@ export class GatewayProcessor {
     const eventName = getEventType(rawEvent);
 
     if (eventName === Events.CONTRACT_CALL_EVENT) {
-      return this.handleContractCallEvent(rawEvent, transaction.tx_id, index);
+      return this.handleContractCallEvent(rawEvent, transaction.tx_id, transaction.block_time_iso, index);
     }
 
     if (eventName === Events.MESSAGE_APPROVED_EVENT) {
-      return this.handleMessageApprovedEvent(rawEvent, transaction.sender_address, transaction.tx_id, index);
+      return this.handleMessageApprovedEvent(
+        rawEvent,
+        transaction.sender_address,
+        transaction.tx_id,
+        transaction.block_time_iso,
+        index,
+      );
     }
 
     if (eventName === Events.MESSAGE_EXECUTED_EVENT) {
@@ -49,19 +60,38 @@ export class GatewayProcessor {
         transaction.tx_id,
         index,
         fee,
+        transaction.block_time_iso,
         transactionValue,
       );
     }
 
     if (eventName === Events.SIGNERS_ROTATED_EVENT) {
-      return this.handleSignersRotatedEvent(rawEvent, transaction.tx_id, index);
+      return this.handleSignersRotatedEvent(
+        rawEvent,
+        transaction.tx_id,
+        transaction.sender_address,
+        transaction.block_time_iso,
+        index,
+      );
     }
 
     return undefined;
   }
 
-  private handleContractCallEvent(rawEvent: ScEvent, txHash: string, index: number): Event | undefined {
+  private handleContractCallEvent(
+    rawEvent: ScEvent,
+    txHash: string,
+    timestamp: string,
+    index: number,
+  ): Event | undefined {
     const contractCallEvent = this.gatewayContract.decodeContractCallEvent(rawEvent);
+
+    const payloadResult = this.getContractCallPayload(contractCallEvent);
+    if (!payloadResult) {
+      return undefined;
+    }
+
+    const { payload, payloadHash } = payloadResult;
 
     const callEvent: CallEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
@@ -70,14 +100,15 @@ export class GatewayProcessor {
         sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
         sourceAddress: contractCallEvent.sender,
         destinationAddress: contractCallEvent.destinationAddress,
-        payloadHash: Buffer.from(contractCallEvent.payloadHash, 'base64').toString('hex'),
+        payloadHash: payloadHash,
       },
       destinationChain: contractCallEvent.destinationChain,
-      payload: contractCallEvent.payload.toString('base64'),
+      payload: payload,
       meta: {
         txID: txHash,
         fromAddress: contractCallEvent.sender,
         finalized: true,
+        timestamp,
       },
     };
 
@@ -92,7 +123,40 @@ export class GatewayProcessor {
     };
   }
 
-  private handleMessageApprovedEvent(rawEvent: ScEvent, sender: string, txHash: string, index: number): Event {
+  private getContractCallPayload(
+    contractCallEvent: ContractCallEvent,
+  ): { payload: string; payloadHash: string } | null {
+    // Handle STACKS -> ITS Hub case
+    if (
+      contractCallEvent.sender === this.apiConfigService.getContractIts() &&
+      contractCallEvent.destinationChain !== CONSTANTS.SOURCE_CHAIN_NAME
+    ) {
+      const abiEncodedPayload = HubMessage.abiEncode(contractCallEvent.payload.toString('hex'));
+      if (!abiEncodedPayload) {
+        this.logger.warn(
+          `Couldn't send call event because payload cannot be abi encoded ${contractCallEvent.payload.toString('hex')}`,
+        );
+        return null;
+      }
+      const payload = BinaryUtils.hexToBase64(abiEncodedPayload);
+      const payloadHash = BinaryUtils.hexToBase64(ethers.keccak256(abiEncodedPayload));
+
+      return { payload, payloadHash };
+    }
+
+    return {
+      payload: contractCallEvent.payload.toString('base64'),
+      payloadHash: BinaryUtils.hexToBase64(contractCallEvent.payloadHash),
+    };
+  }
+
+  private handleMessageApprovedEvent(
+    rawEvent: ScEvent,
+    sender: string,
+    txHash: string,
+    timestamp: string,
+    index: number,
+  ): Event {
     const event = this.gatewayContract.decodeMessageApprovedEvent(rawEvent);
 
     const messageApproved: MessageApprovedEvent = {
@@ -102,7 +166,7 @@ export class GatewayProcessor {
         sourceChain: event.sourceChain,
         sourceAddress: event.sourceAddress,
         destinationAddress: event.contractAddress,
-        payloadHash: Buffer.from(event.payloadHash, 'base64').toString('hex'),
+        payloadHash: BinaryUtils.hexToBase64(event.payloadHash),
       },
       cost: {
         amount: '0', // This will be set later since multiple approvals can happen in the same transaction
@@ -111,6 +175,7 @@ export class GatewayProcessor {
         txID: txHash,
         fromAddress: sender,
         finalized: true,
+        timestamp,
       },
     };
 
@@ -131,6 +196,7 @@ export class GatewayProcessor {
     txHash: string,
     index: number,
     fee: string,
+    timestamp: string,
     transactionValue: string,
   ): Promise<Event | undefined> {
     const messageExecutedEvent = this.gatewayContract.decodeMessageExecutedEvent(rawEvent);
@@ -162,6 +228,7 @@ export class GatewayProcessor {
         txID: txHash,
         fromAddress: sender,
         finalized: true,
+        timestamp,
       },
       status: 'SUCCESSFUL', // TODO: How to handle reverted?
     };
@@ -176,46 +243,36 @@ export class GatewayProcessor {
     };
   }
 
-  // TODO: Properly implement this after the Axelar GMP API supports it
-  private handleSignersRotatedEvent(rawEvent: ScEvent, txHash: string, index: number) {
+  private handleSignersRotatedEvent(
+    rawEvent: ScEvent,
+    txHash: string,
+    sender: string,
+    timestamp: string,
+    index: number,
+  ): Event | undefined {
     const weightedSigners = this.gatewayContract.decodeSignersRotatedEvent(rawEvent);
 
-    this.logger.warn(
-      `Received Signers Rotated event which is not properly implemented yet. Transaction:  ${txHash}, index: ${index}`,
-      weightedSigners,
+    const signersRotatedEvent: SignersRotatedEvent = {
+      eventID: DecodingUtils.getEventId(txHash, index),
+      meta: {
+        txID: txHash,
+        timestamp: timestamp,
+        fromAddress: sender,
+        finalized: true,
+        signersHash: weightedSigners.signersHash.toString('base64'),
+        epoch: weightedSigners.epoch,
+      },
+      messageID: DecodingUtils.getEventId(txHash, index),
+    };
+
+    this.logger.debug(
+      `Successfully handled signers rotated event from transaction ${txHash}, log index ${index}`,
+      signersRotatedEvent,
     );
 
-    return undefined;
-
-    // // The id needs to have `0x` in front of the txHash (hex string)
-    // const id = `0x${txHash}-${index}`;
-    //
-    //
-    // // @ts-ignore
-    // const response = await this.axelarGmpApi.verifyVerifierSet(
-    //   id,
-    //   weightedSigners.signers,
-    //   weightedSigners.threshold,
-    //   weightedSigners.nonce,
-    // );
-
-    // if (response.published) {
-    //   return;
-    // }
-    //
-    // this.logger.warn(`Couldn't dispatch verifyWorkerSet ${id} to Amplifier API. Retrying...`);
-    //
-    // setTimeout(async () => {
-    //   const response = await this.axelarGmpApi.verifyVerifierSet(
-    //     id,
-    //     weightedSigners.signers,
-    //     weightedSigners.threshold,
-    //     weightedSigners.nonce,
-    //   );
-    //
-    //   if (!response.published) {
-    //     this.logger.error(`Couldn't dispatch verifyWorkerSet ${id} to Amplifier API.`);
-    //   }
-    // }, 60_000);
+    return {
+      type: 'SIGNERS_ROTATED',
+      ...signersRotatedEvent,
+    };
   }
 }

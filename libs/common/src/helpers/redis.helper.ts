@@ -127,4 +127,32 @@ export class RedisHelper {
       throw error;
     }
   }
+
+  async incrby(key: string, value: number | string): Promise<number> {
+    try {
+      return await this.redis.incrby(key, value);
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error('RedisCache - An error occurred while trying to incrby redis key.', {
+          cacheKey: key,
+          error: error?.toString(),
+        });
+      }
+      throw error;
+    }
+  }
+
+  async decrby(key: string, value: number | string): Promise<number> {
+    try {
+      return await this.redis.decrby(key, value);
+    } catch (error) {
+      if (error instanceof Error) {
+        this.logger.error('RedisCache - An error occurred while trying to decrby redis key.', {
+          cacheKey: key,
+          error: error.toString(),
+        });
+      }
+      throw error;
+    }
+  }
 }

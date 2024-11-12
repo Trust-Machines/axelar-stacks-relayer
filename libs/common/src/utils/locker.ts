@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 export class Locker {
   private static lockSet: Set<string> = new Set();
 
-  static async lock(key: string, func: () => Promise<void>, log: boolean = false): Promise<LockResult> {
+  static async lock(key: string, func: () => Promise<void>): Promise<LockResult> {
     const logger = new Logger('Lock');
 
     if (Locker.lockSet.has(key)) {

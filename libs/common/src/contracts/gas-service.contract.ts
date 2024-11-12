@@ -5,36 +5,34 @@ import {
   RefundedEvent,
 } from '@stacks-monorepo/common/contracts/entities/gas-service-events';
 import { StacksNetwork } from '@stacks/network';
-import {
-  AnchorMode,
-  bufferCVFromString,
-  listCV,
-  makeContractCall,
-  principalCV,
-  StacksTransaction,
-  uintCV,
-} from '@stacks/transactions';
+import { AnchorMode, principalCV, StacksTransaction, uintCV } from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
-import BigNumber from 'bignumber.js';
 import {
   DecodingUtils,
   gasAddedDecoder,
   gasPaidForContractCallDecoder,
   refundedDecoder,
 } from '../utils/decoding.utils';
-import { bufferFromHex } from '@stacks/transactions/dist/cl';
+import { splitContractId } from '../utils/split-contract-id';
+import { TransactionsHelper } from './transactions.helper';
 
 @Injectable()
 export class GasServiceContract {
+  private readonly contractAddress;
+  private readonly contractName;
+
   constructor(
     private readonly contract: string,
-    private readonly contractName: string,
     private readonly network: StacksNetwork,
-  ) {}
+    private readonly transactionsHelper: TransactionsHelper,
+  ) {
+    [this.contractAddress, this.contractName] = splitContractId(contract);
+  }
 
   async collectFees(sender: string, receiver: string, amount: string): Promise<StacksTransaction> {
-    return await makeContractCall({
-      contractAddress: this.contract,
+    return await this.transactionsHelper.makeContractCall({
+      contractAddress: this.contractAddress,
       contractName: this.contractName,
       functionName: 'collectFees',
       functionArgs: [principalCV(receiver), uintCV(amount)],
@@ -51,8 +49,8 @@ export class GasServiceContract {
     receiver: string,
     amount: string,
   ): Promise<StacksTransaction> {
-    return await makeContractCall({
-      contractAddress: this.contract,
+    return await this.transactionsHelper.makeContractCall({
+      contractAddress: this.contractAddress,
       contractName: this.contractName,
       functionName: 'refund',
       functionArgs: [
