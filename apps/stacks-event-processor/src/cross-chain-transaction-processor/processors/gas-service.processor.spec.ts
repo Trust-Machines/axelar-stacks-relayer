@@ -33,7 +33,7 @@ describe('GasServiceProcessor', () => {
     gatewayContract = createMock();
     apiConfigService = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue(mockGatewayContractId);
+    apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [GasServiceProcessor],
@@ -81,7 +81,7 @@ describe('GasServiceProcessor', () => {
       },
     };
 
-    const result = service.handleGasServiceEvent(rawEvent, createMock(), 0, '100');
+    const result = service.handleGasServiceEvent(rawEvent, createMock(), 0, 0, '100');
 
     expect(result).toBeUndefined();
     expect(gasServiceContract.decodeNativeGasPaidForContractCallEvent).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe('GasServiceProcessor', () => {
       transaction.events = [];
     }
 
-    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, '100');
+    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
     if (!isValid) {
       expect(result).toBeUndefined();
@@ -250,7 +250,7 @@ describe('GasServiceProcessor', () => {
     transaction.sender_address = 'senderAddress';
     transaction.block_time_iso = '11.05.2024';
 
-    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, '100');
+    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
     expect(result).not.toBeUndefined();
     expect(result?.type).toBe('GAS_CREDIT');
@@ -320,7 +320,7 @@ describe('GasServiceProcessor', () => {
       transaction.sender_address = 'senderAddress';
       transaction.block_time_iso = '11.05.2024';
 
-      const result = service.handleGasServiceEvent(rawEvent, transaction, 0, '100');
+      const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('GAS_REFUNDED');

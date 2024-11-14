@@ -21,7 +21,7 @@ describe('EventProcessorService', () => {
     apiConfigService = createMock();
     hiroApiHelper = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue('mockGatewayAddress.contract_name');
+    apiConfigService.getContractGatewayStorage.mockReturnValue('mockGatewayAddress.contract_name');
     apiConfigService.getContractGasService.mockReturnValue('mockGasAddress.contract_name');
 
     const moduleRef = await Test.createTestingModule({

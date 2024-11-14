@@ -33,7 +33,12 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         network: StacksNetwork,
         transactionsHelper: TransactionsHelper,
       ) => {
-        return new GatewayContract(apiConfigService.getContractGateway(), network, transactionsHelper);
+        return new GatewayContract(
+          apiConfigService.getContractGatewayProxy(),
+          apiConfigService.getContractGatewayStorage(),
+          network,
+          transactionsHelper,
+        );
       },
       inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },

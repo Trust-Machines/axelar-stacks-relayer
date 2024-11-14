@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { ApiConfigService, AxelarGmpApi, BinaryUtils, Locker } from '@stacks-monorepo/common';
+import { ApiConfigService, AxelarGmpApi, BinaryUtils, GatewayContract, Locker } from '@stacks-monorepo/common';
 import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
 import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
@@ -9,8 +9,7 @@ import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactio
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
-import { AnchorMode, bufferCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
-import { bufferFromHex } from '@stacks/transactions/dist/cl';
+import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { AxiosError } from 'axios';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
@@ -30,6 +29,7 @@ export class MessageApprovedProcessorService {
     private readonly axelarGmpApi: AxelarGmpApi,
     apiConfigService: ApiConfigService,
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
+    private readonly gatewayContract: GatewayContract,
   ) {
     this.logger = new Logger(MessageApprovedProcessorService.name);
     this.contractItsAddress = apiConfigService.getContractIts();
@@ -135,6 +135,12 @@ export class MessageApprovedProcessorService {
     const [contractAddress, contractName] = [contractSplit[0], contractSplit[1]];
 
     if (contractId !== this.contractItsAddress) {
+      const gatewayImpl = await this.gatewayContract.getGatewayImpl();
+      if (!gatewayImpl) {
+        this.logger.warn('Could not build EXECUTE transaction because gateway-impl is null');
+        return null;
+      }
+
       const tx = await this.transactionsHelper.makeContractCall({
         contractAddress: contractAddress,
         contractName: contractName,
@@ -142,8 +148,9 @@ export class MessageApprovedProcessorService {
         functionArgs: [
           stringAsciiCV(messageApproved.sourceChain),
           stringAsciiCV(messageApproved.messageId),
-          bufferFromHex(BinaryUtils.stringToHex(messageApproved.sourceAddress)),
+          stringAsciiCV(messageApproved.sourceAddress),
           bufferCV(messageApproved.payload),
+          principalCV(gatewayImpl),
         ],
         senderKey: this.walletSigner,
         network: this.network,

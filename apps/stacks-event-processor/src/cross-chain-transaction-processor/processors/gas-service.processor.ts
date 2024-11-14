@@ -17,7 +17,7 @@ import GasCreditEvent = Components.Schemas.GasCreditEvent;
 
 @Injectable()
 export class GasServiceProcessor {
-  private readonly contractGateway: string;
+  private readonly contractGatewayStorage: string;
   private logger: Logger;
 
   constructor(
@@ -25,11 +25,17 @@ export class GasServiceProcessor {
     private readonly gatewayContract: GatewayContract,
     apiConfigService: ApiConfigService,
   ) {
-    this.contractGateway = apiConfigService.getContractGateway();
+    this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.logger = new Logger(GasServiceProcessor.name);
   }
 
-  handleGasServiceEvent(rawEvent: ScEvent, transaction: Transaction, index: number, fee: string): Event | undefined {
+  handleGasServiceEvent(
+    rawEvent: ScEvent,
+    transaction: Transaction,
+    index: number,
+    eventIndex: number,
+    fee: string,
+  ): Event | undefined {
     const eventName = getEventType(rawEvent);
 
     if (eventName === Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
@@ -46,7 +52,13 @@ export class GasServiceProcessor {
         return undefined;
       }
 
-      return this.handleGasPaidEvent(gasEvent, transaction.tx_id, index, callContractIndex, transaction.block_time_iso);
+      return this.handleGasPaidEvent(
+        gasEvent,
+        transaction.tx_id,
+        eventIndex,
+        callContractIndex,
+        transaction.block_time_iso,
+      );
     }
 
     if (eventName === Events.NATIVE_GAS_ADDED_EVENT) {
@@ -56,7 +68,7 @@ export class GasServiceProcessor {
         event,
         transaction.sender_address,
         transaction.tx_id,
-        index,
+        eventIndex,
         transaction.block_time_iso,
       );
     }
@@ -68,7 +80,7 @@ export class GasServiceProcessor {
         event,
         transaction.sender_address,
         transaction.tx_id,
-        index,
+        eventIndex,
         fee,
         transaction.block_time_iso,
       );
@@ -191,11 +203,11 @@ export class GasServiceProcessor {
     const events = mapRawEventsToSmartContractEvents(transaction.events);
 
     // Search for the first corresponding callContract event starting from the current gas paid event index
-    const foundIndex = events.slice(index + 1).findIndex((event) => {
+    const foundEvent = events.slice(index + 1).find((event) => {
       const eventName = getEventType(event);
       const address = event.contract_log.contract_id;
 
-      if (address === this.contractGateway && eventName === Events.CONTRACT_CALL_EVENT) {
+      if (address === this.contractGatewayStorage && eventName === Events.CONTRACT_CALL_EVENT) {
         const contractCallEvent = this.gatewayContract.decodeContractCallEvent(event);
 
         return (
@@ -209,10 +221,6 @@ export class GasServiceProcessor {
       return false;
     });
 
-    if (foundIndex === -1) {
-      return -1;
-    }
-
-    return index + 1 + foundIndex;
+    return foundEvent ? foundEvent.event_index : -1;
   }
 }

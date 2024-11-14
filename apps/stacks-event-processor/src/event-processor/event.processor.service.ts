@@ -8,7 +8,7 @@ import { getEventType, ScEvent } from './types';
 
 @Injectable()
 export class EventProcessorService {
-  private readonly contractGateway: string;
+  private readonly contractGatewayStorage: string;
   private readonly contractGasService: string;
 
   private contractGatewayEventsKey: string;
@@ -21,9 +21,9 @@ export class EventProcessorService {
     private readonly redisHelper: RedisHelper,
     apiConfigService: ApiConfigService,
   ) {
-    this.contractGateway = apiConfigService.getContractGateway();
+    this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.contractGasService = apiConfigService.getContractGasService();
-    this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGateway).key;
+    this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGatewayStorage).key;
     this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasService).key;
 
     this.logger = new Logger(EventProcessorService.name);
@@ -37,7 +37,11 @@ export class EventProcessorService {
         this.redisHelper.get<string>(this.contractGasServiceEventsKey),
       ]);
 
-      await this.getContractEvents(this.contractGateway, this.contractGatewayEventsKey, gatewayLastProcessedEvent);
+      await this.getContractEvents(
+        this.contractGatewayStorage,
+        this.contractGatewayEventsKey,
+        gatewayLastProcessedEvent,
+      );
       await this.getContractEvents(this.contractGasService, this.contractGasServiceEventsKey, gasLastProcessedEvent);
     });
   }
@@ -137,7 +141,7 @@ export class EventProcessorService {
       return validEvent;
     }
 
-    if (contractAddress === this.contractGateway) {
+    if (contractAddress === this.contractGatewayStorage) {
       const eventName = getEventType(event);
 
       const validEvent =

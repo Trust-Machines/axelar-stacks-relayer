@@ -220,11 +220,19 @@ export class ApprovalsProcessorService {
     this.logger.log(data);
 
     const initialTx = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
+    if (!initialTx) {
+      this.logger.log('Could not build gateway tx');
+      return;
+    }
 
     const fee = await this.transactionsHelper.getTransactionGas(initialTx, retry, this.network);
 
     // After estimating the gas, we need to build the tx again
     const transaction = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner, fee);
+    if (!transaction) {
+      this.logger.log('Could not build gateway tx');
+      return;
+    }
 
     const txHash = await this.transactionsHelper.sendTransaction(transaction);
 

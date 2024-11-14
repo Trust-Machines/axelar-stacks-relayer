@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   ContractCallEvent,
   GatewayExternalData,
@@ -14,35 +14,81 @@ import {
   weightedSignersDecoder,
 } from '@stacks-monorepo/common/utils/decoding.utils';
 import { StacksNetwork } from '@stacks/network';
-import { AnchorMode, SignedContractCallOptions, StacksTransaction } from '@stacks/transactions';
+import {
+  AnchorMode,
+  callReadOnlyFunction,
+  cvToString,
+  principalCV,
+  SignedContractCallOptions,
+  StacksTransaction,
+} from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import { splitContractId } from '../utils/split-contract-id';
 import { TransactionsHelper } from './transactions.helper';
 
 @Injectable()
-export class GatewayContract {
+export class GatewayContract implements OnModuleInit {
+  private logger: Logger;
   private readonly contractAddress;
   private readonly contractName;
+  private gatewayImpl?: string;
 
   constructor(
-    contract: string,
+    proxyContract: string,
+    private readonly storageContract: string,
     private readonly network: StacksNetwork,
     private readonly transactionsHelper: TransactionsHelper,
   ) {
-    [this.contractAddress, this.contractName] = splitContractId(contract);
+    this.logger = new Logger(GatewayContract.name);
+    [this.contractAddress, this.contractName] = splitContractId(proxyContract);
+  }
+
+  async onModuleInit() {
+    await this.getGatewayImpl();
+  }
+
+  async getGatewayImpl(): Promise<string | null> {
+    try {
+      if (this.gatewayImpl) {
+        return this.gatewayImpl;
+      }
+
+      const [storageContractAddress, storageContractName] = splitContractId(this.storageContract);
+
+      const result = await callReadOnlyFunction({
+        contractAddress: storageContractAddress,
+        contractName: storageContractName,
+        functionName: 'get-impl',
+        functionArgs: [],
+        network: this.network,
+        senderAddress: storageContractAddress,
+      });
+
+      this.gatewayImpl = cvToString(result);
+      return this.gatewayImpl;
+    } catch (error) {
+      this.logger.error('Failed to get gateway impl');
+      this.logger.error(error);
+      return null;
+    }
   }
 
   async buildTransactionExternalFunction(
     externalData: GatewayExternalData,
     senderKey: string,
     fee?: bigint,
-  ): Promise<StacksTransaction> {
+  ): Promise<StacksTransaction | null> {
+    const gatewayImpl = await this.getGatewayImpl();
+    if (!gatewayImpl) {
+      return null;
+    }
+
     const opts: SignedContractCallOptions = {
       contractAddress: this.contractAddress,
       contractName: this.contractName,
       functionName: externalData.function,
-      functionArgs: [bufferFromHex(externalData.data), bufferFromHex(externalData.proof)],
+      functionArgs: [principalCV(gatewayImpl), bufferFromHex(externalData.data), bufferFromHex(externalData.proof)],
       senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,

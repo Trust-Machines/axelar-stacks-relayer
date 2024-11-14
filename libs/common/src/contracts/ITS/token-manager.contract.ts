@@ -29,19 +29,22 @@ export class TokenManagerContract {
   ) {}
 
   async onModuleInit() {
-    try {
-      await this.getTemplateSourceCode();
-    } catch (error) {
-      this.logger.error('Failed to preload source code:', error);
-    }
+    await this.getTemplateSourceCode();
   }
 
-  async getTemplateSourceCode(): Promise<string> {
-    if (this.sourceCode) {
-      return this.sourceCode;
-    }
+  async getTemplateSourceCode(): Promise<string | null> {
+    try {
+      if (this.sourceCode) {
+        return this.sourceCode;
+      }
 
-    return await this.hiroApiHelper.getContractSourceCode(this.templateContractId);
+      this.sourceCode = await this.hiroApiHelper.getContractSourceCode(this.templateContractId);
+      return this.sourceCode;
+    } catch (error) {
+      this.logger.error('Failed to get source code');
+      this.logger.error(error);
+      return null;
+    }
   }
 
   async getTokenAddress(tokenManagerContract: string) {

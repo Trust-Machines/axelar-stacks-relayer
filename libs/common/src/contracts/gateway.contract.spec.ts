@@ -21,14 +21,20 @@ describe('GatewayContract', () => {
     mockApiConfigService = createMock<ApiConfigService>();
     mockTransactionsHelper = createMock<TransactionsHelper>();
 
-    mockApiConfigService.getContractGateway.mockReturnValue('mockContractAddress.mockContractName');
+    mockApiConfigService.getContractGatewayStorage.mockReturnValue('mockContractAddress.mockStorageContractName');
+    mockApiConfigService.getContractGatewayProxy.mockReturnValue('mockContractAddress.mockProxyContractName');
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         {
           provide: GatewayContract,
           useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork) => {
-            return new GatewayContract(apiConfigService.getContractGateway(), network, mockTransactionsHelper);
+            return new GatewayContract(
+              apiConfigService.getContractGatewayStorage(),
+              apiConfigService.getContractGatewayProxy(),
+              network,
+              mockTransactionsHelper,
+            );
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
         },

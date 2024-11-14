@@ -40,7 +40,7 @@ describe('CrossChainTransactionProcessor', () => {
     apiConfigService = createMock();
     hiroApi = createMock();
 
-    apiConfigService.getContractGateway.mockReturnValue(mockGatewayContractId);
+    apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
     apiConfigService.getContractGasService.mockReturnValue(mockGasContractId);
 
     const moduleRef = await Test.createTestingModule({
@@ -170,6 +170,7 @@ describe('CrossChainTransactionProcessor', () => {
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
+        0,
         0,
         '180',
       );

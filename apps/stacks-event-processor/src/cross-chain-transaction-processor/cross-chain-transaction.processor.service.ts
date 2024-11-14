@@ -11,7 +11,7 @@ import { GasServiceProcessor, GatewayProcessor } from './processors';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
-  private readonly contractGateway: string;
+  private readonly contractGatewayStorage: string;
   private readonly contractGasService: string;
   private readonly logger: Logger;
 
@@ -23,7 +23,7 @@ export class CrossChainTransactionProcessorService {
     private readonly hiroApiHelper: HiroApiHelper,
     apiConfigService: ApiConfigService,
   ) {
-    this.contractGateway = apiConfigService.getContractGateway();
+    this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.contractGasService = apiConfigService.getContractGasService();
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
@@ -70,7 +70,7 @@ export class CrossChainTransactionProcessorService {
         transferAmount = transaction.token_transfer.amount;
       }
 
-      if (address === this.contractGateway) {
+      if (address === this.contractGatewayStorage) {
         const event = await this.gatewayProcessor.handleGatewayEvent(
           rawEvent,
           transaction,
@@ -91,7 +91,13 @@ export class CrossChainTransactionProcessorService {
       }
 
       if (address === this.contractGasService) {
-        const event = this.gasServiceProcessor.handleGasServiceEvent(rawEvent, transaction, index, fee);
+        const event = this.gasServiceProcessor.handleGasServiceEvent(
+          rawEvent,
+          transaction,
+          index,
+          rawEvent.event_index,
+          fee,
+        );
 
         if (event) {
           eventsToSend.push(event);

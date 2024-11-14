@@ -61,13 +61,22 @@ export class ApiConfigService {
     return eventsNotifierUrl;
   }
 
-  getContractGateway(): string {
-    const contractGateway = this.configService.get<string>('CONTRACT_ID_GATEWAY');
-    if (!contractGateway) {
-      throw new Error('No Contract Gateway present');
+  getContractGatewayStorage(): string {
+    const contractGatewayStorage = this.configService.get<string>('CONTRACT_ID_GATEWAY_STORAGE');
+    if (!contractGatewayStorage) {
+      throw new Error('No Contract Gateway Storage present');
     }
 
-    return contractGateway;
+    return contractGatewayStorage;
+  }
+
+  getContractGatewayProxy(): string {
+    const contractGatewayProxy = this.configService.get<string>('CONTRACT_ID_GATEWAY_PROXY');
+    if (!contractGatewayProxy) {
+      throw new Error('No Contract Gateway Proxy present');
+    }
+
+    return contractGatewayProxy;
   }
 
   getContractGasService(): string {
