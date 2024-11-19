@@ -49,7 +49,12 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         network: StacksNetwork,
         transactionsHelper: TransactionsHelper,
       ) => {
-        return new GasServiceContract(apiConfigService.getContractGasService(), network, transactionsHelper);
+        return new GasServiceContract(
+          apiConfigService.getContractGasServiceProxy(),
+          apiConfigService.getContractGasServiceStorage(),
+          network,
+          transactionsHelper,
+        );
       },
       inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },
@@ -95,13 +100,18 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         tokenManager: TokenManagerContract,
         nativeInterchainTokenContract: NativeInterchainTokenContract,
         transactionsHelper: TransactionsHelper,
+        gatewayContract: GatewayContract,
+        gasServiceContract: GasServiceContract,
       ) => {
         return new ItsContract(
-          apiConfigService.getContractIts(),
+          apiConfigService.getContractItsProxy(),
+          apiConfigService.getContractItsStorage(),
           network,
           tokenManager,
           nativeInterchainTokenContract,
           transactionsHelper,
+          gatewayContract,
+          gasServiceContract,
         );
       },
       inject: [
@@ -110,6 +120,8 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         TokenManagerContract,
         NativeInterchainTokenContract,
         TransactionsHelper,
+        GatewayContract,
+        GasServiceContract,
       ],
     },
     {

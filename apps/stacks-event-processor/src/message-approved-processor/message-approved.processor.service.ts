@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { ApiConfigService, AxelarGmpApi, BinaryUtils, GatewayContract, Locker } from '@stacks-monorepo/common';
+import { ApiConfigService, AxelarGmpApi, GatewayContract, Locker } from '@stacks-monorepo/common';
 import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
+import { TooLowAvailableBalanceError } from '@stacks-monorepo/common/contracts/entities/too-low-available-balance.error';
 import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
@@ -32,7 +33,7 @@ export class MessageApprovedProcessorService {
     private readonly gatewayContract: GatewayContract,
   ) {
     this.logger = new Logger(MessageApprovedProcessorService.name);
-    this.contractItsAddress = apiConfigService.getContractIts();
+    this.contractItsAddress = apiConfigService.getContractItsProxy();
   }
 
   @Cron('10/15 * * * * *')
@@ -50,7 +51,7 @@ export class MessageApprovedProcessorService {
         const entriesWithTransactions: MessageApproved[] = [];
         for (const messageApproved of entries) {
           if (messageApproved.retry === MAX_NUMBER_OF_RETRIES) {
-            await this.handleMessageApprovedFailed(messageApproved);
+            await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
 
             entriesToUpdate.push(messageApproved);
 
@@ -99,6 +100,10 @@ export class MessageApprovedProcessorService {
               messageApproved.retry += 1;
 
               entriesToUpdate.push(messageApproved);
+            } else if (e instanceof TooLowAvailableBalanceError) {
+              await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
+
+              entriesToUpdate.push(messageApproved);
             } else {
               throw e;
             }
@@ -136,12 +141,8 @@ export class MessageApprovedProcessorService {
 
     if (contractId !== this.contractItsAddress) {
       const gatewayImpl = await this.gatewayContract.getGatewayImpl();
-      if (!gatewayImpl) {
-        this.logger.warn('Could not build EXECUTE transaction because gateway-impl is null');
-        return null;
-      }
 
-      const tx = await this.transactionsHelper.makeContractCall({
+      const transaction = await this.transactionsHelper.makeContractCall({
         contractAddress: contractAddress,
         contractName: contractName,
         functionName: 'execute',
@@ -157,7 +158,13 @@ export class MessageApprovedProcessorService {
         anchorMode: AnchorMode.Any,
       });
 
-      return tx;
+      await this.transactionsHelper.checkAvailableGasBalance(
+        messageApproved.messageId,
+        messageApproved.availableGasBalance,
+        [{ transaction }],
+      );
+
+      return transaction;
     }
 
     return await this.itsContract.execute(
@@ -167,10 +174,11 @@ export class MessageApprovedProcessorService {
       messageApproved.sourceAddress,
       messageApproved.contractAddress,
       messageApproved.payload.toString('hex'),
+      messageApproved.availableGasBalance,
     );
   }
 
-  private async handleMessageApprovedFailed(messageApproved: MessageApproved) {
+  private async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
     this.logger.error(
       `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
     );
@@ -180,7 +188,7 @@ export class MessageApprovedProcessorService {
     const cannotExecuteEvent: CannotExecuteMessageEvent = {
       eventID: messageApproved.messageId,
       taskItemID: messageApproved.taskItemId || '',
-      reason: 'ERROR',
+      reason,
       details: 'CANNOT_EXECUTE_MESSAGE',
     };
 

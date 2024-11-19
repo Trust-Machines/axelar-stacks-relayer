@@ -63,7 +63,6 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     contractAddress: string,
     contractName: string,
     message: DeployInterchainToken,
-    itsContract: string,
   ): Promise<StacksTransaction> {
     return await this.transactionsHelper.makeContractCall({
       contractAddress: contractAddress,
@@ -72,7 +71,6 @@ export class NativeInterchainTokenContract implements OnModuleInit {
       functionArgs: [
         bufferFromHex(message.tokenId),
         uintCV(TokenType.NATIVE_INTERCHAIN_TOKEN),
-        principalCV(itsContract),
         optionalCVOf(), // operator-address
         stringAsciiCV(message.name),
         stringAsciiCV(message.symbol),
@@ -84,5 +82,9 @@ export class NativeInterchainTokenContract implements OnModuleInit {
       network: this.network,
       anchorMode: AnchorMode.Any,
     });
+  }
+
+  getTemplaceContractId(): string {
+    return this.templateContractId;
   }
 }

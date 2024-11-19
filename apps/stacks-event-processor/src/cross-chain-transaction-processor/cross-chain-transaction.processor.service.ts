@@ -12,7 +12,7 @@ import { GasServiceProcessor, GatewayProcessor } from './processors';
 @Injectable()
 export class CrossChainTransactionProcessorService {
   private readonly contractGatewayStorage: string;
-  private readonly contractGasService: string;
+  private readonly contractGasServiceStorage: string;
   private readonly logger: Logger;
 
   constructor(
@@ -24,7 +24,7 @@ export class CrossChainTransactionProcessorService {
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
-    this.contractGasService = apiConfigService.getContractGasService();
+    this.contractGasServiceStorage = apiConfigService.getContractGasServiceStorage();
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
@@ -90,7 +90,7 @@ export class CrossChainTransactionProcessorService {
         continue;
       }
 
-      if (address === this.contractGasService) {
+      if (address === this.contractGasServiceStorage) {
         const event = this.gasServiceProcessor.handleGasServiceEvent(
           rawEvent,
           transaction,

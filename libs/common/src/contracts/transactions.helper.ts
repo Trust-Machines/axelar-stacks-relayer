@@ -3,6 +3,7 @@ import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { StacksNetwork } from '@stacks/network';
 import {
   broadcastTransaction,
+  estimateContractDeploy,
   estimateContractFunctionCall,
   getAddressFromPrivateKey,
   makeContractCall,
@@ -18,6 +19,9 @@ import { CacheInfo } from '../utils';
 import { ProviderKeys } from '../utils/provider.enum';
 import { GasError } from './entities/gas.error';
 import { awaitSuccess, delay } from '../utils/await-success';
+import { TooLowAvailableBalanceError } from './entities/too-low-available-balance.error';
+import { ApiConfigService } from '../config';
+import { GasCheckerPayload } from './entities/gas-checker-payload';
 
 const TX_TIMEOUT_MILLIS = 600_000;
 const TX_POLL_INTERVAL = 6000;
@@ -26,12 +30,14 @@ const TX_POLL_INTERVAL = 6000;
 export class TransactionsHelper {
   private readonly logger: Logger;
   private readonly walletSignerAddress;
+  private readonly availableGasCheckEnabled: boolean;
 
   constructor(
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly redisHelper: RedisHelper,
     @Inject(ProviderKeys.WALLET_SIGNER) walletSigner: string,
     @Inject(ProviderKeys.STACKS_NETWORK) network: StacksNetwork,
+    apiConfigService: ApiConfigService,
   ) {
     this.logger = new Logger(TransactionsHelper.name);
 
@@ -39,6 +45,8 @@ export class TransactionsHelper {
       walletSigner,
       network.isMainnet() ? TransactionVersion.Mainnet : TransactionVersion.Testnet,
     );
+
+    this.availableGasCheckEnabled = apiConfigService.getAvailableGasCheckEnabled();
   }
 
   async getTransactionGas(transaction: StacksTransaction, retry: number, network: StacksNetwork): Promise<bigint> {
@@ -171,5 +179,49 @@ export class TransactionsHelper {
 
   getWalletSignerAddress(): string {
     return this.walletSignerAddress;
+  }
+
+  async checkAvailableGasBalance(
+    messageId: string,
+    availableGasBalance: string,
+    transactions: GasCheckerPayload[],
+  ): Promise<boolean> {
+    this.logger.debug(
+      `[messageId: ${messageId}] Checking available gas balance: availableGasBalance: ${availableGasBalance}`,
+    );
+    const availableBalance: bigint = BigInt(availableGasBalance);
+
+    let totalEstimatedFees = 0n;
+
+    for (const { transaction, deployContract = false } of transactions) {
+      let estimatedFee: bigint;
+
+      if (deployContract) {
+        estimatedFee = await estimateContractDeploy(transaction);
+      } else {
+        estimatedFee = await estimateContractFunctionCall(transaction);
+      }
+
+      totalEstimatedFees += estimatedFee;
+    }
+
+    if (!this.availableGasCheckEnabled) {
+      this.logger.warn(
+        `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}, but the gas checker is disabled`,
+      );
+      return true;
+    }
+
+    if (availableBalance < totalEstimatedFees) {
+      this.logger.error(
+        `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}. `,
+      );
+      throw new TooLowAvailableBalanceError();
+    }
+
+    this.logger.debug(
+      `[messageId: ${messageId}] Enough gas was paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}`,
+    );
+    return true;
   }
 }

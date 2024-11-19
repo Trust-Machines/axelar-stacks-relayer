@@ -94,7 +94,6 @@ export class TokenManagerContract {
     contractAddress: string,
     contractName: string,
     message: DeployTokenManager,
-    itsContract: string,
     tokenAddress: string,
     operator?: string,
   ): Promise<StacksTransaction> {
@@ -105,12 +104,15 @@ export class TokenManagerContract {
       functionArgs: [
         principalCV(tokenAddress),
         uintCV(message.tokenManagerType),
-        principalCV(itsContract),
         operator ? principalCV(operator) : optionalCVOf(),
       ],
       senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,
     });
+  }
+
+  getTemplaceContractId(): string {
+    return this.templateContractId;
   }
 }

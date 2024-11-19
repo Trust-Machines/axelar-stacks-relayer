@@ -1,11 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
   RefundedEvent,
 } from '@stacks-monorepo/common/contracts/entities/gas-service-events';
 import { StacksNetwork } from '@stacks/network';
-import { AnchorMode, principalCV, StacksTransaction, uintCV } from '@stacks/transactions';
+import {
+  AnchorMode,
+  callReadOnlyFunction,
+  cvToString,
+  principalCV,
+  StacksTransaction,
+  uintCV,
+} from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import {
@@ -18,24 +25,55 @@ import { splitContractId } from '../utils/split-contract-id';
 import { TransactionsHelper } from './transactions.helper';
 
 @Injectable()
-export class GasServiceContract {
-  private readonly contractAddress;
-  private readonly contractName;
+export class GasServiceContract implements OnModuleInit {
+  private readonly proxyContractAddress;
+  private readonly proxyContractName;
+  private gasImpl?: string;
+  private readonly logger: Logger;
 
   constructor(
-    private readonly contract: string,
+    proxyContract: string,
+    private readonly storageContract: string,
     private readonly network: StacksNetwork,
     private readonly transactionsHelper: TransactionsHelper,
   ) {
-    [this.contractAddress, this.contractName] = splitContractId(contract);
+    this.logger = new Logger(GasServiceContract.name);
+
+    [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
+  }
+
+  async onModuleInit() {
+    await this.getGasImpl();
+  }
+
+  async getGasImpl(): Promise<string> {
+    if (this.gasImpl) {
+      return this.gasImpl;
+    }
+
+    const [storageContractAddress, storageContractName] = splitContractId(this.storageContract);
+
+    const result = await callReadOnlyFunction({
+      contractAddress: storageContractAddress,
+      contractName: storageContractName,
+      functionName: 'get-impl',
+      functionArgs: [],
+      network: this.network,
+      senderAddress: storageContractAddress,
+    });
+
+    this.gasImpl = cvToString(result);
+    return this.gasImpl;
   }
 
   async collectFees(sender: string, receiver: string, amount: string): Promise<StacksTransaction> {
+    const gasImpl = await this.getGasImpl();
+
     return await this.transactionsHelper.makeContractCall({
-      contractAddress: this.contractAddress,
-      contractName: this.contractName,
-      functionName: 'collectFees',
-      functionArgs: [principalCV(receiver), uintCV(amount)],
+      contractAddress: this.proxyContractAddress,
+      contractName: this.proxyContractName,
+      functionName: 'collect-fees',
+      functionArgs: [principalCV(gasImpl), principalCV(receiver), uintCV(amount)],
       senderKey: sender,
       network: this.network,
       anchorMode: AnchorMode.Any,
@@ -49,11 +87,14 @@ export class GasServiceContract {
     receiver: string,
     amount: string,
   ): Promise<StacksTransaction> {
+    const gasImpl = await this.getGasImpl();
+
     return await this.transactionsHelper.makeContractCall({
-      contractAddress: this.contractAddress,
-      contractName: this.contractName,
+      contractAddress: this.proxyContractAddress,
+      contractName: this.proxyContractName,
       functionName: 'refund',
       functionArgs: [
+        principalCV(gasImpl),
         bufferFromHex(Buffer.from(txHash, 'hex').toString()),
         uintCV(logIndex),
         principalCV(receiver),
@@ -77,7 +118,7 @@ export class GasServiceContract {
     return DecodingUtils.decodeEvent<RefundedEvent>(event, refundedDecoder);
   }
 
-  getContractAddress(): string {
-    return this.contract;
+  getProxyContractAddress(): string {
+    return this.proxyContractAddress;
   }
 }

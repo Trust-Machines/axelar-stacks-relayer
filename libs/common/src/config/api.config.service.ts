@@ -79,22 +79,40 @@ export class ApiConfigService {
     return contractGatewayProxy;
   }
 
-  getContractGasService(): string {
-    const contractGasService = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE');
-    if (!contractGasService) {
-      throw new Error('No Contract Gas Service present');
+  getContractGasServiceProxy(): string {
+    const contractGasServiceProxy = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE_PROXY');
+    if (!contractGasServiceProxy) {
+      throw new Error('No Contract Gas Service Proxy present');
     }
 
-    return contractGasService;
+    return contractGasServiceProxy;
   }
 
-  getContractIts(): string {
-    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS');
+  getContractGasServiceStorage(): string {
+    const contractGasServiceStorage = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE_STORAGE');
+    if (!contractGasServiceStorage) {
+      throw new Error('No Contract Gas Service Storage present');
+    }
+
+    return contractGasServiceStorage;
+  }
+
+  getContractItsProxy(): string {
+    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS_PROXY');
     if (!contractIts) {
-      throw new Error('No Contract ITS present');
+      throw new Error('No Contract ITS Proxy present');
     }
 
     return contractIts;
+  }
+
+  getContractItsStorage(): string {
+    const contractItsStorage = this.configService.get<string>('CONTRACT_ID_ITS_STORAGE');
+    if (!contractItsStorage) {
+      throw new Error('No Contract ITS Storage present');
+    }
+
+    return contractItsStorage;
   }
 
   getContractIdNativeInterchainTokenTemplate(): string {
@@ -192,5 +210,9 @@ export class ApiConfigService {
 
   getGatewayTimeout(): number {
     return this.configService.get<number>('GATEWAY_TIMEOUT') ?? 30_000; // 30 seconds default
+  }
+
+  getAvailableGasCheckEnabled(): boolean {
+    return this.configService.get<boolean>('AVAILABLE_GAS_CHECK_ENABLED') ?? false;
   }
 }

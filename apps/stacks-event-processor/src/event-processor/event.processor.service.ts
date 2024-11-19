@@ -9,7 +9,7 @@ import { getEventType, ScEvent } from './types';
 @Injectable()
 export class EventProcessorService {
   private readonly contractGatewayStorage: string;
-  private readonly contractGasService: string;
+  private readonly contractGasServiceStorage: string;
 
   private contractGatewayEventsKey: string;
   private contractGasServiceEventsKey: string;
@@ -22,9 +22,9 @@ export class EventProcessorService {
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
-    this.contractGasService = apiConfigService.getContractGasService();
+    this.contractGasServiceStorage = apiConfigService.getContractGasServiceStorage();
     this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGatewayStorage).key;
-    this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasService).key;
+    this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasServiceStorage).key;
 
     this.logger = new Logger(EventProcessorService.name);
   }
@@ -42,7 +42,11 @@ export class EventProcessorService {
         this.contractGatewayEventsKey,
         gatewayLastProcessedEvent,
       );
-      await this.getContractEvents(this.contractGasService, this.contractGasServiceEventsKey, gasLastProcessedEvent);
+      await this.getContractEvents(
+        this.contractGasServiceStorage,
+        this.contractGasServiceEventsKey,
+        gasLastProcessedEvent,
+      );
     });
   }
 
@@ -125,7 +129,7 @@ export class EventProcessorService {
 
   private handleEvent(event: ScEvent): boolean {
     const contractAddress = event.contract_log.contract_id;
-    if (contractAddress === this.contractGasService) {
+    if (contractAddress === this.contractGasServiceStorage) {
       const eventName = getEventType(event);
 
       const validEvent =

@@ -92,7 +92,7 @@ describe('GatewayProcessor', () => {
 
     gatewayContract.decodeMessageApprovedEvent.mockReturnValue(messageApprovedEvent);
     gatewayContract.decodeMessageExecutedEvent.mockReturnValue(messageExecutedEvent);
-    apiConfigService.getContractIts.mockReturnValue('mock_contract.mock_name');
+    apiConfigService.getContractItsProxy.mockReturnValue('mock_contract.mock_name');
 
     service = moduleRef.get(GatewayProcessor);
   });
@@ -288,6 +288,7 @@ describe('GatewayProcessor', () => {
         createdAt: new Date(),
         successTimes: null,
         taskItemId: null,
+        availableGasBalance: '0',
       };
 
       messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(messageApproved));

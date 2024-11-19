@@ -248,8 +248,7 @@ export class ApprovalsProcessorService {
   }
 
   private async processExecuteTask(response: ExecuteTask, taskItemId: string) {
-    // TODO: Should we also save response.availableGasBalance and check if enough gas was payed before executing?
-    const messageApproved = await this.messageApprovedRepository.create({
+    await this.messageApprovedRepository.createOrUpdate({
       sourceChain: response.message.sourceChain,
       messageId: response.message.messageID,
       status: MessageApprovedStatus.PENDING,
@@ -259,21 +258,17 @@ export class ApprovalsProcessorService {
       payload: Buffer.from(response.payload, 'base64'),
       retry: 0,
       taskItemId,
+      // Only support native token for gas
+      availableGasBalance: !response.availableGasBalance.tokenID ? response.availableGasBalance.amount : '0',
     });
-
-    if (!messageApproved) {
-      this.logger.warn(
-        `Couldn't save message approved to database, duplicate exists for source chain ${response.message.sourceChain} and message id ${response.message.messageID}`,
-      );
-
-      return;
-    }
   }
 
   private async processRefundTask(response: RefundTask) {
     let tokenBalance: BigNumber;
 
-    const addressBalance = await this.hiroApiHelper.getAccountBalance(this.gasServiceContract.getContractAddress());
+    const addressBalance = await this.hiroApiHelper.getAccountBalance(
+      this.gasServiceContract.getProxyContractAddress(),
+    );
 
     try {
       if (response.remainingGasBalance.tokenID) {
@@ -287,7 +282,7 @@ export class ApprovalsProcessorService {
       if (tokenBalance.lt(response.remainingGasBalance.amount)) {
         throw new Error(
           `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
-            ` in gas service contract ${this.gasServiceContract.getContractAddress()}. Needed ${response.remainingGasBalance.amount},` +
+            ` in gas service contract ${this.gasServiceContract.getProxyContractAddress()}. Needed ${response.remainingGasBalance.amount},` +
             ` but balance is ${tokenBalance.toFixed()}`,
         );
       }

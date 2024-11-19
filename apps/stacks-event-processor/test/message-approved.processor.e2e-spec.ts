@@ -8,7 +8,7 @@ import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repo
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksTestnet } from '@stacks/network';
-import { ContractCallPayload, cvToValue, StacksTransaction } from '@stacks/transactions';
+import { ContractCallPayload, cvToValue, makeContractCall, StacksTransaction } from '@stacks/transactions';
 import { MessageApprovedProcessorModule, MessageApprovedProcessorService } from '../src/message-approved-processor';
 
 const SIGNER = '6d78de7b0625dfbfc16c3a8a5735f6dc3dc3f2ce';
@@ -55,6 +55,8 @@ describe('MessageApprovedProcessorService', () => {
       },
     } as any);
 
+    transactionsHelper.makeContractCall.mockImplementation(async (opts) => await makeContractCall(opts));
+
     // Reset database & cache
     await prisma.messageApproved.deleteMany();
 
@@ -69,7 +71,7 @@ describe('MessageApprovedProcessorService', () => {
   });
 
   const createMessageApproved = async (extraData: Partial<MessageApproved> = {}): Promise<MessageApproved> => {
-    const result = await messageApprovedRepository.create({
+    await messageApprovedRepository.createOrUpdate({
       sourceAddress: 'sourceAddress',
       messageId: 'messageId',
       status: MessageApprovedStatus.PENDING,
@@ -81,22 +83,27 @@ describe('MessageApprovedProcessorService', () => {
       executeTxHash: null,
       updatedAt: new Date(),
       createdAt: new Date(),
+      availableGasBalance: '0',
       ...extraData,
     });
 
-    if (!result) {
-      throw new Error('Can not create database entries');
-    }
-
-    return result;
+    // @ts-ignore
+    return await prisma.messageApproved.findUnique({
+      where: {
+        sourceChain_messageId: {
+          sourceChain: extraData.sourceChain || 'ethereum',
+          messageId: extraData.messageId || 'messageId',
+        },
+      },
+    });
   };
 
   const assertArgs = (transaction: StacksTransaction, entry: MessageApproved) => {
     const payload = transaction.payload as ContractCallPayload;
 
-    const sourceChain = BinaryUtils.hexToString(cvToValue(payload.functionArgs[0]));
-    const messageId = BinaryUtils.hexToString(cvToValue(payload.functionArgs[1]));
-    const sourceAddress = BinaryUtils.hexToString(cvToValue(payload.functionArgs[2]));
+    const sourceChain = cvToValue(payload.functionArgs[0]);
+    const messageId = cvToValue(payload.functionArgs[1]);
+    const sourceAddress = cvToValue(payload.functionArgs[2]);
     const payloadArg = cvToValue(payload.functionArgs[3]).slice(2);
 
     expect(payload.functionName.content).toBe('execute');
@@ -166,7 +173,7 @@ describe('MessageApprovedProcessorService', () => {
     // Entries will be processed
     const originalFirstEntry = await createMessageApproved({
       retry: 1,
-      updatedAt: new Date(new Date().getTime() - 60_500),
+      updatedAt: new Date(new Date().getTime() - 360_000),
     });
     const originalSecondEntry = await createMessageApproved({
       sourceChain: 'polygon',
@@ -174,7 +181,7 @@ describe('MessageApprovedProcessorService', () => {
       sourceAddress: 'otherSourceAddress',
       payload: Buffer.from('otherPayload'),
       retry: 3,
-      updatedAt: new Date(new Date().getTime() - 60_500),
+      updatedAt: new Date(new Date().getTime() - 360_000),
       taskItemId: '0191ead2-2234-7310-b405-76e787415031',
     });
     // Entry will not be processed (updated too early)
@@ -235,7 +242,7 @@ describe('MessageApprovedProcessorService', () => {
       eventID: originalSecondEntry.messageId,
       taskItemID: originalSecondEntry.taskItemId,
       reason: 'ERROR',
-      details: '',
+      details: 'CANNOT_EXECUTE_MESSAGE',
     });
 
     // Was not updated
@@ -256,7 +263,7 @@ describe('MessageApprovedProcessorService', () => {
       sourceAddress: 'otherSourceAddress',
       payload: Buffer.from('otherPayload'),
       retry: 2,
-      updatedAt: new Date(new Date().getTime() - 60_500),
+      updatedAt: new Date(new Date().getTime() - 360_000),
     });
 
     transactionsHelper.sendTransactions.mockImplementation((): Promise<string[]> => {
@@ -442,10 +449,10 @@ describe('MessageApprovedProcessorService', () => {
       )) as MessageApproved;
       expect(itsExecute).toEqual({
         ...originalItsExecute,
-        retry: 2,
+        retry: 1,
         executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
-        successTimes: 1,
+        successTimes: null,
       });
 
       // Mark as last updated more than 1 minute ago
@@ -475,10 +482,10 @@ describe('MessageApprovedProcessorService', () => {
       )) as MessageApproved;
       expect(itsExecute).toEqual({
         ...originalItsExecute,
-        retry: 2,
-        executeTxHash: null,
+        retry: 1,
+        executeTxHash: '5c39fca59c40e1340cb622ed135e884cba0e4ee499a2b4f776a02dc49ab8b2f6',
         updatedAt: expect.any(Date),
-        successTimes: 1,
+        successTimes: null,
       });
 
       // Mark as last updated more than 1 minute ago
@@ -508,10 +515,10 @@ describe('MessageApprovedProcessorService', () => {
       )) as MessageApproved;
       expect(itsExecute).toEqual({
         ...originalItsExecute,
-        retry: 3,
+        retry: 1,
         executeTxHash: expect.any(String),
         updatedAt: expect.any(Date),
-        successTimes: 1,
+        successTimes: null,
       });
     });
   });

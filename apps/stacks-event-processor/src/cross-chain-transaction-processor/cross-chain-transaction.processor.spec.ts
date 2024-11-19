@@ -41,7 +41,7 @@ describe('CrossChainTransactionProcessor', () => {
     hiroApi = createMock();
 
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
-    apiConfigService.getContractGasService.mockReturnValue(mockGasContractId);
+    apiConfigService.getContractGasServiceStorage.mockReturnValue(mockGasContractId);
 
     const moduleRef = await Test.createTestingModule({
       providers: [CrossChainTransactionProcessorService],

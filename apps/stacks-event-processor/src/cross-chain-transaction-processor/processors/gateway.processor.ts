@@ -128,7 +128,7 @@ export class GatewayProcessor {
   ): { payload: string; payloadHash: string } | null {
     // Handle STACKS -> ITS Hub case
     if (
-      contractCallEvent.sender === this.apiConfigService.getContractIts() &&
+      contractCallEvent.sender === this.apiConfigService.getContractItsProxy() &&
       contractCallEvent.destinationChain !== CONSTANTS.SOURCE_CHAIN_NAME
     ) {
       const abiEncodedPayload = HubMessage.abiEncode(contractCallEvent.payload.toString('hex'));

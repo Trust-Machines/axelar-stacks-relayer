@@ -48,30 +48,24 @@ export class GatewayContract implements OnModuleInit {
     await this.getGatewayImpl();
   }
 
-  async getGatewayImpl(): Promise<string | null> {
-    try {
-      if (this.gatewayImpl) {
-        return this.gatewayImpl;
-      }
-
-      const [storageContractAddress, storageContractName] = splitContractId(this.storageContract);
-
-      const result = await callReadOnlyFunction({
-        contractAddress: storageContractAddress,
-        contractName: storageContractName,
-        functionName: 'get-impl',
-        functionArgs: [],
-        network: this.network,
-        senderAddress: storageContractAddress,
-      });
-
-      this.gatewayImpl = cvToString(result);
+  async getGatewayImpl(): Promise<string> {
+    if (this.gatewayImpl) {
       return this.gatewayImpl;
-    } catch (error) {
-      this.logger.error('Failed to get gateway impl');
-      this.logger.error(error);
-      return null;
     }
+
+    const [storageContractAddress, storageContractName] = splitContractId(this.storageContract);
+
+    const result = await callReadOnlyFunction({
+      contractAddress: storageContractAddress,
+      contractName: storageContractName,
+      functionName: 'get-impl',
+      functionArgs: [],
+      network: this.network,
+      senderAddress: storageContractAddress,
+    });
+
+    this.gatewayImpl = cvToString(result);
+    return this.gatewayImpl;
   }
 
   async buildTransactionExternalFunction(
@@ -80,9 +74,6 @@ export class GatewayContract implements OnModuleInit {
     fee?: bigint,
   ): Promise<StacksTransaction | null> {
     const gatewayImpl = await this.getGatewayImpl();
-    if (!gatewayImpl) {
-      return null;
-    }
 
     const opts: SignedContractCallOptions = {
       contractAddress: this.contractAddress,
