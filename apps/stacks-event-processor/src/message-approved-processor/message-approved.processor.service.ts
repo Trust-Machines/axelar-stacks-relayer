@@ -178,7 +178,7 @@ export class MessageApprovedProcessorService {
     );
   }
 
-  private async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
+  async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
     this.logger.error(
       `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
     );
