@@ -12,7 +12,6 @@ import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { StacksTransaction } from '@stacks/transactions';
-import { randomUUID } from 'crypto';
 import { ApprovalsProcessorService, AXELAR_CHAIN } from './approvals.processor.service';
 import { PendingConstructProof } from './entities/pending-construct-proof';
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
@@ -859,32 +858,74 @@ describe('ApprovalsProcessorService', () => {
   });
 
   describe('handleConstructProof', () => {
-    it('should add a single entry in Redis for a single message', async () => {
+    it('should add a single entry in Redis for construct_proof_with_payload', async () => {
       const response = {
-        messages: [{ source_chain: 'axelar', message_id: 'msg1', source_address: 'randomAddress' }],
+        message: {
+          sourceChain: AXELAR_CHAIN,
+          messageID: 'msg1',
+          sourceAddress: AXELAR_ITS_CONTRACT,
+          destinationAddress: 'someDestination',
+          payloadHash: 'payloadHash1',
+        },
+        payload: 'payloadData',
       };
 
       await service.processConstructProofTask(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        `pendingConstructProof:${AXELAR_CHAIN}_msg1`,
+        expect.objectContaining({
+          request: {
+            construct_proof_with_payload: {
+              message_id: {
+                source_chain: response.message.sourceChain,
+                message_id: response.message.messageID,
+              },
+              payload: response.payload,
+            },
+          },
+          retry: 0,
+        }),
+        600,
+      );
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('should add a single entry in Redis for construct_proof', async () => {
+      const response = {
+        message: {
+          sourceChain: 'otherChain',
+          messageID: 'msg2',
+          sourceAddress: 'randomAddress',
+          destinationAddress: 'anotherDestination',
+          payloadHash: 'payloadHash2',
+        },
+        payload: 'payloadData',
+      };
+
+      await service.processConstructProofTask(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        'pendingConstructProof:otherChain_msg2',
+        expect.objectContaining({
+          request: {
+            construct_proof: [
+              {
+                source_chain: response.message.sourceChain,
+                message_id: response.message.messageID,
+              },
+            ],
+          },
+          retry: 0,
+        }),
+        600,
+      );
 
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
-    it('should add multiple entries in Redis for multiple messages if sourceAddress is a Axelar ITS', async () => {
-      const response = {
-        messages: [
-          { source_chain: AXELAR_CHAIN, message_id: 'msg1', payload: 'payload1', source_address: AXELAR_ITS_CONTRACT },
-          { source_chain: AXELAR_CHAIN, message_id: 'msg2', payload: 'payload2', source_address: AXELAR_ITS_CONTRACT },
-        ],
-      };
-
-      await service.processConstructProofTask(response);
-
-      expect(redisHelper.set).toHaveBeenCalledTimes(2);
-    });
-
     it('should process and remove construct proof if broadcast status is SUCCESS', async () => {
-      const id = randomUUID();
-      const key = CacheInfo.PendingConstructProof(id).key;
+      const key = CacheInfo.PendingConstructProof('axelar_msg1').key;
       const pendingProof: PendingConstructProof = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg1' }] },
         retry: 0,
@@ -903,7 +944,7 @@ describe('ApprovalsProcessorService', () => {
     });
 
     it('should retry construct proof broadcast if status is not SUCCESS', async () => {
-      const id = randomUUID();
+      const id = 'axelar_msg1';
       const key = CacheInfo.PendingConstructProof(id).key;
       const pendingProof: PendingConstructProof = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg2' }] },
@@ -927,7 +968,7 @@ describe('ApprovalsProcessorService', () => {
     });
 
     it('should handle new broadcast for construct proof if no broadcastID is set', async () => {
-      const id = randomUUID();
+      const id = 'axelar_msg3';
       const key = CacheInfo.PendingConstructProof(id).key;
       const pendingProof: PendingConstructProof = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg3' }] },
@@ -949,7 +990,7 @@ describe('ApprovalsProcessorService', () => {
     });
 
     it('should delete construct proof if maximum retries are reached', async () => {
-      const id = randomUUID();
+      const id = 'axelar_msg4';
       const key = CacheInfo.PendingConstructProof(id).key;
       const pendingProof: PendingConstructProof = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg4' }] },

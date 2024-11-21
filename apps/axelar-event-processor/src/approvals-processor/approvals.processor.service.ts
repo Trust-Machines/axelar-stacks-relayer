@@ -14,6 +14,7 @@ import {
   BroadcastRequest,
   BroadcastStatus,
   Components,
+  ConstructProofTask,
   VerifyTask,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
@@ -27,8 +28,7 @@ import { DecodingUtils, gatewayTxDataDecoder } from '@stacks-monorepo/common/uti
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import BigNumber from 'bignumber.js';
-import { randomUUID } from 'crypto';
-import { ConstructProofPayload, PendingConstructProof } from './entities/pending-construct-proof';
+import { PendingConstructProof } from './entities/pending-construct-proof';
 import { PendingTransaction } from './entities/pending-transaction';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
@@ -205,7 +205,7 @@ export class ApprovalsProcessorService {
     }
 
     if (task.type === 'CONSTRUCT_PROOF') {
-      const response = task.task as any; // TODO CHANGE WHEN AXELAR SUPPORTS IT
+      const response = task.task as ConstructProofTask;
 
       await this.processConstructProofTask(response);
 
@@ -312,19 +312,15 @@ export class ApprovalsProcessorService {
     this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);
   }
 
-  async processConstructProofTask(response: any) {
-    const messages = response.messages;
+  async processConstructProofTask(response: ConstructProofTask) {
+    const request = this.buildConstructProofRequest(response);
 
-    const requests = this.buildConstructProofRequests(messages);
-
-    for (const request of requests) {
-      const id = randomUUID();
-      const constructProof: PendingConstructProof = {
-        request,
-        retry: 0,
-      };
-      await this.storeConstructProof(CacheInfo.PendingConstructProof(id).key, constructProof);
-    }
+    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const constructProof: PendingConstructProof = {
+      request,
+      retry: 0,
+    };
+    await this.storeConstructProof(CacheInfo.PendingConstructProof(id).key, constructProof);
   }
 
   async handlePendingConstructProofRaw() {
@@ -394,24 +390,24 @@ export class ApprovalsProcessorService {
     await this.storeConstructProof(key, updatedProof);
   }
 
-  private buildConstructProofRequests(messages: ConstructProofPayload[]): BroadcastRequest[] {
-    const constructProofWithPayload = messages
-      .filter((message) => message.source_address === this.axelarContractIts && message.source_chain === AXELAR_CHAIN)
-      .map((message) => ({
+  private buildConstructProofRequest(task: ConstructProofTask): BroadcastRequest {
+    if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === AXELAR_CHAIN) {
+      return {
         construct_proof_with_payload: {
-          message_id: { source_chain: message.source_chain, message_id: message.message_id },
-          payload: message.payload,
+          message_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
+          payload: task.payload,
         },
-      }));
-
-    const constructProofMessages = messages
-      .filter((message) => message.source_address !== this.axelarContractIts || message.source_chain !== AXELAR_CHAIN)
-      .map((message) => ({ source_chain: message.source_chain, message_id: message.message_id }));
-
-    const constructProof = constructProofMessages.length > 0 ? [{ construct_proof: constructProofMessages }] : [];
-
-    const requests = [...constructProofWithPayload, ...constructProof];
-    return requests;
+      };
+    } else {
+      return {
+        construct_proof: [
+          {
+            source_chain: task.message.sourceChain,
+            message_id: task.message.messageID,
+          },
+        ],
+      };
+    }
   }
 
   private async storeConstructProof(key: string, constructProof: PendingConstructProof) {

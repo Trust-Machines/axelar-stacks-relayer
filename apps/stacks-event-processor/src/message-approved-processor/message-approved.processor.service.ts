@@ -2,12 +2,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, AxelarGmpApi, GatewayContract, Locker } from '@stacks-monorepo/common';
-import { CannotExecuteMessageEvent, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { CannotExecuteMessageEventV2, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
 import { TooLowAvailableBalanceError } from '@stacks-monorepo/common/contracts/entities/too-low-available-balance.error';
 import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
@@ -185,17 +186,22 @@ export class MessageApprovedProcessorService {
 
     messageApproved.status = MessageApprovedStatus.FAILED;
 
-    const cannotExecuteEvent: CannotExecuteMessageEvent = {
+    const cannotExecuteEvent: CannotExecuteMessageEventV2 = {
       eventID: messageApproved.messageId,
-      taskItemID: messageApproved.taskItemId || '',
+      messageID: messageApproved.messageId,
+      sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
       reason,
       details: 'CANNOT_EXECUTE_MESSAGE',
+      meta: {
+        txID: messageApproved.executeTxHash,
+        taskItemID: messageApproved.taskItemId || '',
+      },
     };
 
     try {
       const eventsToSend: Event[] = [
         {
-          type: 'CANNOT_EXECUTE_MESSAGE',
+          type: 'CANNOT_EXECUTE_MESSAGE/V2',
           ...cannotExecuteEvent,
         },
       ];
