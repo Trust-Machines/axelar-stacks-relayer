@@ -64,12 +64,21 @@ export class TransactionsHelper {
   }
 
   async sendTransaction(transaction: StacksTransaction): Promise<string> {
-    const broadcastResponse = await broadcastTransaction(transaction);
-    if (broadcastResponse.error) {
+    try {
+      const broadcastResponse = await broadcastTransaction(transaction);
+      if (broadcastResponse.error) {
+        await this.decrementNonce();
+        throw new Error(`Could not broadcast tx ${JSON.stringify(broadcastResponse)}`);
+      }
+      return broadcastResponse.txid;
+    } catch (e) {
       await this.decrementNonce();
-      throw new Error(`Could not broadcast tx ${JSON.stringify(broadcastResponse)}`);
+
+      this.logger.error('Could not send transaction');
+      this.logger.error(e);
+
+      throw e;
     }
-    return broadcastResponse.txid;
   }
 
   async makeContractCall(opts: SignedContractCallOptions, simulate: boolean = false) {
@@ -77,17 +86,35 @@ export class TransactionsHelper {
       return await makeContractCall(opts);
     }
 
-    const nonce = await this.getSignerNonce();
-    this.logger.debug(`Calling makeContractCall with nonce: ${nonce}`);
+    try {
+      const nonce = await this.getSignerNonce();
+      this.logger.debug(`Calling makeContractCall with nonce: ${nonce}`);
 
-    return await makeContractCall({ ...opts, nonce });
+      return await makeContractCall({ ...opts, nonce });
+    } catch (e) {
+      await this.decrementNonce();
+
+      this.logger.error('Could not call makeContractCall');
+      this.logger.error(e);
+
+      throw e;
+    }
   }
 
   async makeContractDeploy(opts: SignedContractDeployOptions) {
-    const nonce = await this.getSignerNonce();
-    this.logger.debug(`Calling makeContractDeploy with nonce: ${nonce}`);
+    try {
+      const nonce = await this.getSignerNonce();
+      this.logger.debug(`Calling makeContractDeploy with nonce: ${nonce}`);
 
-    return await makeContractDeploy({ ...opts, nonce });
+      return await makeContractDeploy({ ...opts, nonce });
+    } catch (e) {
+      await this.decrementNonce();
+
+      this.logger.error('Could not call makeContractDeploy');
+      this.logger.error(e);
+
+      throw e;
+    }
   }
 
   async sendTransactions(transactions: StacksTransaction[]) {
