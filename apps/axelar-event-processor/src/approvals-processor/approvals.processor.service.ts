@@ -266,9 +266,9 @@ export class ApprovalsProcessorService {
   private async processRefundTask(response: RefundTask) {
     let tokenBalance: BigNumber;
 
-    const addressBalance = await this.hiroApiHelper.getAccountBalance(
-      this.gasServiceContract.getProxyContractAddress(),
-    );
+    const gasImpl = await this.gasServiceContract.getGasImpl();
+
+    const addressBalance = await this.hiroApiHelper.getAccountBalance(gasImpl);
 
     try {
       if (response.remainingGasBalance.tokenID) {
@@ -282,7 +282,7 @@ export class ApprovalsProcessorService {
       if (tokenBalance.lt(response.remainingGasBalance.amount)) {
         throw new Error(
           `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
-            ` in gas service contract ${this.gasServiceContract.getProxyContractAddress()}. Needed ${response.remainingGasBalance.amount},` +
+            ` in gas service impl contract ${gasImpl}. Needed ${response.remainingGasBalance.amount},` +
             ` but balance is ${tokenBalance.toFixed()}`,
         );
       }
@@ -300,7 +300,8 @@ export class ApprovalsProcessorService {
 
     const transaction = await this.gasServiceContract.refund(
       this.walletSigner,
-      messageTxHash.slice(2), // Remove 0x from start
+      gasImpl,
+      messageTxHash,
       logIndex,
       response.refundRecipientAddress,
       response.remainingGasBalance.amount,
@@ -330,11 +331,11 @@ export class ApprovalsProcessorService {
       return;
     }
 
-    this.logger.debug(`Trying to process ${keys.length} CONSTRUCT_PROOF tasks`);
-
     for (const key of keys) {
       const cachedValue = await this.getConstructProof(key);
       if (!cachedValue) continue;
+
+      this.logger.debug(`Trying to process CONSTRUCT_PROOF task: ${JSON.stringify(cachedValue)}`);
 
       if (cachedValue.broadcastID) {
         await this.handleBroadcastStatus(key, cachedValue);
@@ -374,10 +375,13 @@ export class ApprovalsProcessorService {
     }
 
     try {
+      this.logger.debug(`Broadcasting CONSTRUCT_PROOF request: ${JSON.stringify(constructProof.request)}`);
       const broadcastID = await this.axelarGmpApi.broadcastMsgExecuteContract(constructProof.request);
       await this.storeConstructProof(key, { ...constructProof, broadcastID });
+      this.logger.debug(`CONSTRUCT_PROOF broadcast successful, ID: ${broadcastID}`);
     } catch (error) {
-      this.logger.error('Error broadcasting construct_proof:', error);
+      this.logger.error('Error broadcasting construct_proof');
+      this.logger.error(error);
       await this.updateRetry(key, constructProof);
     }
   }

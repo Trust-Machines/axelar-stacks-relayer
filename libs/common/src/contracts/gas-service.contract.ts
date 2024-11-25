@@ -8,7 +8,9 @@ import { StacksNetwork } from '@stacks/network';
 import {
   AnchorMode,
   callReadOnlyFunction,
+  createSTXPostCondition,
   cvToString,
+  FungibleConditionCode,
   principalCV,
   StacksTransaction,
   uintCV,
@@ -32,7 +34,7 @@ export class GasServiceContract implements OnModuleInit {
   private readonly logger: Logger;
 
   constructor(
-    proxyContract: string,
+    private readonly proxyContract: string,
     private readonly storageContract: string,
     private readonly network: StacksNetwork,
     private readonly transactionsHelper: TransactionsHelper,
@@ -82,12 +84,13 @@ export class GasServiceContract implements OnModuleInit {
 
   async refund(
     sender: string,
+    gasImpl: string,
     txHash: string,
     logIndex: string,
     receiver: string,
     amount: string,
   ): Promise<StacksTransaction> {
-    const gasImpl = await this.getGasImpl();
+    const postCondition = createSTXPostCondition(gasImpl, FungibleConditionCode.LessEqual, amount);
 
     return await this.transactionsHelper.makeContractCall({
       contractAddress: this.proxyContractAddress,
@@ -95,7 +98,7 @@ export class GasServiceContract implements OnModuleInit {
       functionName: 'refund',
       functionArgs: [
         principalCV(gasImpl),
-        bufferFromHex(Buffer.from(txHash, 'hex').toString()),
+        bufferFromHex(txHash),
         uintCV(logIndex),
         principalCV(receiver),
         uintCV(amount),
@@ -103,6 +106,7 @@ export class GasServiceContract implements OnModuleInit {
       senderKey: sender,
       network: this.network,
       anchorMode: AnchorMode.Any,
+      postConditions: [postCondition],
     });
   }
 
@@ -119,6 +123,6 @@ export class GasServiceContract implements OnModuleInit {
   }
 
   getProxyContractAddress(): string {
-    return this.proxyContractAddress;
+    return this.proxyContract;
   }
 }

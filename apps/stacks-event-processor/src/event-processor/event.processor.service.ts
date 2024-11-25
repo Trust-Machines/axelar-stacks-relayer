@@ -74,11 +74,24 @@ export class EventProcessorService {
           break;
         }
 
+        const lastProcessedIndex = events.findIndex(
+          (event) => `${event.tx_id}-${event.event_index}` === lastProcessedEventKey,
+        );
+
+        const eventsToProcess = lastProcessedIndex !== -1 ? events.slice(0, lastProcessedIndex) : events;
+
         if (!latestEventKey) {
           latestEventKey = firstEventKey;
         }
 
-        await this.consumeEvents(events, lastProcessedEventKey);
+        if (eventsToProcess.length > 0) {
+          await this.consumeEvents(eventsToProcess);
+        }
+
+        // If we found the last processed event on this page, don't go to the next one
+        if (lastProcessedIndex !== -1) {
+          break;
+        }
 
         offset += limit;
       } catch (error) {
@@ -98,17 +111,11 @@ export class EventProcessorService {
     await this.redisHelper.set(redisKey, lastProcessedEventKey);
   }
 
-  async consumeEvents(events: ScEvent[], lastProcessedEventKey: string | undefined) {
+  async consumeEvents(events: ScEvent[]) {
     try {
       const crossChainTransactions = new Set<string>();
 
       for (const event of events) {
-        const eventKey = `${event.tx_id}-${event.event_index}`;
-
-        if (eventKey === lastProcessedEventKey) {
-          break;
-        }
-
         const shouldHandle = this.handleEvent(event);
 
         if (shouldHandle) {

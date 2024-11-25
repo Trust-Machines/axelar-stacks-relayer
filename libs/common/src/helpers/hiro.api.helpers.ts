@@ -29,7 +29,7 @@ export class HiroApiHelper {
   }
 
   async getAccountBalance(account: string): Promise<AddressBalanceResponse> {
-    const response = await axios.get(`${this.hiroUrl}/extended/v1/address/${account}`);
+    const response = await axios.get(`${this.hiroUrl}/extended/v1/address/${account}/balances`);
     const balance = response.data as AddressBalanceResponse;
     return balance;
   }

@@ -102,6 +102,8 @@ export class MessageApprovedProcessorService {
 
               entriesToUpdate.push(messageApproved);
             } else if (e instanceof TooLowAvailableBalanceError) {
+              await this.transactionsHelper.deleteNonce();
+
               await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
 
               entriesToUpdate.push(messageApproved);
@@ -114,18 +116,19 @@ export class MessageApprovedProcessorService {
         const hashes = await this.transactionsHelper.sendTransactions(transactionsToSend);
 
         if (hashes) {
-          entriesWithTransactions.forEach((entry) => {
+          for (const entry of entriesWithTransactions) {
             const sent = hashes.includes(entry.executeTxHash as string);
 
+            entriesToUpdate.push(entry);
+
             // If not sent revert fields but still save to database so it is retried later and does
-            // not block the processing
+            // not block the processing. Break is used to not update the next transactions so that
+            // they can be executed again in the next iteration
             if (!sent) {
               entry.executeTxHash = null;
-              entry.retry = entry.retry === 1 ? 1 : entry.retry - 1; // retry should be 1 or more to not be processed immediately
+              break;
             }
-
-            entriesToUpdate.push(entry);
-          });
+          }
         }
 
         if (entriesToUpdate.length) {
@@ -191,7 +194,7 @@ export class MessageApprovedProcessorService {
       messageID: messageApproved.messageId,
       sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
       reason,
-      details: 'CANNOT_EXECUTE_MESSAGE',
+      details: 'CANNOT_EXECUTE_MESSAGE/V2',
       meta: {
         txID: messageApproved.executeTxHash,
         taskItemID: messageApproved.taskItemId || '',

@@ -67,12 +67,11 @@ export class TransactionsHelper {
     try {
       const broadcastResponse = await broadcastTransaction(transaction);
       if (broadcastResponse.error) {
-        await this.decrementNonce();
         throw new Error(`Could not broadcast tx ${JSON.stringify(broadcastResponse)}`);
       }
       return broadcastResponse.txid;
     } catch (e) {
-      await this.decrementNonce();
+      await this.deleteNonce();
 
       this.logger.error('Could not send transaction');
       this.logger.error(e);
@@ -92,7 +91,7 @@ export class TransactionsHelper {
 
       return await makeContractCall({ ...opts, nonce });
     } catch (e) {
-      await this.decrementNonce();
+      await this.deleteNonce();
 
       this.logger.error('Could not call makeContractCall');
       this.logger.error(e);
@@ -108,7 +107,7 @@ export class TransactionsHelper {
 
       return await makeContractDeploy({ ...opts, nonce });
     } catch (e) {
-      await this.decrementNonce();
+      await this.deleteNonce();
 
       this.logger.error('Could not call makeContractDeploy');
       this.logger.error(e);
@@ -132,6 +131,7 @@ export class TransactionsHelper {
       } catch (error) {
         this.logger.error(`Transaction ${tx.txid()} could not be sent`);
         this.logger.error(error);
+        break; // If one tx can't be sent, dont send the next transactions, beacuse there will be a nonce gap
       }
     }
 
@@ -200,8 +200,8 @@ export class TransactionsHelper {
     return await this.redisHelper.incrby(CacheInfo.WalletNonce(this.walletSignerAddress).key, 1);
   }
 
-  async decrementNonce(): Promise<number> {
-    return await this.redisHelper.decrby(CacheInfo.WalletNonce(this.walletSignerAddress).key, 1);
+  async deleteNonce() {
+    await this.redisHelper.delete(CacheInfo.WalletNonce(this.walletSignerAddress).key);
   }
 
   getWalletSignerAddress(): string {
@@ -234,20 +234,20 @@ export class TransactionsHelper {
 
     if (!this.availableGasCheckEnabled) {
       this.logger.warn(
-        `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}, but the gas checker is disabled`,
+        `[messageId: ${messageId}] gas checker disabled: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}`,
       );
       return true;
     }
 
     if (availableBalance < totalEstimatedFees) {
       this.logger.error(
-        `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}. `,
+        `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}. `,
       );
       throw new TooLowAvailableBalanceError();
     }
 
     this.logger.debug(
-      `[messageId: ${messageId}] Enough gas was paid: availableGasBalance: ${availableBalance}, totalEstimatedBalance: ${totalEstimatedFees}`,
+      `[messageId: ${messageId}] Enough gas was paid: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}`,
     );
     return true;
   }

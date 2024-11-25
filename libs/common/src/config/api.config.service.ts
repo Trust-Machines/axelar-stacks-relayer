@@ -213,6 +213,7 @@ export class ApiConfigService {
   }
 
   getAvailableGasCheckEnabled(): boolean {
-    return this.configService.get<boolean>('AVAILABLE_GAS_CHECK_ENABLED') ?? false;
+    const value = this.configService.get<string>('AVAILABLE_GAS_CHECK_ENABLED');
+    return value === 'true';
   }
 }
