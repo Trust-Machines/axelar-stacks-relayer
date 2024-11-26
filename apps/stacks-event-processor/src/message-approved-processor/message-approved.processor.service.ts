@@ -97,6 +97,8 @@ export class MessageApprovedProcessorService {
               e,
             );
 
+            await this.transactionsHelper.deleteNonce();
+
             if (e instanceof GasError) {
               messageApproved.retry += 1;
 
@@ -216,8 +218,6 @@ export class MessageApprovedProcessorService {
       if (e instanceof AxiosError) {
         this.logger.error(e.response?.data);
       }
-
-      throw e;
     }
   }
 }
