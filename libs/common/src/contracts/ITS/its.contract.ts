@@ -464,7 +464,7 @@ export class ItsContract implements OnModuleInit {
     this.logger.debug(`Setup token manager contract success: ${setupSuccess}, txId: ${setupTransaction?.tx_id}`);
 
     if (!setupSuccess || !setupTransaction) {
-      throw new Error(`Could not deploy native interchain token, hash = ${setupTransaction?.tx_id}`);
+      throw new Error(`Could not setup token manager, hash = ${setupTransaction?.tx_id}`);
     }
 
     const payload = HubMessage.clarityEncode(message);

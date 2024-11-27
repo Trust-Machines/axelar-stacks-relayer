@@ -73,7 +73,7 @@ describe('EventProcessorService', () => {
         },
       ];
 
-      await service.consumeEvents(events, undefined);
+      await service.consumeEvents(events);
 
       expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
       expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
@@ -104,7 +104,7 @@ describe('EventProcessorService', () => {
         },
       ];
 
-      await service.consumeEvents(events, undefined);
+      await service.consumeEvents(events);
 
       expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
       expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
@@ -135,7 +135,7 @@ describe('EventProcessorService', () => {
         },
       ];
 
-      await service.consumeEvents(events, undefined);
+      await service.consumeEvents(events);
 
       expect(redisHelper.sadd).not.toHaveBeenCalled();
     });

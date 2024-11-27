@@ -2,13 +2,32 @@ import { DeepMocked, createMock } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { StacksNetwork } from '@stacks/network';
-import { bufferCV, listCV, principalCV, serializeCV, stringAsciiCV, tupleCV, uintCV } from '@stacks/transactions';
+import {
+  bufferCV,
+  callReadOnlyFunction,
+  cvToString,
+  listCV,
+  principalCV,
+  serializeCV,
+  stringAsciiCV,
+  tupleCV,
+  uintCV,
+} from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import BigNumber from 'bignumber.js';
 import { ApiConfigService } from '../config';
 import { ProviderKeys } from '../utils/provider.enum';
 import { getMockScEvent } from './gas-service.contract.spec';
 import { TransactionsHelper } from './transactions.helper';
+
+jest.mock('@stacks/transactions', () => {
+  const actual = jest.requireActual('@stacks/transactions');
+  return {
+    ...actual,
+    callReadOnlyFunction: jest.fn(),
+    cvToString: jest.fn(),
+  };
+});
 
 describe('GatewayContract', () => {
   let contract: GatewayContract;
@@ -50,6 +69,36 @@ describe('GatewayContract', () => {
     }).compile();
 
     contract = moduleRef.get<GatewayContract>(GatewayContract);
+  });
+
+  describe('getGatewayImpl', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should return cached implementation if available', async () => {
+      const callReadOnlyMock = (callReadOnlyFunction as jest.Mock).mockResolvedValueOnce({
+        type: 'string_ascii',
+        value: 'gatewayImpl',
+      });
+
+      (cvToString as jest.Mock).mockImplementation((clarityValue) => clarityValue.value);
+
+      const result = await contract.getGatewayImpl();
+      expect(result).toEqual('gatewayImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(1);
+
+      callReadOnlyMock.mockClear();
+
+      const cachedResult = await contract.getGatewayImpl();
+      expect(cachedResult).toEqual('gatewayImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(0);
+    });
+
+    it('should throw an error if call fails', async () => {
+      (callReadOnlyFunction as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
+      await expect(contract.getGatewayImpl()).rejects.toThrow('Failed to fetch');
+    });
   });
 
   describe('decodeContractCallEvent', () => {

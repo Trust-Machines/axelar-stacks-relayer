@@ -4,7 +4,17 @@ import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-servic
 
 import { hex } from '@scure/base';
 import { StacksNetwork } from '@stacks/network';
-import { BufferCV, bufferCV, stringAsciiCV, principalCV, serializeCV, tupleCV, uintCV } from '@stacks/transactions';
+import {
+  BufferCV,
+  bufferCV,
+  stringAsciiCV,
+  principalCV,
+  serializeCV,
+  tupleCV,
+  uintCV,
+  cvToString,
+  callReadOnlyFunction,
+} from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
 import BigNumber from 'bignumber.js';
@@ -27,6 +37,15 @@ export function getMockScEvent(message: BufferCV): ScEvent {
     },
   };
 }
+
+jest.mock('@stacks/transactions', () => {
+  const actual = jest.requireActual('@stacks/transactions');
+  return {
+    ...actual,
+    callReadOnlyFunction: jest.fn(),
+    cvToString: jest.fn(),
+  };
+});
 
 describe('GasServiceContract', () => {
   let contract: GasServiceContract;
@@ -68,6 +87,36 @@ describe('GasServiceContract', () => {
     }).compile();
 
     contract = moduleRef.get(GasServiceContract);
+  });
+
+  describe('getGasImpl', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should return cached implementation if available', async () => {
+      const callReadOnlyMock = (callReadOnlyFunction as jest.Mock).mockResolvedValueOnce({
+        type: 'string_ascii',
+        value: 'gasImpl',
+      });
+
+      (cvToString as jest.Mock).mockImplementation((clarityValue) => clarityValue.value);
+
+      const result = await contract.getGasImpl();
+      expect(result).toEqual('gasImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(1);
+
+      callReadOnlyMock.mockClear();
+
+      const cachedResult = await contract.getGasImpl();
+      expect(cachedResult).toEqual('gasImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(0);
+    });
+
+    it('should throw an error if call fails', async () => {
+      (callReadOnlyFunction as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
+      await expect(contract.getGasImpl()).rejects.toThrow('Failed to fetch');
+    });
   });
 
   describe('decodeNativeGasPaidForContractCallEvent', () => {

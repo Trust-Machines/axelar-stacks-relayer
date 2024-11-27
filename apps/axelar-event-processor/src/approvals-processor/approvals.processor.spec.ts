@@ -116,6 +116,7 @@ describe('ApprovalsProcessorService', () => {
     });
 
     gasServiceContract.getProxyContractAddress.mockReturnValue('contract_name.contract_address');
+    gasServiceContract.getGasImpl.mockResolvedValue('contract_impl_address.contract_impl_name');
 
     service = moduleRef.get(ApprovalsProcessorService);
   });
@@ -604,7 +605,8 @@ describe('ApprovalsProcessorService', () => {
       expect(gasServiceContract.refund).toHaveBeenCalledTimes(1);
       expect(gasServiceContract.refund).toHaveBeenCalledWith(
         senderKey,
-        'messageTxHash',
+        expect.anything(),
+        '0xmessageTxHash',
         '1',
         'recipientAddress',
         '1000',
