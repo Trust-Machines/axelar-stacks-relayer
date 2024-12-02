@@ -15,7 +15,6 @@ import {
   BroadcastStatus,
   Components,
   ConstructProofTask,
-  VerifyTask,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
@@ -192,14 +191,6 @@ export class ApprovalsProcessorService {
       const response = task.task as RefundTask;
 
       await this.processRefundTask(response);
-
-      return;
-    }
-
-    if (task.type === 'VERIFY') {
-      const response = task.task as VerifyTask;
-
-      await this.processGatewayTxTask(response.payload);
 
       return;
     }

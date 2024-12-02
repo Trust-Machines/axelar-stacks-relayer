@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
@@ -388,65 +388,6 @@ describe('ApprovalsProcessorService', () => {
       expect(redisHelper.get).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'lastUUID1');
-    });
-
-    it('Should handle verify task', async () => {
-      axelarGmpApi.getTasks
-        .mockReturnValueOnce(
-          // @ts-ignore
-          Promise.resolve({
-            data: {
-              tasks: [
-                {
-                  type: 'VERIFY',
-                  task: {
-                    message: {
-                      messageID: '',
-                      payloadHash: '',
-                      sourceChain: '',
-                      sourceAddress: '',
-                      destinationAddress: '',
-                    },
-                    payload: mockExternalData,
-                  } as VerifyTask,
-                  id: 'UUID',
-                  timestamp: '1234',
-                },
-              ],
-            },
-          }),
-        )
-        .mockReturnValueOnce(
-          // @ts-ignore
-          Promise.resolve({
-            data: {
-              tasks: [],
-            },
-          }),
-        );
-      const transaction: DeepMocked<StacksTransaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
-      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
-      await service.handleNewTasksRaw();
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
-      expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
-      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(2);
-      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(mockDataDecoded, walletSigner);
-      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.sendTransaction).toHaveBeenCalled();
-      expect(redisHelper.set).toHaveBeenCalledTimes(2);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.PendingTransaction('txHash').key,
-        {
-          txHash: 'txHash',
-          externalData: mockExternalData,
-          retry: 1,
-        },
-        CacheInfo.PendingTransaction('txHash').ttl,
-      );
-      expect(redisHelper.set).toHaveBeenCalledWith(CacheInfo.LastTaskUUID().key, 'UUID', CacheInfo.LastTaskUUID().ttl);
     });
   });
 
