@@ -2,7 +2,7 @@ import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { AxelarGmpApi, BinaryUtils, TransactionsHelper } from '@stacks-monorepo/common';
+import { AxelarGmpApi, TransactionsHelper } from '@stacks-monorepo/common';
 import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';

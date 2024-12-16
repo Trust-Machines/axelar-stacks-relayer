@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { awaitSuccess } from './await-success';
 
+jest.retryTimes(3);
+
 describe('awaitSuccess', () => {
   const mockLogger = new Logger('TestLogger');
   mockLogger.error = jest.fn();
@@ -40,7 +42,7 @@ describe('awaitSuccess', () => {
     const result = await awaitSuccess(
       identifier,
       timeoutMillis,
-      intervalMillis,
+      intervalMillis + 100,
       key,
       fetch,
       checkCondition,

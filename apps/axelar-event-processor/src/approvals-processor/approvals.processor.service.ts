@@ -1,48 +1,34 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MessageApprovedStatus } from '@prisma/client';
-import {
-  ApiConfigService,
-  BinaryUtils,
-  CacheInfo,
-  Constants,
-  GasServiceContract,
-  Locker,
-} from '@stacks-monorepo/common';
+import { BinaryUtils, CacheInfo, GasServiceContract, Locker } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import {
-  BroadcastRequest,
-  BroadcastStatus,
-  Components,
-  ConstructProofTask,
-} from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Components, ConstructProofTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
-import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { DecodingUtils, gatewayTxDataDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import BigNumber from 'bignumber.js';
-import { PendingConstructProof } from './entities/pending-construct-proof';
+import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import { PendingTransaction } from './entities/pending-transaction';
+import { CosmwasmService } from './cosmwasm.service';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
+import VerifyTask = Components.Schemas.VerifyTask;
 
 const MAX_NUMBER_OF_RETRIES = 3;
-const CONSTRUCT_PROOF_POLL_TIMEOUT_MILLIS = 10_000;
-const CONSTRUCT_PROOF_POLL_INTERVAL = 3_000;
 export const AXELAR_CHAIN = 'axelar';
 
 @Injectable()
 export class ApprovalsProcessorService {
   private readonly logger: Logger;
-  private readonly axelarContractIts: string;
 
   constructor(
     private readonly axelarGmpApi: AxelarGmpApi,
@@ -53,27 +39,25 @@ export class ApprovalsProcessorService {
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly gasServiceContract: GasServiceContract,
     private readonly hiroApiHelper: HiroApiHelper,
-    apiConfigService: ApiConfigService,
+    private readonly cosmWasmService: CosmwasmService,
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
-
-    this.axelarContractIts = apiConfigService.getAxelarContractIts();
   }
 
-  @Cron('0/20 * * * * *')
+  @Cron('0/15 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
 
-  @Cron('3/6 * * * * *')
+  @Cron('2/6 * * * * *')
   async handlePendingTransactions() {
     await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
-  @Cron('5/5 * * * * *')
-  async handlePendingConstructProof() {
-    await Locker.lock('pendingConstructProof', this.handlePendingConstructProofRaw.bind(this));
+  @Cron('4/6 * * * * *')
+  async handlePendingCosmWasmTransaction() {
+    await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
   }
 
   async handleNewTasksRaw() {
@@ -202,6 +186,14 @@ export class ApprovalsProcessorService {
 
       return;
     }
+
+    if (task.type === 'VERIFY') {
+      const response = task.task as VerifyTask;
+
+      await this.processVerifyTask(response);
+
+      return;
+    }
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
@@ -305,111 +297,53 @@ export class ApprovalsProcessorService {
   }
 
   async processConstructProofTask(response: ConstructProofTask) {
-    const request = this.buildConstructProofRequest(response);
+    const request = this.cosmWasmService.buildConstructProofRequest(response);
 
     const id = `${response.message.sourceChain}_${response.message.messageID}`;
-    const constructProof: PendingConstructProof = {
+    const constructProofTransaction: PendingCosmWasmTransaction = {
       request,
       retry: 0,
+      type: 'CONSTRUCT_PROOF',
     };
-    await this.storeConstructProof(CacheInfo.PendingConstructProof(id).key, constructProof);
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      constructProofTransaction,
+    );
   }
 
-  async handlePendingConstructProofRaw() {
-    const keys = await this.redisHelper.scan(CacheInfo.PendingConstructProof('*').key);
+  async processVerifyTask(response: VerifyTask) {
+    const request = this.cosmWasmService.buildVerifyRequest(response);
+
+    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const verifyTransaction: PendingCosmWasmTransaction = {
+      request,
+      retry: 0,
+      type: 'VERIFY',
+    };
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      verifyTransaction,
+    );
+  }
+
+  async handlePendingCosmWasmTransactionRaw() {
+    const keys = await this.redisHelper.scan(CacheInfo.PendingCosmWasmTransaction('*').key);
 
     if (keys.length === 0) {
       return;
     }
 
     for (const key of keys) {
-      const cachedValue = await this.getConstructProof(key);
+      const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
       if (!cachedValue) continue;
 
-      this.logger.debug(`Trying to process CONSTRUCT_PROOF task: ${JSON.stringify(cachedValue)}`);
+      this.logger.debug(`Trying to process ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`);
 
       if (cachedValue.broadcastID) {
-        await this.handleBroadcastStatus(key, cachedValue);
+        await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);
       } else {
-        await this.broadcastConstructProof(key, cachedValue);
+        await this.cosmWasmService.broadcastCosmWasmTransaction(key, cachedValue);
       }
     }
-  }
-
-  private async handleBroadcastStatus(key: string, constructProof: PendingConstructProof) {
-    if (!constructProof.broadcastID) {
-      return;
-    }
-
-    const { success } = await awaitSuccess(
-      constructProof.broadcastID,
-      CONSTRUCT_PROOF_POLL_TIMEOUT_MILLIS,
-      CONSTRUCT_PROOF_POLL_INTERVAL,
-      `CONSTRUCT_PROOF:${constructProof.broadcastID}`,
-      async (id) => await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id),
-      (status: BroadcastStatus) => status === 'SUCCESS',
-      this.logger,
-    );
-
-    if (success) {
-      await this.redisHelper.delete(key);
-    } else {
-      await this.updateRetry(key, constructProof);
-    }
-  }
-
-  private async broadcastConstructProof(key: string, constructProof: PendingConstructProof) {
-    if (constructProof.retry >= MAX_NUMBER_OF_RETRIES) {
-      this.logger.error(`Max retries reached for construct_proof: ${JSON.stringify(constructProof.request)}`);
-      await this.redisHelper.delete(key);
-      return;
-    }
-
-    try {
-      this.logger.debug(`Broadcasting CONSTRUCT_PROOF request: ${JSON.stringify(constructProof.request)}`);
-      const broadcastID = await this.axelarGmpApi.broadcastMsgExecuteContract(constructProof.request);
-      await this.storeConstructProof(key, { ...constructProof, broadcastID });
-      this.logger.debug(`CONSTRUCT_PROOF broadcast successful, ID: ${broadcastID}`);
-    } catch (error) {
-      this.logger.error('Error broadcasting construct_proof');
-      this.logger.error(error);
-      await this.updateRetry(key, constructProof);
-    }
-  }
-
-  private async updateRetry(key: string, constructProof: PendingConstructProof) {
-    const updatedProof: PendingConstructProof = {
-      ...constructProof,
-      retry: constructProof.retry + 1,
-    };
-    await this.storeConstructProof(key, updatedProof);
-  }
-
-  private buildConstructProofRequest(task: ConstructProofTask): BroadcastRequest {
-    if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === AXELAR_CHAIN) {
-      return {
-        construct_proof_with_payload: {
-          message_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
-          payload: task.payload,
-        },
-      };
-    } else {
-      return {
-        construct_proof: [
-          {
-            source_chain: task.message.sourceChain,
-            message_id: task.message.messageID,
-          },
-        ],
-      };
-    }
-  }
-
-  private async storeConstructProof(key: string, constructProof: PendingConstructProof) {
-    await this.redisHelper.set<PendingConstructProof>(key, constructProof, Constants.oneMinute() * 10);
-  }
-
-  private async getConstructProof(key: string): Promise<PendingConstructProof | undefined> {
-    return await this.redisHelper.get<PendingConstructProof>(key);
   }
 }
