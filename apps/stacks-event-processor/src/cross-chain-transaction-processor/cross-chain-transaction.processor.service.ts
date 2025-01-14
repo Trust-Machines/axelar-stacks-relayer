@@ -28,7 +28,8 @@ export class CrossChainTransactionProcessorService {
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
-  @Cron('5/15 * * * * *')
+  // Runs after EventProcessor cron has run
+  @Cron('5/10 * * * * *')
   async processCrossChainTransactions() {
     await Locker.lock('processCrossChainTransactions', this.processCrossChainTransactionsRaw.bind(this));
   }

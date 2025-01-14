@@ -58,6 +58,7 @@ declare namespace Components {
                 fromAddress?: string | null;
                 finalized?: boolean | null;
                 parentMessageID?: string | null;
+                parentSourceChain?: string | null;
             } | null;
             message: GatewayV2Message;
             destinationChain: string;
@@ -70,6 +71,7 @@ declare namespace Components {
             fromAddress?: string | null;
             finalized?: boolean | null;
             parentMessageID?: string | null;
+            parentSourceChain?: string | null;
         }
         export interface CannotExecuteMessageEvent {
             eventID: string;
@@ -117,7 +119,7 @@ declare namespace Components {
         }
         export type Event = {
             type: EventType;
-        } & (GasCreditEvent | GasRefundedEvent | CallEvent | MessageApprovedEvent | MessageExecutedEvent | CannotExecuteMessageEvent | CannotExecuteMessageEventV2 | SignersRotatedEvent);
+        } & (GasCreditEvent | GasRefundedEvent | CallEvent | MessageApprovedEvent | MessageExecutedEvent | CannotExecuteMessageEvent | CannotExecuteMessageEventV2 | SignersRotatedEvent | ITSInterchainTokenDeploymentStartedEvent | ITSInterchainTransferEvent | ITSAppInterchainTransferSentEvent | ITSAppInterchainTransferReceivedEvent);
         export interface EventBase {
             eventID: string;
             meta?: {
@@ -133,7 +135,7 @@ declare namespace Components {
             fromAddress?: string | null;
             finalized?: boolean | null;
         }
-        export type EventType = "GAS_CREDIT" | "GAS_REFUNDED" | "CALL" | "MESSAGE_APPROVED" | "MESSAGE_EXECUTED" | "CANNOT_EXECUTE_MESSAGE" | "CANNOT_EXECUTE_MESSAGE/V2" | "SIGNERS_ROTATED";
+        export type EventType = "GAS_CREDIT" | "GAS_REFUNDED" | "CALL" | "MESSAGE_APPROVED" | "MESSAGE_EXECUTED" | "CANNOT_EXECUTE_MESSAGE" | "CANNOT_EXECUTE_MESSAGE/V2" | "SIGNERS_ROTATED" | "ITS/INTERCHAIN_TOKEN_DEPLOYMENT_STARTED" | "ITS/INTERCHAIN_TRANSFER" | "ITS_APP/INTERCHAIN_TRANSFER_SENT" | "ITS_APP/INTERCHAIN_TRANSFER_RECEIVED";
         export interface ExecuteTask {
             message: GatewayV2Message;
             payload: string; // byte
@@ -177,6 +179,82 @@ declare namespace Components {
         export interface GetTasksResult {
             tasks: TaskItem[];
         }
+        export interface ITSAppEventMetadata {
+            txID?: string | null;
+            timestamp?: string; // date-time
+            fromAddress?: string | null;
+            finalized?: boolean | null;
+            emittedByAddress?: string | null;
+        }
+        export interface ITSAppInterchainTransferReceivedEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+                emittedByAddress?: string | null;
+            } | null;
+            messageID: string;
+            sourceChain: string;
+            sourceAddress: Address;
+            sender: string; // byte
+            recipient: Address;
+            tokenReceived: InterchainTransferToken;
+        }
+        export interface ITSAppInterchainTransferSentEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+                emittedByAddress?: string | null;
+            } | null;
+            messageID: string;
+            destinationChain: string;
+            destinationContractAddress: Address;
+            sender: Address;
+            recipient: string; // byte
+            tokenSpent: InterchainTransferToken;
+        }
+        export interface ITSInterchainTokenDeploymentStartedEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+            } | null;
+            messageID: string;
+            destinationChain: string;
+            token: InterchainTokenDefinition;
+        }
+        export interface ITSInterchainTransferEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+            } | null;
+            messageID: string;
+            destinationChain: string;
+            tokenSpent: Token;
+            sourceAddress: Address;
+            destinationAddress: string; // byte
+            dataHash: string; // byte
+        }
+        export interface InterchainTokenDefinition {
+            id: string;
+            name: string;
+            symbol: string;
+            decimals: number; // uint8
+        }
+        export interface InterchainTransferToken {
+            tokenAddress: Address;
+            amount: BigInt /* ^(0|[1-9]\d*)$ */;
+        }
         export interface MessageApprovedEvent {
             eventID: string;
             meta?: {
@@ -205,6 +283,7 @@ declare namespace Components {
                 finalized?: boolean | null;
                 commandID?: string | null;
                 childMessageIDs?: string[] | null;
+                revertReason?: string | null;
             } | null;
             messageID: string;
             sourceChain: string;
@@ -218,6 +297,7 @@ declare namespace Components {
             finalized?: boolean | null;
             commandID?: string | null;
             childMessageIDs?: string[] | null;
+            revertReason?: string | null;
         }
         export type MessageExecutionStatus = "SUCCESSFUL" | "REVERTED";
         export interface PublishEventAcceptedResult {
@@ -384,6 +464,7 @@ declare namespace Components {
         }
         export interface VerifyTask {
             message: GatewayV2Message;
+            destinationChain: string;
             payload: string; // byte
         }
     }
@@ -572,6 +653,13 @@ export type GasRefundedEvent = Components.Schemas.GasRefundedEvent;
 export type GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 export type GatewayV2Message = Components.Schemas.GatewayV2Message;
 export type GetTasksResult = Components.Schemas.GetTasksResult;
+export type ITSAppEventMetadata = Components.Schemas.ITSAppEventMetadata;
+export type ITSAppInterchainTransferReceivedEvent = Components.Schemas.ITSAppInterchainTransferReceivedEvent;
+export type ITSAppInterchainTransferSentEvent = Components.Schemas.ITSAppInterchainTransferSentEvent;
+export type ITSInterchainTokenDeploymentStartedEvent = Components.Schemas.ITSInterchainTokenDeploymentStartedEvent;
+export type ITSInterchainTransferEvent = Components.Schemas.ITSInterchainTransferEvent;
+export type InterchainTokenDefinition = Components.Schemas.InterchainTokenDefinition;
+export type InterchainTransferToken = Components.Schemas.InterchainTransferToken;
 export type MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 export type MessageApprovedEventMetadata = Components.Schemas.MessageApprovedEventMetadata;
 export type MessageExecutedEvent = Components.Schemas.MessageExecutedEvent;

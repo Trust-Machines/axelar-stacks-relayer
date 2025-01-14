@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
@@ -13,11 +13,12 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { StacksTransaction } from '@stacks/transactions';
 import { ApprovalsProcessorService, AXELAR_CHAIN } from './approvals.processor.service';
-import { PendingConstructProof } from './entities/pending-construct-proof';
+import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
 import RefundTask = Components.Schemas.RefundTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
+import { CosmwasmService } from './cosmwasm.service';
 
 const mockExternalData = Buffer.from(
   '0c00000003046461746102000001210b000000010c0000000510636f6e74726163742d61646472657373061a2ffa5b05761d84adca1ad9215e7a7efdeddb10fe0b68656c6c6f2d776f726c640a6d6573736167652d69640d000000443078363432383430626531303961386530326564316637663635626137633165643539396133383137393666386233343032313164363435313161663761386131372d300c7061796c6f61642d686173680200000020af6b8f9d6a366d59d2851d7fd30a10c430dc949470ad50a13f5655b945f9c8830e736f757263652d616464726573730d0000002a3078634534313033383637434334426662323338324536443042374638386536453346384435363344360c736f757263652d636861696e0d0000000e6176616c616e6368652d66756a690866756e6374696f6e0d00000010617070726f76652d6d657373616765730570726f6f6602000001df0c000000020a7369676e6174757265730b0000000202000000419f1be5d20bb51f35a9b78e0c33673e2f7137b1227ff03f469adc3e4169f5be020d3d437d5188642086ff6ac44ff6fdcfdb293dc43f30cf13b94cd0b1fe5dcd9b010200000041cbc6f69b0d7a14e026ebfe6d7e97870ff1ff1adb961161492d7d60843ea32ae3576626ef6062c9e1779f95dbf956ece0793b35270545a35a4fea5fe24f60a4fe01077369676e6572730c00000003056e6f6e63650200000020000000000000000000000000000000000000000000000000000000000038d32c077369676e6572730b000000030c00000002067369676e65720200000021026e4a6fc3a6988c4cd7d3bc02e07bac8b72a9f5342d92f42161e7b6e57dd47e180677656967687401000000000000000000000000000000010c00000002067369676e6572020000002102d19c406d763c98d98554c980ae03543b936aad0c3f1289a367a0c2aafb71e8c10677656967687401000000000000000000000000000000010c00000002067369676e6572020000002103ea531f69879b3b15b6e3fe262250d5ceca6217e03e4def6919d4bdce3a7ec389067765696768740100000000000000000000000000000001097468726573686f6c640100000000000000000000000000000002==',
@@ -32,6 +33,7 @@ const mockDataDecoded = {
 
 jest.mock('@stacks-monorepo/common/utils/await-success');
 
+const STACKS_ITS_CONTRACT = 'stacksContract';
 const AXELAR_ITS_CONTRACT = 'axelarContract';
 
 describe('ApprovalsProcessorService', () => {
@@ -59,6 +61,7 @@ describe('ApprovalsProcessorService', () => {
     walletSigner = 'mocked-wallet-signer';
     apiConfigService = createMock();
 
+    apiConfigService.getContractItsProxy.mockReturnValue(STACKS_ITS_CONTRACT);
     apiConfigService.getAxelarContractIts.mockReturnValue(AXELAR_ITS_CONTRACT);
 
     const moduleRef = await Test.createTestingModule({
@@ -105,6 +108,10 @@ describe('ApprovalsProcessorService', () => {
 
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === CosmwasmService) {
+          return new CosmwasmService(redisHelper, axelarGmpApi, apiConfigService);
         }
 
         return null;
@@ -808,15 +815,15 @@ describe('ApprovalsProcessorService', () => {
           messageID: 'msg1',
           sourceAddress: AXELAR_ITS_CONTRACT,
           destinationAddress: 'someDestination',
-          payloadHash: 'payloadHash1',
+          payloadHash: Buffer.from('payloadHash1').toString('base64'),
         },
-        payload: 'payloadData',
+        payload: Buffer.from('payloadData').toString('base64'),
       };
 
       await service.processConstructProofTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        `pendingConstructProof:${AXELAR_CHAIN}_msg1`,
+        `pendingCosmWasmTransaction:${AXELAR_CHAIN}_msg1`,
         expect.objectContaining({
           request: {
             construct_proof_with_payload: {
@@ -824,7 +831,7 @@ describe('ApprovalsProcessorService', () => {
                 source_chain: response.message.sourceChain,
                 message_id: response.message.messageID,
               },
-              payload: response.payload,
+              payload: Buffer.from('payloadData').toString('hex'),
             },
           },
           retry: 0,
@@ -841,15 +848,15 @@ describe('ApprovalsProcessorService', () => {
           messageID: 'msg2',
           sourceAddress: 'randomAddress',
           destinationAddress: 'anotherDestination',
-          payloadHash: 'payloadHash2',
+          payloadHash: Buffer.from('payloadHash2').toString('base64'),
         },
-        payload: 'payloadData',
+        payload: Buffer.from('payloadData').toString('base64'),
       };
 
       await service.processConstructProofTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        'pendingConstructProof:otherChain_msg2',
+        'pendingCosmWasmTransaction:otherChain_msg2',
         expect.objectContaining({
           request: {
             construct_proof: [
@@ -866,13 +873,98 @@ describe('ApprovalsProcessorService', () => {
 
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
+  });
 
-    it('should process and remove construct proof if broadcast status is SUCCESS', async () => {
-      const key = CacheInfo.PendingConstructProof('axelar_msg1').key;
-      const pendingProof: PendingConstructProof = {
+  describe('handleVerify', () => {
+    it('should add a single entry in Redis for verify_message_with_payload', async () => {
+      const response: VerifyTask = {
+        message: {
+          sourceChain: 'stacks',
+          messageID: 'msg1',
+          sourceAddress: STACKS_ITS_CONTRACT,
+          destinationAddress: AXELAR_ITS_CONTRACT,
+          payloadHash: Buffer.from('payloadHash1').toString('base64'),
+        },
+        payload: Buffer.from('payloadData').toString('base64'),
+        destinationChain: 'axelar',
+      };
+
+      await service.processVerifyTask(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        `pendingCosmWasmTransaction:stacks_msg1`,
+        expect.objectContaining({
+          request: {
+            verify_message_with_payload: {
+              message: {
+                cc_id: {
+                  source_chain: response.message.sourceChain,
+                  message_id: response.message.messageID,
+                },
+                destination_chain: 'axelar',
+                destination_address: AXELAR_ITS_CONTRACT,
+                source_address: STACKS_ITS_CONTRACT,
+                payload_hash: Buffer.from('payloadHash1').toString('hex'),
+              },
+              payload: Buffer.from('payloadData').toString('hex'),
+            },
+          },
+          retry: 0,
+        }),
+        600,
+      );
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('should add a single entry in Redis for verify_messages', async () => {
+      const response: VerifyTask = {
+        message: {
+          sourceChain: 'stacks',
+          messageID: 'msg2',
+          sourceAddress: 'randomAddress',
+          destinationAddress: 'anotherDestination',
+          payloadHash: Buffer.from('payloadHash2').toString('base64'),
+        },
+        payload: Buffer.from('payloadData').toString('base64'),
+        destinationChain: 'ethereum',
+      };
+
+      await service.processVerifyTask(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        'pendingCosmWasmTransaction:stacks_msg2',
+        expect.objectContaining({
+          request: {
+            verify_messages: [
+              {
+                cc_id: {
+                  source_chain: response.message.sourceChain,
+                  message_id: response.message.messageID,
+                },
+                destination_chain: 'ethereum',
+                destination_address: 'anotherDestination',
+                source_address: 'randomAddress',
+                payload_hash: Buffer.from('payloadHash2').toString('hex'),
+              },
+            ],
+          },
+          retry: 0,
+        }),
+        600,
+      );
+
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('handleCosmWasmTransaction', () => {
+    it('should process and remove transaction if broadcast status is SUCCESS', async () => {
+      const key = CacheInfo.PendingCosmWasmTransaction('axelar_msg1').key;
+      const pendingProof: PendingCosmWasmTransaction = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg1' }] },
         retry: 0,
         broadcastID: 'broadcastID1',
+        type: 'CONSTRUCT_PROOF',
       };
 
       jest.mocked(awaitSuccess).mockResolvedValue({ success: true, result: 'SUCCESS' });
@@ -880,19 +972,20 @@ describe('ApprovalsProcessorService', () => {
       redisHelper.scan.mockResolvedValue([key]);
       redisHelper.get.mockResolvedValue(pendingProof);
 
-      await service.handlePendingConstructProofRaw();
+      await service.handlePendingCosmWasmTransactionRaw();
 
       expect(redisHelper.delete).toHaveBeenCalledWith(key);
       expect(redisHelper.delete).toHaveBeenCalledTimes(1);
     });
 
-    it('should retry construct proof broadcast if status is not SUCCESS', async () => {
+    it('should retry transaction broadcast if status is not SUCCESS', async () => {
       const id = 'axelar_msg1';
-      const key = CacheInfo.PendingConstructProof(id).key;
-      const pendingProof: PendingConstructProof = {
+      const key = CacheInfo.PendingCosmWasmTransaction(id).key;
+      const pendingProof: PendingCosmWasmTransaction = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg2' }] },
         retry: 0,
         broadcastID: 'broadcastID2',
+        type: 'CONSTRUCT_PROOF',
       };
 
       jest.mocked(awaitSuccess).mockResolvedValue({ success: false, result: 'RECEIVED' });
@@ -900,50 +993,52 @@ describe('ApprovalsProcessorService', () => {
       redisHelper.scan.mockResolvedValue([key]);
       redisHelper.get.mockResolvedValue(pendingProof);
 
-      await service.handlePendingConstructProofRaw();
+      await service.handlePendingCosmWasmTransactionRaw();
 
       expect(redisHelper.set).toHaveBeenCalledWith(
         key,
         { ...pendingProof, retry: 1 },
-        CacheInfo.PendingConstructProof(id).ttl,
+        CacheInfo.PendingCosmWasmTransaction(id).ttl,
       );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
-    it('should handle new broadcast for construct proof if no broadcastID is set', async () => {
+    it('should handle new broadcast if no broadcastID is set', async () => {
       const id = 'axelar_msg3';
-      const key = CacheInfo.PendingConstructProof(id).key;
-      const pendingProof: PendingConstructProof = {
+      const key = CacheInfo.PendingCosmWasmTransaction(id).key;
+      const pendingProof: PendingCosmWasmTransaction = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg3' }] },
         retry: 0,
+        type: 'CONSTRUCT_PROOF',
       };
 
       redisHelper.scan.mockResolvedValue([key]);
       redisHelper.get.mockResolvedValue(pendingProof);
       axelarGmpApi.broadcastMsgExecuteContract.mockResolvedValue('newBroadcastID');
 
-      await service.handlePendingConstructProofRaw();
+      await service.handlePendingCosmWasmTransactionRaw();
 
       expect(axelarGmpApi.broadcastMsgExecuteContract).toHaveBeenCalledTimes(1);
       expect(redisHelper.set).toHaveBeenCalledWith(
         key,
         { ...pendingProof, broadcastID: 'newBroadcastID' },
-        CacheInfo.PendingConstructProof(id).ttl,
+        CacheInfo.PendingCosmWasmTransaction(id).ttl,
       );
     });
 
-    it('should delete construct proof if maximum retries are reached', async () => {
+    it('should delete transaction if maximum retries are reached', async () => {
       const id = 'axelar_msg4';
-      const key = CacheInfo.PendingConstructProof(id).key;
-      const pendingProof: PendingConstructProof = {
+      const key = CacheInfo.PendingCosmWasmTransaction(id).key;
+      const pendingProof: PendingCosmWasmTransaction = {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg4' }] },
         retry: 3,
+        type: 'CONSTRUCT_PROOF',
       };
 
       redisHelper.scan.mockResolvedValue([key]);
       redisHelper.get.mockResolvedValue(pendingProof);
 
-      await service.handlePendingConstructProofRaw();
+      await service.handlePendingCosmWasmTransactionRaw();
 
       expect(redisHelper.delete).toHaveBeenCalledWith(key);
       expect(redisHelper.delete).toHaveBeenCalledTimes(1);

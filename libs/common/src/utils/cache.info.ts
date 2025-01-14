@@ -16,9 +16,9 @@ export class CacheInfo {
     };
   }
 
-  static PendingConstructProof(id: string): CacheInfo {
+  static PendingCosmWasmTransaction(id: string): CacheInfo {
     return {
-      key: `pendingConstructProof:${id}`,
+      key: `pendingCosmWasmTransaction:${id}`,
       ttl: Constants.oneMinute() * 10,
     };
   }
