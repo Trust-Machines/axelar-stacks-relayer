@@ -40,17 +40,6 @@ export interface GatewayExternalData {
   proof: string;
 }
 
-export interface VerifyInterchainTokenEvent {
-  tokenAddress: string;
-}
-
-export interface VerifyTokenManagerEvent {
-  tokenManagerAddress: string;
-  tokenId: string;
-  tokenType: number;
-  operator: string;
-}
-
 export interface TokenManagerParams {
   operator?: string;
   tokenAddress: string;

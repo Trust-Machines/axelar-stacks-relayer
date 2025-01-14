@@ -36,8 +36,3 @@ export enum HubMessageType {
   SendToHub = 3,
   ReceiveFromHub = 4,
 }
-
-export enum VerifyMessageType {
-  VERIFY_INTERCHAIN_TOKEN = 'verify-interchain-token',
-  VERIFY_TOKEN_MANAGER = 'verify-token-manager',
-}

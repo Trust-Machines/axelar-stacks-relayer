@@ -24,7 +24,6 @@ import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
 
 const MAX_NUMBER_OF_RETRIES = 3;
-export const AXELAR_CHAIN = 'axelar';
 
 @Injectable()
 export class ApprovalsProcessorService {

@@ -8,8 +8,6 @@ import {
   MessageApprovedEvent,
   MessageExecutedEvent,
   TokenManagerParams,
-  VerifyInterchainTokenEvent,
-  VerifyTokenManagerEvent,
   WeightedSignersEvent,
 } from '../contracts/entities/gateway-events';
 import {
@@ -102,19 +100,6 @@ export const refundedDecoder = (json: any): RefundedEvent => ({
   receiver: json['receiver'].value,
   amount: new BigNumber(json['amount'].value),
 });
-
-export const verifyInterchainTokenDecoder = (json: any): VerifyInterchainTokenEvent => ({
-  tokenAddress: json.value['token-address'].value,
-});
-
-export const verifyTokenManagerDecoder = (json: any): VerifyTokenManagerEvent => {
-  return {
-    tokenManagerAddress: json.value['token-manager-address'].value,
-    tokenId: json.value['token-id'].value,
-    tokenType: Number(json.value['token-type'].value),
-    operator: json.value['operator'].value,
-  };
-};
 
 export const tokenManagerParamsDecoder = (json: any): TokenManagerParams => {
   return {

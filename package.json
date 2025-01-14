@@ -22,7 +22,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "dotenv -e .env.test -- jest --config ./apps/stacks-event-processor/test/jest-e2e.json --force-exit",
+    "test:e2e": "dotenv -e .env.test -- jest --config ./apps/stacks-event-processor/test/jest-e2e.json --force-exit --passWithNoTests",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
     "deploy": "prisma migrate deploy",

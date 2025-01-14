@@ -1,13 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiConfigService } from '@stacks-monorepo/common/config';
-import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import {
-  DecodingUtils,
-  tokenManagerParamsDecoder,
-  verifyInterchainTokenDecoder,
-  verifyTokenManagerDecoder,
-} from '@stacks-monorepo/common/utils/decoding.utils';
+import { tokenManagerParamsDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { callReadOnlyFunction, cvToString } from '@stacks/transactions';
@@ -23,7 +17,6 @@ import {
   HubMessageType,
   InterchainTransfer,
   ReceiveFromHub,
-  VerifyMessageType,
 } from './messages/hub.message.types';
 import { NativeInterchainTokenContract } from './native-interchain-token.contract';
 import { TokenManagerContract } from './token-manager.contract';
@@ -67,6 +60,7 @@ describe('ItsContract', () => {
 
     mockApiConfigService.getContractItsProxy.mockReturnValue(proxyContract);
     mockApiConfigService.getContractItsStorage.mockReturnValue('mockContractAddress.mockContractName-storage');
+    mockApiConfigService.getAxelarContractIts.mockReturnValue('axelarContract');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -82,6 +76,7 @@ describe('ItsContract', () => {
               mockTransactionsHelper,
               mockGatewayContract,
               mockGasServiceContract,
+              apiConfigService.getAxelarContractIts(),
             );
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
@@ -133,40 +128,8 @@ describe('ItsContract', () => {
   });
 
   describe('execute', () => {
-    it('should call handleVerifyCall when source and destination addresses match', async () => {
-      const senderKey = 'senderKey';
-      const sourceChain = CONSTANTS.SOURCE_CHAIN_NAME;
-      const sourceAddress = proxyContract;
-      const destinationAddress = proxyContract;
-      const messageId = 'messageId';
-      const payload = 'payload';
-      const availableGasBalance = '100';
-
-      jest.spyOn(service as any, 'handleVerifyCall').mockImplementation(jest.fn());
-
-      await service.execute(
-        senderKey,
-        sourceChain,
-        messageId,
-        sourceAddress,
-        destinationAddress,
-        payload,
-        availableGasBalance,
-      );
-
-      expect(service.handleVerifyCall).toHaveBeenCalledWith(
-        senderKey,
-        payload,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-      );
-    });
-
     it('should return null for an invalid payload', async () => {
       jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(null);
-      jest.spyOn(service as any, 'handleVerifyCall').mockImplementation(jest.fn());
       jest.spyOn(service as any, 'handleInterchainTransfer').mockImplementation(jest.fn());
       jest.spyOn(service as any, 'handleDeployNativeInterchainToken').mockImplementation(jest.fn());
       jest.spyOn(service as any, 'handleDeployTokenManager').mockImplementation(jest.fn());
@@ -182,7 +145,38 @@ describe('ItsContract', () => {
       );
 
       expect(result).toBeNull();
-      expect(service['handleVerifyCall']).not.toHaveBeenCalled();
+      expect(service['handleInterchainTransfer']).not.toHaveBeenCalled();
+      expect(service['handleDeployNativeInterchainToken']).not.toHaveBeenCalled();
+      expect(service['handleDeployTokenManager']).not.toHaveBeenCalled();
+    });
+
+    it('should return null for invalid source chain or address', async () => {
+      const senderKey = 'senderKey';
+      const sourceChain = 'sourceChain';
+      const messageId = 'messageId';
+      const availableGasBalance = '100';
+      const receiveFromHub = {
+        messageType: HubMessageType.ReceiveFromHub,
+        sourceChain: sourceChain,
+        payload: { messageType: HubMessageType.InterchainTransfer } as InterchainTransfer,
+      };
+
+      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(receiveFromHub);
+      jest.spyOn(service as any, 'handleInterchainTransfer').mockImplementation(jest.fn());
+      jest.spyOn(service as any, 'handleDeployNativeInterchainToken').mockImplementation(jest.fn());
+      jest.spyOn(service as any, 'handleDeployTokenManager').mockImplementation(jest.fn());
+
+      const result = await service.execute(
+        senderKey,
+        sourceChain,
+        messageId,
+        'sourceAddress',
+        'destinationAddress',
+        'payload',
+        availableGasBalance,
+      );
+
+      expect(result).toBeNull();
       expect(service['handleInterchainTransfer']).not.toHaveBeenCalled();
       expect(service['handleDeployNativeInterchainToken']).not.toHaveBeenCalled();
       expect(service['handleDeployTokenManager']).not.toHaveBeenCalled();
@@ -190,7 +184,7 @@ describe('ItsContract', () => {
 
     it('should call handleInterchainTransfer for HubMessageType.InterchainTransfer', async () => {
       const senderKey = 'senderKey';
-      const sourceChain = 'sourceChain';
+      const sourceChain = 'axelar';
       const messageId = 'messageId';
       const availableGasBalance = '100';
       const receiveFromHub = {
@@ -206,7 +200,7 @@ describe('ItsContract', () => {
         senderKey,
         sourceChain,
         messageId,
-        'sourceAddress',
+        'axelarContract',
         'destinationAddress',
         'payload',
         availableGasBalance,
@@ -223,10 +217,10 @@ describe('ItsContract', () => {
 
     it('should call handleDeployNativeInterchainToken for HubMessageType.DeployInterchainToken', async () => {
       const senderKey = 'senderKey';
-      const sourceChain = 'sourceChain';
+      const sourceChain = 'axelar';
       const messageId = 'messageId';
       const availableGasBalance = '100';
-      const sourceAddress = 'sourceAddress';
+      const sourceAddress = 'axelarContract';
       const receiveFromHub = {
         messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
@@ -258,10 +252,10 @@ describe('ItsContract', () => {
 
     it('should call handleDeployTokenManager for HubMessageType.DeployTokenManager', async () => {
       const senderKey = 'senderKey';
-      const sourceChain = 'sourceChain';
+      const sourceChain = 'axelar';
       const messageId = 'messageId';
       const availableGasBalance = '100';
-      const sourceAddress = 'sourceAddress';
+      const sourceAddress = 'axelarContract';
       const receiveFromHub = {
         messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
@@ -301,9 +295,9 @@ describe('ItsContract', () => {
 
       const result = await service.execute(
         'senderKey',
-        'sourceChain',
+        'axelar',
         'messageId',
-        'sourceAddress',
+        'axelarContract',
         'destinationAddress',
         'payload',
         '100',
@@ -393,8 +387,8 @@ describe('ItsContract', () => {
         payload: { name: 'tokenName', messageType: HubMessageType.DeployInterchainToken } as DeployInterchainToken,
       } as ReceiveFromHub;
       const messageId = 'messageId';
-      const sourceChain = 'sourceChain';
-      const sourceAddress = 'sourceAddress';
+      const sourceChain = 'axelar';
+      const sourceAddress = 'axelarContract';
       const availableGasBalance = '100';
       const deployTx = {
         success: true,
@@ -437,7 +431,6 @@ describe('ItsContract', () => {
         sourceChain,
         sourceAddress,
         'mockContractId',
-        expect.anything(),
       );
       expect(result).toEqual(executeTx);
     });
@@ -532,8 +525,8 @@ describe('ItsContract', () => {
         payload: { tokenId: 'tokenId', messageType: HubMessageType.DeployTokenManager } as DeployTokenManager,
       } as ReceiveFromHub;
       const messageId = 'messageId';
-      const sourceChain = 'sourceChain';
-      const sourceAddress = 'sourceAddress';
+      const sourceChain = 'axelar';
+      const sourceAddress = 'axelarContract';
       const availableGasBalance = '100';
       const deployTx = {
         success: true,
@@ -579,7 +572,6 @@ describe('ItsContract', () => {
         sourceChain,
         sourceAddress,
         'mockContractId',
-        expect.anything(),
         expect.anything(),
       );
       expect(result).toEqual(executeTx);
@@ -836,135 +828,6 @@ describe('ItsContract', () => {
       ).rejects.toThrow('Could not setup mockAddress.mockName after 3 retries');
 
       expect(mockTransactionsHelper.awaitSuccess).toHaveBeenCalledTimes(3);
-    });
-  });
-
-  describe('handleVerifyCall', () => {
-    const senderKey = 'mockSenderKey';
-    const payload = 'mockPayload';
-    const messageId = 'mockMessageId';
-    const sourceChain = 'mockSourceChain';
-    const sourceAddress = 'mockSourceAddress';
-    const availableGasBalance = '100';
-
-    it('should handle VERIFY_INTERCHAIN_TOKEN type', async () => {
-      const interchainTokenData = { tokenAddress: 'mockTokenAddress' };
-      jest
-        .spyOn(DecodingUtils, 'deserialize')
-        .mockReturnValue({ value: { type: { value: VerifyMessageType.VERIFY_INTERCHAIN_TOKEN } } });
-      (verifyInterchainTokenDecoder as jest.Mock).mockReturnValue(interchainTokenData);
-      const mockTransaction = { tx_id: 'mockTxId' } as any;
-      jest.spyOn(service, 'executeDeployInterchainToken').mockResolvedValue(mockTransaction);
-      mockTransactionsHelper.checkAvailableGasBalance.mockResolvedValue(true);
-
-      const result = await service.handleVerifyCall(
-        senderKey,
-        payload,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-      );
-
-      expect(DecodingUtils.deserialize).toHaveBeenCalledWith(payload);
-      expect(service.executeDeployInterchainToken).toHaveBeenCalled();
-      expect(mockTransactionsHelper.checkAvailableGasBalance).toHaveBeenCalledWith(messageId, availableGasBalance, [
-        { transaction: mockTransaction },
-      ]);
-      expect(result).toEqual(mockTransaction);
-    });
-
-    it('should handle VERIFY_TOKEN_MANAGER type', async () => {
-      const tokenManagerData = {
-        tokenManagerAddress: 'mockManagerAddress',
-        tokenType: 'mockTokenType',
-      };
-      jest
-        .spyOn(DecodingUtils, 'deserialize')
-        .mockReturnValue({ value: { type: { value: VerifyMessageType.VERIFY_TOKEN_MANAGER } } });
-      (verifyTokenManagerDecoder as jest.Mock).mockReturnValue(tokenManagerData);
-      jest.spyOn(service, 'getTokenAddress').mockResolvedValue('mockTokenAddress');
-      const mockTransaction = { tx_id: 'mockTxId' } as any;
-      jest.spyOn(service, 'executeDeployTokenManager').mockResolvedValue(mockTransaction);
-      mockTransactionsHelper.checkAvailableGasBalance.mockResolvedValue(true);
-
-      const result = await service.handleVerifyCall(
-        senderKey,
-        payload,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-      );
-
-      expect(service.getTokenAddress).toHaveBeenCalledWith({
-        managerAddress: tokenManagerData.tokenManagerAddress,
-        tokenType: tokenManagerData.tokenType,
-      });
-      expect(service.executeDeployTokenManager).toHaveBeenCalled();
-      expect(mockTransactionsHelper.checkAvailableGasBalance).toHaveBeenCalledWith(messageId, availableGasBalance, [
-        { transaction: mockTransaction },
-      ]);
-      expect(result).toEqual(mockTransaction);
-    });
-
-    it('should return null for unknown type', async () => {
-      jest.spyOn(DecodingUtils, 'deserialize').mockReturnValue({ value: { type: { value: 'UNKNOWN_TYPE' } } });
-
-      const result = await service.handleVerifyCall(
-        senderKey,
-        payload,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-      );
-
-      expect(result).toBeNull();
-    });
-
-    it('should throw an error if decoding fails', async () => {
-      jest.spyOn(DecodingUtils, 'deserialize').mockImplementation(() => {
-        throw new Error('Decoding error');
-      });
-
-      await expect(
-        service.handleVerifyCall(senderKey, payload, messageId, sourceChain, sourceAddress, availableGasBalance),
-      ).rejects.toThrow('Decoding error');
-    });
-
-    it('should handle VERIFY_TOKEN_MANAGER with insufficient gas balance', async () => {
-      const tokenManagerData = {
-        tokenManagerAddress: 'mockManagerAddress',
-        tokenType: 'mockTokenType',
-      };
-      jest
-        .spyOn(DecodingUtils, 'deserialize')
-        .mockReturnValue({ value: { type: { value: VerifyMessageType.VERIFY_TOKEN_MANAGER } } });
-      (verifyTokenManagerDecoder as jest.Mock).mockReturnValue(tokenManagerData);
-      jest.spyOn(service, 'getTokenAddress').mockResolvedValue('mockTokenAddress');
-      const mockTransaction = { tx_id: 'mockTxId' } as any;
-      jest.spyOn(service, 'executeDeployTokenManager').mockResolvedValue(mockTransaction);
-      mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));
-
-      await expect(
-        service.handleVerifyCall(senderKey, payload, messageId, sourceChain, sourceAddress, availableGasBalance),
-      ).rejects.toThrow('Insufficient gas balance');
-    });
-
-    it('should handle VERIFY_INTERCHAIN_TOKEN with insufficient gas balance', async () => {
-      const interchainTokenData = { tokenAddress: 'mockTokenAddress' };
-      jest
-        .spyOn(DecodingUtils, 'deserialize')
-        .mockReturnValue({ value: { type: { value: VerifyMessageType.VERIFY_INTERCHAIN_TOKEN } } });
-      (verifyInterchainTokenDecoder as jest.Mock).mockReturnValue(interchainTokenData);
-      const mockTransaction = { tx_id: 'mockTxId' } as any;
-      jest.spyOn(service, 'executeDeployInterchainToken').mockResolvedValue(mockTransaction);
-      mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));
-
-      await expect(
-        service.handleVerifyCall(senderKey, payload, messageId, sourceChain, sourceAddress, availableGasBalance),
-      ).rejects.toThrow('Insufficient gas balance');
     });
   });
 });

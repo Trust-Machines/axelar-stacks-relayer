@@ -1,11 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import {
-  DecodingUtils,
-  tokenManagerParamsDecoder,
-  verifyInterchainTokenDecoder,
-  verifyTokenManagerDecoder,
-} from '@stacks-monorepo/common/utils/decoding.utils';
+import { DecodingUtils, tokenManagerParamsDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
 import { splitContractId } from '@stacks-monorepo/common/utils/split-contract-id';
 import { StacksNetwork } from '@stacks/network';
 import {
@@ -21,7 +16,6 @@ import {
   principalCV,
   StacksTransaction,
   stringAsciiCV,
-  uintCV,
 } from '@stacks/transactions';
 import { TokenManagerParams } from '../entities/gateway-events';
 import { TransactionsHelper } from '../transactions.helper';
@@ -32,7 +26,6 @@ import {
   HubMessageType,
   InterchainTransfer,
   ReceiveFromHub,
-  VerifyMessageType,
 } from './messages/hub.message.types';
 import { NativeInterchainTokenContract } from './native-interchain-token.contract';
 import { TokenManagerContract } from './token-manager.contract';
@@ -45,8 +38,6 @@ import { GatewayContract } from '../gateway.contract';
 import { GasServiceContract } from '../gas-service.contract';
 import { GasCheckerPayload } from '../entities/gas-checker-payload';
 
-const GAS_VALUE = 10n; // TODO: Check these values before going on mainnet
-const GAS_VALUE_VERIFY = 100n;
 const SETUP_MAX_RETRY = 3;
 const SETUP_DELAY = 300;
 
@@ -57,10 +48,11 @@ export class ItsContract implements OnModuleInit {
   private readonly proxyContractName;
   private readonly storageContractAddress;
   private readonly storageContractName;
-  private itsImpl: string | null = null;
+
+    private itsImpl: string | null = null;
 
   constructor(
-    private readonly proxyContract: string,
+    proxyContract: string,
     storageContract: string,
     private readonly network: StacksNetwork,
     private readonly tokenManagerContract: TokenManagerContract,
@@ -68,6 +60,7 @@ export class ItsContract implements OnModuleInit {
     private readonly transactionsHelper: TransactionsHelper,
     private readonly gatewayContract: GatewayContract,
     private readonly gasServiceContract: GasServiceContract,
+    private readonly axelarContractIts: string,
   ) {
     [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
     [this.storageContractAddress, this.storageContractName] = splitContractId(storageContract);
@@ -101,29 +94,25 @@ export class ItsContract implements OnModuleInit {
     messageId: string,
     sourceAddress: string,
     destinationAddress: string,
-    payload: string,
+    payloadHex: string,
     availableGasBalance: string,
   ): Promise<StacksTransaction | null> {
-    this.logger.debug(
-      `Executing message with ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payload}`,
-    );
-
     if (
-      sourceChain === CONSTANTS.SOURCE_CHAIN_NAME &&
-      sourceAddress === this.proxyContract &&
-      destinationAddress === this.proxyContract
+      sourceChain !== CONSTANTS.AXELAR_CHAIN ||
+      sourceAddress !== this.axelarContractIts
     ) {
-      return await this.handleVerifyCall(
-        senderKey,
-        payload,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
+      this.logger.warn(
+        `Received message for Stacks ITS from non ITS Hub contract. Message ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
       );
+
+      return null;
     }
 
-    const message = HubMessage.abiDecode(payload);
+    this.logger.debug(
+      `Executing message with ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
+    );
+
+    const message = HubMessage.abiDecode(payloadHex);
     if (!message) {
       return null;
     }
@@ -323,7 +312,6 @@ export class ItsContract implements OnModuleInit {
       sourceChain,
       sourceAddress,
       deployTransaction.smart_contract.contract_id,
-      GAS_VALUE,
     );
   }
 
@@ -380,16 +368,16 @@ export class ItsContract implements OnModuleInit {
     sourceChain: string,
     sourceAddress: string,
     tokenAddress: string,
-    gasValue: bigint,
   ): Promise<StacksTransaction> {
     const postCondition = createSTXPostCondition(
       this.transactionsHelper.getWalletSignerAddress(),
       FungibleConditionCode.LessEqual,
-      gasValue,
+      0,
     );
 
     const [gatewayImpl, itsImpl, gasImpl] = await this.getImplContracts();
 
+    // TODO: Update after contract changes
     return await this.transactionsHelper.makeContractCall({
       contractAddress: this.proxyContractAddress,
       contractName: this.proxyContractName,
@@ -403,7 +391,6 @@ export class ItsContract implements OnModuleInit {
         stringAsciiCV(sourceAddress),
         principalCV(tokenAddress),
         payload,
-        uintCV(gasValue),
       ],
       senderKey,
       network: this.network,
@@ -479,7 +466,6 @@ export class ItsContract implements OnModuleInit {
       sourceAddress,
       deployTransaction.smart_contract.contract_id,
       paramsDecoded.tokenAddress,
-      GAS_VALUE,
     );
   }
 
@@ -540,16 +526,16 @@ export class ItsContract implements OnModuleInit {
     sourceAddress: string,
     tokenManagerAddress: string,
     tokenAddress: string,
-    gasValue: bigint,
   ): Promise<StacksTransaction> {
     const postCondition = createSTXPostCondition(
       this.transactionsHelper.getWalletSignerAddress(),
       FungibleConditionCode.LessEqual,
-      gasValue,
+      0,
     );
 
     const [gatewayImpl, itsImpl, gasImpl] = await this.getImplContracts();
 
+    // TODO: Update after contract changes
     return await this.transactionsHelper.makeContractCall({
       contractAddress: this.proxyContractAddress,
       contractName: this.proxyContractName,
@@ -564,83 +550,12 @@ export class ItsContract implements OnModuleInit {
         payload,
         principalCV(tokenAddress),
         principalCV(tokenManagerAddress),
-        uintCV(gasValue),
       ],
       senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,
       postConditions: [postCondition],
     });
-  }
-
-  async handleVerifyCall(
-    senderKey: string,
-    payload: string,
-    messageId: string,
-    sourceChain: string,
-    sourceAddress: string,
-    availableGasBalance: string,
-  ): Promise<StacksTransaction | null> {
-    this.logger.debug(`Handling verify call for message ID: ${messageId}, payload: ${payload}`);
-
-    const json = DecodingUtils.deserialize(payload.toString());
-
-    const type = json.value['type'].value;
-
-    switch (type) {
-      case VerifyMessageType.VERIFY_INTERCHAIN_TOKEN:
-        const interchainTokenData = verifyInterchainTokenDecoder(json);
-
-        const executeDeployInterchainTokenTx = await this.executeDeployInterchainToken(
-          senderKey,
-          bufferCV(Buffer.from(payload, 'hex')),
-          messageId,
-          sourceChain,
-          sourceAddress,
-          interchainTokenData.tokenAddress,
-          GAS_VALUE_VERIFY,
-        );
-
-        await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, [
-          { transaction: executeDeployInterchainTokenTx },
-        ]);
-
-        return executeDeployInterchainTokenTx;
-      case VerifyMessageType.VERIFY_TOKEN_MANAGER:
-        const tokenManagerData = verifyTokenManagerDecoder(json);
-
-        const tokenAddress = await this.getTokenAddress({
-          managerAddress: tokenManagerData.tokenManagerAddress,
-          tokenType: tokenManagerData.tokenType,
-        });
-
-        if (!tokenAddress) {
-          this.logger.error(
-            `Token address couldn't be fetched for token manager: ${tokenManagerData.tokenManagerAddress} and type: ${tokenManagerData.tokenType}`,
-          );
-          return null;
-        }
-
-        const executeDeployTokenManagerTx = await this.executeDeployTokenManager(
-          senderKey,
-          bufferCV(Buffer.from(payload, 'hex')),
-          messageId,
-          sourceChain,
-          sourceAddress,
-          tokenManagerData.tokenManagerAddress,
-          tokenAddress,
-          GAS_VALUE_VERIFY,
-        );
-
-        await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, [
-          { transaction: executeDeployTokenManagerTx },
-        ]);
-
-        return executeDeployTokenManagerTx;
-      default:
-        this.logger.error(`Unknown verify type ${type}`);
-        return null;
-    }
   }
 
   private async getImplContracts(): Promise<[string, string, string]> {
@@ -682,7 +597,6 @@ export class ItsContract implements OnModuleInit {
       sourceChain,
       sourceAddress,
       templateContractId,
-      GAS_VALUE,
     );
     gasCheckerPayload.push({ transaction: executeDeployInterchainTokenTx });
 
@@ -725,7 +639,6 @@ export class ItsContract implements OnModuleInit {
       sourceAddress,
       templateContractId,
       paramsDecoded.tokenAddress,
-      GAS_VALUE,
     );
     gasCheckerPayload.push({ transaction: executeDeployTokenManagerTx });
 

@@ -112,6 +112,7 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
           transactionsHelper,
           gatewayContract,
           gasServiceContract,
+          apiConfigService.getAxelarContractIts(),
         );
       },
       inject: [
