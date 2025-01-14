@@ -61,7 +61,8 @@ export class CosmwasmService {
     // Handle Stacks ITS -> ITS Hub case
     if (
       task.message.sourceAddress === this.stacksContractItsProxy &&
-      task.message.destinationAddress === this.axelarContractIts
+      task.message.destinationAddress === this.axelarContractIts &&
+      task.destinationChain === AXELAR_CHAIN
     ) {
       return {
         verify_message_with_payload: {
@@ -84,7 +85,7 @@ export class CosmwasmService {
             source_chain: task.message.sourceChain,
             message_id: task.message.messageID,
           },
-          destination_chain: '', // TODO: This does not yet exist on the VerifyTask
+          destination_chain: task.destinationChain,
           destination_address: task.message.destinationAddress,
           source_address: task.message.sourceAddress,
           payload_hash: payloadHash,

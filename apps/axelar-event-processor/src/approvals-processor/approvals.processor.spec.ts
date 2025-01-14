@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
@@ -877,7 +877,7 @@ describe('ApprovalsProcessorService', () => {
 
   describe('handleVerify', () => {
     it('should add a single entry in Redis for verify_message_with_payload', async () => {
-      const response = {
+      const response: VerifyTask = {
         message: {
           sourceChain: 'stacks',
           messageID: 'msg1',
@@ -886,6 +886,7 @@ describe('ApprovalsProcessorService', () => {
           payloadHash: Buffer.from('payloadHash1').toString('base64'),
         },
         payload: Buffer.from('payloadData').toString('base64'),
+        destinationChain: 'axelar',
       };
 
       await service.processVerifyTask(response);
@@ -916,7 +917,7 @@ describe('ApprovalsProcessorService', () => {
     });
 
     it('should add a single entry in Redis for verify_messages', async () => {
-      const response = {
+      const response: VerifyTask = {
         message: {
           sourceChain: 'stacks',
           messageID: 'msg2',
@@ -925,6 +926,7 @@ describe('ApprovalsProcessorService', () => {
           payloadHash: Buffer.from('payloadHash2').toString('base64'),
         },
         payload: Buffer.from('payloadData').toString('base64'),
+        destinationChain: 'ethereum',
       };
 
       await service.processVerifyTask(response);
@@ -939,7 +941,7 @@ describe('ApprovalsProcessorService', () => {
                   source_chain: response.message.sourceChain,
                   message_id: response.message.messageID,
                 },
-                destination_chain: '', // TODO: Update this
+                destination_chain: 'ethereum',
                 destination_address: 'anotherDestination',
                 source_address: 'randomAddress',
                 payload_hash: Buffer.from('payloadHash2').toString('hex'),
