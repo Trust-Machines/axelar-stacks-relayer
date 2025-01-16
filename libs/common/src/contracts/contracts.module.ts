@@ -8,9 +8,9 @@ import { HelpersModule } from '../helpers/helpers.module';
 import { CONSTANTS } from '../utils/constants.enum';
 import { GatewayContract } from './gateway.contract';
 import { ItsContract } from './ITS/its.contract';
-import { TokenManagerContract } from './ITS/token-manager.contract';
 import { NativeInterchainTokenContract } from './ITS/native-interchain-token.contract';
 import { HiroApiHelper } from '../helpers/hiro.api.helpers';
+import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/token-manager.contract';
 
 @Module({
   imports: [HelpersModule],
@@ -57,23 +57,6 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         );
       },
       inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
-    },
-    {
-      provide: TokenManagerContract,
-      useFactory: (
-        apiConfigService: ApiConfigService,
-        hiroApiHelper: HiroApiHelper,
-        network: StacksNetwork,
-        transactionsHelper: TransactionsHelper,
-      ) => {
-        return new TokenManagerContract(
-          apiConfigService.getContractTokenManagerTemplate(),
-          hiroApiHelper,
-          network,
-          transactionsHelper,
-        );
-      },
-      inject: [ApiConfigService, HiroApiHelper, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },
     {
       provide: NativeInterchainTokenContract,
@@ -133,6 +116,7 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
       inject: [ApiConfigService],
     },
     TransactionsHelper,
+    TokenManagerContract,
   ],
   exports: [
     GatewayContract,

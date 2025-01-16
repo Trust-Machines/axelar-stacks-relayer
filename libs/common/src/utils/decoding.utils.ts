@@ -7,12 +7,10 @@ import {
   GatewayExternalData,
   MessageApprovedEvent,
   MessageExecutedEvent,
-  TokenManagerParams,
   WeightedSignersEvent,
 } from '../contracts/entities/gateway-events';
 import {
   DeployInterchainToken,
-  DeployTokenManager,
   InterchainTransfer,
 } from '../contracts/ITS/messages/hub.message.types';
 
@@ -101,13 +99,6 @@ export const refundedDecoder = (json: any): RefundedEvent => ({
   amount: new BigNumber(json['amount'].value),
 });
 
-export const tokenManagerParamsDecoder = (json: any): TokenManagerParams => {
-  return {
-    operator: json.value['operator']?.value,
-    tokenAddress: json.value['token-address'].value,
-  };
-};
-
 export const interchainTransferDecoder = (json: any): InterchainTransfer => ({
   messageType: parseInt(json.value['type'].value),
   tokenId: json.value['token-id'].value,
@@ -124,11 +115,4 @@ export const deployInterchainTokenDecoder = (json: any): DeployInterchainToken =
   symbol: json.value['symbol'].value,
   decimals: parseInt(json.value['decimals'].value),
   minter: json.value['minter'].value,
-});
-
-export const deployTokenManagerDecoder = (json: any): DeployTokenManager => ({
-  messageType: parseInt(json.value['type'].value),
-  tokenId: json.value['token-id'].value,
-  tokenManagerType: json.value['token-manager-type'].value,
-  params: json.value['params'].value,
 });

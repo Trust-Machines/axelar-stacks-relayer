@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import { DecodingUtils, tokenManagerParamsDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
 import { splitContractId } from '@stacks-monorepo/common/utils/split-contract-id';
 import { StacksNetwork } from '@stacks/network';
 import {
@@ -17,12 +16,10 @@ import {
   StacksTransaction,
   stringAsciiCV,
 } from '@stacks/transactions';
-import { TokenManagerParams } from '../entities/gateway-events';
 import { TransactionsHelper } from '../transactions.helper';
 import { HubMessage } from './messages/hub.message';
 import {
   DeployInterchainToken,
-  DeployTokenManager,
   HubMessageType,
   InterchainTransfer,
   ReceiveFromHub,
@@ -124,15 +121,6 @@ export class ItsContract implements OnModuleInit {
         return await this.handleInterchainTransfer(senderKey, message, messageId, sourceChain, availableGasBalance);
       case HubMessageType.DeployInterchainToken:
         return await this.handleDeployNativeInterchainToken(
-          senderKey,
-          message,
-          messageId,
-          sourceChain,
-          sourceAddress,
-          availableGasBalance,
-        );
-      case HubMessageType.DeployTokenManager:
-        return await this.handleDeployTokenManager(
           senderKey,
           message,
           messageId,
@@ -399,165 +387,6 @@ export class ItsContract implements OnModuleInit {
     });
   }
 
-  async handleDeployTokenManager(
-    senderKey: string,
-    message: ReceiveFromHub,
-    messageId: string,
-    sourceChain: string,
-    sourceAddress: string,
-    availableGasBalance: string,
-  ): Promise<StacksTransaction> {
-    this.logger.debug(
-      `Handling deploy token manager for message ID: ${messageId}, message: ${JSON.stringify(message)}`,
-    );
-
-    const gasCheckerPayload = await this.buildDeployTokenManagerGasCheckerPayload(
-      senderKey,
-      message,
-      messageId,
-      sourceChain,
-      sourceAddress,
-    );
-    await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, gasCheckerPayload);
-
-    const innerMessage = message.payload as DeployTokenManager;
-
-    this.logger.debug(`Deploying token manager contract...`);
-
-    const { success: deploySuccess, transaction: deployTransaction } = await this.deployTokenManagerContract(
-      senderKey,
-      innerMessage.tokenId,
-    );
-
-    this.logger.debug(`Deploy token manager contract success: ${deploySuccess}, txId: ${deployTransaction?.tx_id}`);
-
-    if (!deploySuccess || !deployTransaction || deployTransaction.tx_type !== 'smart_contract') {
-      throw new Error(`Could not deploy token manager contract, hash = ${deployTransaction?.tx_id}`);
-    }
-
-    this.logger.debug(`Calling setup function on the token manager contract...`);
-
-    const paramsDecoded = tokenManagerParamsDecoder(DecodingUtils.deserialize(innerMessage.params));
-
-    const [smartContractAddress, smartContractName] = splitContractId(deployTransaction.smart_contract.contract_id);
-    const { success: setupSuccess, transaction: setupTransaction } = await this.setupTokenManagerContract(
-      senderKey,
-      smartContractAddress,
-      smartContractName,
-      innerMessage,
-      paramsDecoded,
-    );
-
-    this.logger.debug(`Setup token manager contract success: ${setupSuccess}, txId: ${setupTransaction?.tx_id}`);
-
-    if (!setupSuccess || !setupTransaction) {
-      throw new Error(`Could not setup token manager, hash = ${setupTransaction?.tx_id}`);
-    }
-
-    const payload = HubMessage.clarityEncode(message);
-
-    this.logger.debug(`Calling execute-token-manager-contract...`);
-
-    return await this.executeDeployTokenManager(
-      senderKey,
-      payload,
-      messageId,
-      sourceChain,
-      sourceAddress,
-      deployTransaction.smart_contract.contract_id,
-      paramsDecoded.tokenAddress,
-    );
-  }
-
-  async deployTokenManagerContract(senderKey: string, name: string) {
-    const deployTx = await this.tokenManagerContract.deployContract(senderKey, name);
-    const deployHash = await this.transactionsHelper.sendTransaction(deployTx);
-    return await this.transactionsHelper.awaitSuccess(deployHash);
-  }
-
-  async setupTokenManagerContract(
-    senderKey: string,
-    smartContractAddress: string,
-    smartContractName: string,
-    message: DeployTokenManager,
-    params: TokenManagerParams,
-    retry = 0,
-  ): Promise<{
-    success: boolean;
-    transaction: Transaction | null;
-  }> {
-    if (retry >= SETUP_MAX_RETRY) {
-      throw new Error(`Could not setup ${smartContractAddress}.${smartContractName} after ${retry} retries`);
-    }
-
-    try {
-      const setupTx = await this.tokenManagerContract.setup(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        message,
-        params.tokenAddress,
-        params.operator,
-      );
-      const setupHash = await this.transactionsHelper.sendTransaction(setupTx);
-      return await this.transactionsHelper.awaitSuccess(setupHash);
-    } catch (e) {
-      this.logger.error(`Could not setup ${smartContractAddress}.${smartContractName}. Retrying in ${SETUP_DELAY} ms`);
-      this.logger.error(e);
-
-      await delay(SETUP_DELAY);
-
-      return await this.setupTokenManagerContract(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        message,
-        params,
-        retry + 1,
-      );
-    }
-  }
-
-  async executeDeployTokenManager(
-    senderKey: string,
-    payload: ClarityValue,
-    messageId: string,
-    sourceChain: string,
-    sourceAddress: string,
-    tokenManagerAddress: string,
-    tokenAddress: string,
-  ): Promise<StacksTransaction> {
-    const postCondition = createSTXPostCondition(
-      this.transactionsHelper.getWalletSignerAddress(),
-      FungibleConditionCode.LessEqual,
-      0,
-    );
-
-    const [gatewayImpl, itsImpl, gasImpl] = await this.getImplContracts();
-
-    // TODO: Update after contract changes
-    return await this.transactionsHelper.makeContractCall({
-      contractAddress: this.proxyContractAddress,
-      contractName: this.proxyContractName,
-      functionName: 'execute-deploy-token-manager',
-      functionArgs: [
-        principalCV(gatewayImpl),
-        principalCV(gasImpl),
-        principalCV(itsImpl),
-        stringAsciiCV(sourceChain),
-        stringAsciiCV(messageId),
-        stringAsciiCV(sourceAddress),
-        payload,
-        principalCV(tokenAddress),
-        principalCV(tokenManagerAddress),
-      ],
-      senderKey,
-      network: this.network,
-      anchorMode: AnchorMode.Any,
-      postConditions: [postCondition],
-    });
-  }
-
   private async getImplContracts(): Promise<[string, string, string]> {
     const gatewayImpl = await this.gatewayContract.getGatewayImpl();
     const itsImpl = await this.getItsImpl();
@@ -599,48 +428,6 @@ export class ItsContract implements OnModuleInit {
       templateContractId,
     );
     gasCheckerPayload.push({ transaction: executeDeployInterchainTokenTx });
-
-    return gasCheckerPayload;
-  }
-
-  private async buildDeployTokenManagerGasCheckerPayload(
-    senderKey: string,
-    message: ReceiveFromHub,
-    messageId: string,
-    sourceChain: string,
-    sourceAddress: string,
-  ): Promise<GasCheckerPayload[]> {
-    const gasCheckerPayload: GasCheckerPayload[] = [];
-    const innerMessage = message.payload as DeployTokenManager;
-    const deployTx = await this.tokenManagerContract.deployContract(senderKey, innerMessage.tokenId);
-    gasCheckerPayload.push({ transaction: deployTx, deployContract: true });
-
-    const templateContractId = this.tokenManagerContract.getTemplaceContractId();
-    const [templateContractAddress, templateContractName] = splitContractId(templateContractId);
-    const paramsDecoded = tokenManagerParamsDecoder(DecodingUtils.deserialize(innerMessage.params));
-
-    const setupTx = await this.tokenManagerContract.setup(
-      senderKey,
-      templateContractAddress,
-      templateContractName,
-      innerMessage,
-      paramsDecoded.tokenAddress,
-      paramsDecoded.operator,
-    );
-    gasCheckerPayload.push({ transaction: setupTx });
-
-    const payload = HubMessage.clarityEncode(message);
-
-    const executeDeployTokenManagerTx = await this.executeDeployTokenManager(
-      senderKey,
-      payload,
-      messageId,
-      sourceChain,
-      sourceAddress,
-      templateContractId,
-      paramsDecoded.tokenAddress,
-    );
-    gasCheckerPayload.push({ transaction: executeDeployTokenManagerTx });
 
     return gasCheckerPayload;
   }

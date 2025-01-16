@@ -124,15 +124,6 @@ export class ApiConfigService {
     return contract;
   }
 
-  getContractTokenManagerTemplate(): string {
-    const contract = this.configService.get<string>('CONTRACT_ID_TOKEN_MANAGER_TEMPLATE');
-    if (!contract) {
-      throw new Error('No Contract Token Manager Template present');
-    }
-
-    return contract;
-  }
-
   getAxelarContractIts(): string {
     const axelarContractIts = this.configService.get<string>('AXELAR_CONTRACT_ITS');
     if (!axelarContractIts) {

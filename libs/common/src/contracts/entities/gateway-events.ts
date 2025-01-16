@@ -39,8 +39,3 @@ export interface GatewayExternalData {
   data: string;
   proof: string;
 }
-
-export interface TokenManagerParams {
-  operator?: string;
-  tokenAddress: string;
-}
