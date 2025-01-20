@@ -158,6 +158,7 @@ describe('GatewayProcessor', () => {
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
       transaction.block_time_iso = '11.05.2024';
+      transaction.sender_address = 'sender';
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
 
@@ -178,7 +179,7 @@ describe('GatewayProcessor', () => {
       expect(event.payload).toBe(contractCallEvent.payload.toString('base64'));
       expect(event.meta).toEqual({
         txID: 'txHash',
-        fromAddress: contractCallEvent.sender,
+        fromAddress: transaction.sender_address,
         finalized: true,
         timestamp: '11.05.2024',
       });

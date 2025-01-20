@@ -7,17 +7,19 @@ import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { AxiosError } from 'axios';
-import { GasServiceProcessor, GatewayProcessor } from './processors';
+import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
   private readonly contractGatewayStorage: string;
   private readonly contractGasServiceStorage: string;
+  private readonly contractItsStorage: string;
   private readonly logger: Logger;
 
   constructor(
     private readonly gatewayProcessor: GatewayProcessor,
     private readonly gasServiceProcessor: GasServiceProcessor,
+    private readonly itsProcessor: ItsProcessor,
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly redisHelper: RedisHelper,
     private readonly hiroApiHelper: HiroApiHelper,
@@ -25,6 +27,7 @@ export class CrossChainTransactionProcessorService {
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.contractGasServiceStorage = apiConfigService.getContractGasServiceStorage();
+    this.contractItsStorage = apiConfigService.getContractItsStorage();
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
@@ -98,6 +101,18 @@ export class CrossChainTransactionProcessorService {
           index,
           rawEvent.event_index,
           fee,
+        );
+
+        if (event) {
+          eventsToSend.push(event);
+        }
+      }
+
+      if (address === this.contractItsStorage) {
+        const event = this.itsProcessor.handleItsEvent(
+          rawEvent,
+          transaction,
+          rawEvent.event_index,
         );
 
         if (event) {

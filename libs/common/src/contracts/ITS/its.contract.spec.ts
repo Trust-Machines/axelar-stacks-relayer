@@ -1,38 +1,40 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ApiConfigService } from '@stacks-monorepo/common/config';
-import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
 import { StacksNetwork } from '@stacks/network';
-import { callReadOnlyFunction, cvToString } from '@stacks/transactions';
-import { stringAscii } from '@stacks/transactions/dist/cl';
-import { GasServiceContract } from '../gas-service.contract';
-import { GatewayContract } from '../gateway.contract';
-import { TransactionsHelper } from '../transactions.helper';
-import { ItsContract } from './its.contract';
-import { HubMessage } from './messages/hub.message';
+import {
+  bufferCV,
+  callReadOnlyFunction,
+  cvToString, principalCV,
+  serializeCV,
+  stringAsciiCV,
+  tupleCV,
+  uintCV,
+} from '@stacks/transactions';
+import { bufferFromHex, stringAscii } from '@stacks/transactions/dist/cl';
+import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
+import { ApiConfigService, GatewayContract, TransactionsHelper } from '@stacks-monorepo/common';
+import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/token-manager.contract';
+import { NativeInterchainTokenContract } from '@stacks-monorepo/common/contracts/ITS/native-interchain-token.contract';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
 import {
   DeployInterchainToken,
   HubMessageType,
   InterchainTransfer,
   ReceiveFromHub,
-} from './messages/hub.message.types';
-import { NativeInterchainTokenContract } from './native-interchain-token.contract';
-import { TokenManagerContract } from './token-manager.contract';
-import { TokenType } from './types/token-type';
+} from '@stacks-monorepo/common/contracts/ITS/messages/hub.message.types';
+import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
+import { getMockScEvent } from '@stacks-monorepo/common/contracts/gas-service.contract.spec';
 
-jest.mock('@stacks/transactions', () => ({
-  callReadOnlyFunction: jest.fn(),
-  cvToString: jest.fn(),
-  optionalCVOf: jest.fn(),
-  principalCV: jest.fn(),
-  stringAsciiCV: jest.fn(),
-  deserializeCV: jest.fn(),
-  cvToJSON: jest.fn(),
-  bufferCV: jest.fn(),
-  AnchorMode: { Any: 'mockedAnchorMode' },
-}));
-
-jest.mock('@stacks-monorepo/common/utils/decoding.utils');
+jest.mock('@stacks/transactions', () => {
+  const actual = jest.requireActual('@stacks/transactions');
+  return {
+    ...actual,
+    callReadOnlyFunction: jest.fn(),
+    cvToString: jest.fn(),
+  };
+});
 
 const proxyContract = 'mockContractAddress.mockContractName-proxy';
 
@@ -552,6 +554,76 @@ describe('ItsContract', () => {
       ).rejects.toThrow('Could not setup mockAddress.mockName after 3 retries');
 
       expect(mockTransactionsHelper.awaitSuccess).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('decodeInterchainTokenDeploymentStartedEvent', () => {
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          type: stringAsciiCV('interchain-token-deployment-started'),
+          'destination-chain': stringAsciiCV('ethereum'),
+          'token-id': bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
+          name: stringAsciiCV('name'),
+          symbol: stringAsciiCV('symbol'),
+          decimals: uintCV(6),
+          minter: bufferFromHex('F12372616f9c986355414BA06b3Ca954c0a7b0dC'),
+        }),
+      ),
+    );
+
+    const mockScEvent = getMockScEvent(message);
+
+    it('Should decode event', () => {
+      const result = service.decodeInterchainTokenDeploymentStartedEvent(mockScEvent);
+
+      expect(result.destinationChain).toBe('ethereum');
+      expect(result.tokenId).toBe('0x11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669');
+      expect(result.name).toBe('name');
+      expect(result.symbol).toBe('symbol');
+      expect(result.decimals).toBe(6);
+      expect(result.minter).toBe('0xf12372616f9c986355414ba06b3ca954c0a7b0dc');
+    });
+
+    it('Should throw error while decoding', () => {
+      mockScEvent.contract_log.value.hex = '';
+
+      expect(() => service.decodeInterchainTokenDeploymentStartedEvent(mockScEvent)).toThrow();
+    });
+  });
+
+  describe('decodeInterchainTransferEvent', () => {
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          type: stringAsciiCV('interchain-transfer'),
+          'token-id': bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
+          'source-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
+          'destination-chain': stringAsciiCV('ethereum'),
+          'destination-address': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
+          amount: uintCV(1000000),
+          data: bufferFromHex('F12372616f9c986355414BA06b3Ca954c0a7b0dC'),
+        }),
+      ),
+    );
+
+    const mockScEvent = getMockScEvent(message);
+
+    it('Should decode event', () => {
+      const result = service.decodeInterchainTransferEvent(mockScEvent);
+
+      expect(result.tokenId).toBe('0x11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669');
+      expect(result.sourceAddress).toBe('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV');
+      expect(result.destinationChain).toBe('ethereum');
+      expect(result.destinationAddress).toBe('0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7');
+      expect(result.amount).toBe('1000000');
+      expect(result.data).toBe('0xf12372616f9c986355414ba06b3ca954c0a7b0dc');
+    });
+
+    it('Should throw error while decoding', () => {
+      mockScEvent.contract_log.value.hex = '';
+
+      expect(() => service.decodeInterchainTransferEvent(mockScEvent)).toThrow();
     });
   });
 });

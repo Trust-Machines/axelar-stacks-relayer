@@ -1,12 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { StacksNetwork } from '@stacks/network';
 import { addressToString, callReadOnlyFunction, ContractPrincipalCV, ResponseOkCV } from '@stacks/transactions';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 
 @Injectable()
 export class TokenManagerContract {
   private readonly logger = new Logger(TokenManagerContract.name);
 
-  constructor(private readonly network: StacksNetwork) {}
+  constructor(@Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork) {}
 
   async getTokenAddress(tokenManagerContract: string) {
     try {

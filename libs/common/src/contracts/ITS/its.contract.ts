@@ -34,6 +34,16 @@ import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { GatewayContract } from '../gateway.contract';
 import { GasServiceContract } from '../gas-service.contract';
 import { GasCheckerPayload } from '../entities/gas-checker-payload';
+import { ScEvent } from '../../../../../apps/stacks-event-processor/src/event-processor/types';
+import {
+  DecodingUtils,
+  interchainTokenDeploymentStartedEventDecoder,
+  interchainTransferEventDecoder,
+} from '@stacks-monorepo/common/utils/decoding.utils';
+import {
+  InterchainTokenDeploymentStartedEvent,
+  InterchainTransferEvent,
+} from '@stacks-monorepo/common/contracts/entities/its-events';
 
 const SETUP_MAX_RETRY = 3;
 const SETUP_DELAY = 300;
@@ -385,6 +395,14 @@ export class ItsContract implements OnModuleInit {
       anchorMode: AnchorMode.Any,
       postConditions: [postCondition],
     });
+  }
+
+  decodeInterchainTokenDeploymentStartedEvent(event: ScEvent): InterchainTokenDeploymentStartedEvent {
+    return DecodingUtils.decodeEvent<InterchainTokenDeploymentStartedEvent>(event, interchainTokenDeploymentStartedEventDecoder);
+  }
+
+  decodeInterchainTransferEvent(event: ScEvent): InterchainTransferEvent {
+    return DecodingUtils.decodeEvent<InterchainTransferEvent>(event, interchainTransferEventDecoder);
   }
 
   private async getImplContracts(): Promise<[string, string, string]> {

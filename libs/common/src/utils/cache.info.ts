@@ -32,7 +32,7 @@ export class CacheInfo {
 
   static ContractLastProcessedEvent(contractId: string): CacheInfo {
     return {
-      key: `contractLastProcessedEvent${contractId}`,
+      key: `contractLastProcessedEvent:${contractId}`,
       ttl: Constants.oneMonth(),
     };
   }

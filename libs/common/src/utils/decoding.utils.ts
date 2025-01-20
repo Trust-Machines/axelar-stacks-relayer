@@ -13,6 +13,10 @@ import {
   DeployInterchainToken,
   InterchainTransfer,
 } from '../contracts/ITS/messages/hub.message.types';
+import {
+  InterchainTokenDeploymentStartedEvent,
+  InterchainTransferEvent,
+} from '@stacks-monorepo/common/contracts/entities/its-events';
 
 export class DecodingUtils {
   static deserialize(hex: string) {
@@ -115,4 +119,22 @@ export const deployInterchainTokenDecoder = (json: any): DeployInterchainToken =
   symbol: json.value['symbol'].value,
   decimals: parseInt(json.value['decimals'].value),
   minter: json.value['minter'].value,
+});
+
+export const interchainTokenDeploymentStartedEventDecoder = (json: any): InterchainTokenDeploymentStartedEvent => ({
+  destinationChain: json['destination-chain'].value,
+  tokenId: json['token-id'].value,
+  name: json['name'].value,
+  symbol: json['symbol'].value,
+  decimals: parseInt(json['decimals'].value),
+  minter: json['minter'].value,
+});
+
+export const interchainTransferEventDecoder = (json: any): InterchainTransferEvent => ({
+  tokenId: json['token-id'].value,
+  sourceAddress: json['source-address'].value,
+  destinationChain: json['destination-chain'].value,
+  destinationAddress: json['destination-address'].value,
+  amount: new BigNumber(json['amount'].value).toFixed(),
+  data: json['data'].value,
 });
