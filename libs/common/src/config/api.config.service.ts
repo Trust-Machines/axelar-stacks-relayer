@@ -124,6 +124,15 @@ export class ApiConfigService {
     return contract;
   }
 
+  getContractVerifyOnchain(): string {
+    const contract = this.configService.get<string>('CONTRACT_ID_VERIFY_ONCHAIN');
+    if (!contract) {
+      throw new Error('No Contract Verify Onchain present');
+    }
+
+    return contract;
+  }
+
   getAxelarContractIts(): string {
     const axelarContractIts = this.configService.get<string>('AXELAR_CONTRACT_ITS');
     if (!axelarContractIts) {

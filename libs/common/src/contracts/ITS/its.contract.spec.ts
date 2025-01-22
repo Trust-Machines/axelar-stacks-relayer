@@ -5,7 +5,8 @@ import { StacksNetwork } from '@stacks/network';
 import {
   bufferCV,
   callReadOnlyFunction,
-  cvToString, principalCV,
+  cvToString,
+  principalCV,
   serializeCV,
   stringAsciiCV,
   tupleCV,
@@ -26,6 +27,7 @@ import {
 } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message.types';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { getMockScEvent } from '@stacks-monorepo/common/contracts/gas-service.contract.spec';
+import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 
 jest.mock('@stacks/transactions', () => {
   const actual = jest.requireActual('@stacks/transactions');
@@ -48,6 +50,7 @@ describe('ItsContract', () => {
   let mockTransactionsHelper: DeepMocked<TransactionsHelper>;
   let mockTokenManagerContract: DeepMocked<TokenManagerContract>;
   let mockNativeInterchainTokenContract: DeepMocked<NativeInterchainTokenContract>;
+  let mockVerifyOnchain: DeepMocked<VerifyOnchainContract>;
 
   beforeEach(async () => {
     mockNetwork = createMock<StacksNetwork>();
@@ -57,6 +60,7 @@ describe('ItsContract', () => {
     mockNativeInterchainTokenContract = createMock<NativeInterchainTokenContract>();
     mockGatewayContract = createMock<GatewayContract>();
     mockGasServiceContract = createMock<GasServiceContract>();
+    mockVerifyOnchain = createMock<VerifyOnchainContract>();
 
     mockApiConfigService.getContractItsProxy.mockReturnValue(proxyContract);
     mockApiConfigService.getContractItsStorage.mockReturnValue('mockContractAddress.mockContractName-storage');
@@ -77,6 +81,7 @@ describe('ItsContract', () => {
               mockGatewayContract,
               mockGasServiceContract,
               apiConfigService.getAxelarContractIts(),
+              mockVerifyOnchain,
             );
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
@@ -95,6 +100,11 @@ describe('ItsContract', () => {
     service = module.get<ItsContract>(ItsContract);
 
     jest.spyOn(HubMessage, 'abiDecode').mockImplementation(jest.fn());
+
+    mockNativeInterchainTokenContract.getTemplaceContractId.mockReturnValue('mockTemplateContractId');
+    mockNativeInterchainTokenContract.getTemplateDeployVerificationParams.mockReturnValue(Promise.resolve(tupleCV({})));
+
+    mockVerifyOnchain.buildNativeInterchainTokenVerificationParams.mockReturnValue(Promise.resolve(tupleCV({})));
   });
 
   describe('getItsImpl', () => {
@@ -361,9 +371,9 @@ describe('ItsContract', () => {
       };
       const setupTx = { tx_id: 'setupTxId' };
       const executeTx = { tx_id: 'executeTxId' };
-      jest.spyOn(service as any, 'deployNativeInterchainTokenContract').mockResolvedValue(deployTx);
+      jest.spyOn(mockNativeInterchainTokenContract as any, 'doDeployContract').mockResolvedValue(deployTx);
       jest
-        .spyOn(service as any, 'setupNativeInterchainTokenContract')
+        .spyOn(mockNativeInterchainTokenContract as any, 'doSetupContract')
         .mockResolvedValue({ success: true, transaction: setupTx });
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
       jest.spyOn(HubMessage, 'clarityEncode').mockReturnValue(stringAscii('payload'));
@@ -375,11 +385,16 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
       );
-      expect(service.deployNativeInterchainTokenContract).toHaveBeenCalledWith(
+
+      expect(mockNativeInterchainTokenContract.getTemplaceContractId).toHaveBeenCalledTimes(1);
+      expect(mockNativeInterchainTokenContract.getTemplateDeployVerificationParams).toHaveBeenCalledTimes(1);
+      expect(mockVerifyOnchain.buildNativeInterchainTokenVerificationParams).toHaveBeenCalledTimes(1);
+
+      expect(mockNativeInterchainTokenContract.doDeployContract).toHaveBeenCalledWith(
         senderKey,
         (message.payload as DeployInterchainToken).name,
       );
-      expect(service.setupNativeInterchainTokenContract).toHaveBeenCalledWith(
+      expect(mockNativeInterchainTokenContract.doSetupContract).toHaveBeenCalledWith(
         senderKey,
         'mockContractAddress',
         'mockContractName',
@@ -391,7 +406,17 @@ describe('ItsContract', () => {
         messageId,
         sourceChain,
         sourceAddress,
-        'mockContractId',
+        'mockTemplateContractId',
+        expect.anything(),
+      );
+      expect(service.executeDeployInterchainToken).toHaveBeenCalledWith(
+        senderKey,
+        expect.anything(),
+        messageId,
+        sourceChain,
+        sourceAddress,
+        'mockContractAddress.mockContractName',
+        expect.anything(),
       );
       expect(result).toEqual(executeTx);
     });
@@ -404,9 +429,9 @@ describe('ItsContract', () => {
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
       jest
-        .spyOn(service, 'deployNativeInterchainTokenContract')
+        .spyOn(mockNativeInterchainTokenContract, 'doDeployContract')
         .mockResolvedValue({ success: false, transaction: null });
-      jest.spyOn(service, 'setupNativeInterchainTokenContract').mockImplementation(jest.fn());
+      jest.spyOn(mockNativeInterchainTokenContract, 'doSetupContract').mockImplementation(jest.fn());
       jest.spyOn(service, 'executeDeployInterchainToken').mockImplementation(jest.fn());
       mockTransactionsHelper.checkAvailableGasBalance.mockResolvedValue(true);
       jest.spyOn(HubMessage, 'clarityEncode').mockReturnValue(stringAscii('payload'));
@@ -428,7 +453,7 @@ describe('ItsContract', () => {
       const sourceChain = 'sourceChain';
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
-      jest.spyOn(service, 'deployNativeInterchainTokenContract').mockResolvedValue({
+      jest.spyOn(mockNativeInterchainTokenContract, 'doDeployContract').mockResolvedValue({
         success: true,
         transaction: {
           tx_id: 'mockDeployTxId',
@@ -437,7 +462,7 @@ describe('ItsContract', () => {
         } as any,
       });
       jest
-        .spyOn(service, 'setupNativeInterchainTokenContract')
+        .spyOn(mockNativeInterchainTokenContract, 'doSetupContract')
         .mockResolvedValue({ success: false, transaction: null });
       jest.spyOn(service, 'executeDeployInterchainToken').mockImplementation(jest.fn());
       mockTransactionsHelper.checkAvailableGasBalance.mockResolvedValue(true);
@@ -461,8 +486,8 @@ describe('ItsContract', () => {
       const sourceChain = 'sourceChain';
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
-      jest.spyOn(service, 'deployNativeInterchainTokenContract').mockImplementation(jest.fn());
-      jest.spyOn(service, 'setupNativeInterchainTokenContract').mockImplementation(jest.fn());
+      jest.spyOn(mockNativeInterchainTokenContract, 'doDeployContract').mockImplementation(jest.fn());
+      jest.spyOn(mockNativeInterchainTokenContract, 'doSetupContract').mockImplementation(jest.fn());
       jest.spyOn(service, 'executeDeployInterchainToken').mockImplementation(jest.fn());
       mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));
       await expect(
@@ -475,85 +500,6 @@ describe('ItsContract', () => {
           availableGasBalance,
         ),
       ).rejects.toThrow('Insufficient gas balance');
-    });
-  });
-
-  describe('setupNativeInterchainTokenContract', () => {
-    const senderKey = 'mockSenderKey';
-    const smartContractAddress = 'mockAddress';
-    const smartContractName = 'mockName';
-    const receiveFromHub = {
-      messageType: HubMessageType.ReceiveFromHub,
-      payload: { messageType: HubMessageType.DeployInterchainToken } as DeployInterchainToken,
-      sourceChain: 'sourceChain',
-    };
-
-    it('should successfully setup native interchain token contract', async () => {
-      const setupTx = { tx_id: 'mockSetupTxId' } as any;
-
-      mockNativeInterchainTokenContract.setup.mockResolvedValue(setupTx as any);
-      mockTransactionsHelper.sendTransaction.mockResolvedValue('mockSetupHash');
-      mockTransactionsHelper.awaitSuccess.mockResolvedValue({
-        success: true,
-        transaction: setupTx,
-      });
-
-      const result = await service.setupNativeInterchainTokenContract(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        receiveFromHub,
-      );
-
-      expect(service['nativeInterchainTokenContract'].setup).toHaveBeenCalledWith(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        receiveFromHub.payload,
-      );
-      expect(mockTransactionsHelper.sendTransaction).toHaveBeenCalledWith(setupTx);
-      expect(mockTransactionsHelper.awaitSuccess).toHaveBeenCalledWith('mockSetupHash');
-      expect(result).toEqual({ success: true, transaction: setupTx });
-    });
-
-    it('should retry on failure and eventually succeed', async () => {
-      const setupTx = { tx_id: 'mockSetupTxId' } as any;
-
-      mockNativeInterchainTokenContract.setup.mockResolvedValue(setupTx as any);
-      mockTransactionsHelper.sendTransaction.mockResolvedValue('mockSetupHash');
-      mockTransactionsHelper.awaitSuccess
-        .mockRejectedValueOnce(new Error('Internal server error'))
-        .mockResolvedValueOnce({ success: true, transaction: setupTx });
-
-      const result = await service.setupNativeInterchainTokenContract(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        receiveFromHub,
-      );
-
-      expect(mockTransactionsHelper.awaitSuccess).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ success: true, transaction: setupTx });
-    });
-
-    it('should throw an error if max retries are reached', async () => {
-      const setupTx = { tx_id: 'mockSetupTxId' };
-
-      mockNativeInterchainTokenContract.setup.mockResolvedValue(setupTx as any);
-      mockTransactionsHelper.sendTransaction.mockResolvedValue('mockSetupHash');
-      mockTransactionsHelper.awaitSuccess.mockRejectedValue(new Error('Internal server error'));
-
-      await expect(
-        service.setupNativeInterchainTokenContract(
-          senderKey,
-          smartContractAddress,
-          smartContractName,
-          receiveFromHub,
-          0,
-        ),
-      ).rejects.toThrow('Could not setup mockAddress.mockName after 3 retries');
-
-      expect(mockTransactionsHelper.awaitSuccess).toHaveBeenCalledTimes(3);
     });
   });
 

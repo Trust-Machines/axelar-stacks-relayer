@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { StacksNetwork } from '@stacks/network';
 import { addressToString, callReadOnlyFunction, ContractPrincipalCV, ResponseOkCV } from '@stacks/transactions';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { TokenInfo } from '@stacks-monorepo/common/contracts/ITS/types/token.info';
+import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 
 @Injectable()
 export class TokenManagerContract {
@@ -9,7 +11,15 @@ export class TokenManagerContract {
 
   constructor(@Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork) {}
 
-  async getTokenAddress(tokenManagerContract: string) {
+  async getTokenAddress(tokenInfo: TokenInfo) {
+    if (tokenInfo.tokenType === TokenType.NATIVE_INTERCHAIN_TOKEN) {
+      return tokenInfo.managerAddress;
+    }
+
+    return await this.getTokenAddressRaw(tokenInfo.managerAddress);
+  }
+
+  private async getTokenAddressRaw(tokenManagerContract: string) {
     try {
       const contractSplit = tokenManagerContract.split('.');
       const clarityValue = await callReadOnlyFunction({

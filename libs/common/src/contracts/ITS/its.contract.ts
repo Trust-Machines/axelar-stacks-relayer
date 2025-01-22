@@ -15,6 +15,7 @@ import {
   principalCV,
   StacksTransaction,
   stringAsciiCV,
+  TupleCV,
 } from '@stacks/transactions';
 import { TransactionsHelper } from '../transactions.helper';
 import { HubMessage } from './messages/hub.message';
@@ -26,10 +27,7 @@ import {
 } from './messages/hub.message.types';
 import { NativeInterchainTokenContract } from './native-interchain-token.contract';
 import { TokenManagerContract } from './token-manager.contract';
-import { TokenType } from './types/token-type';
 import { TokenInfo } from './types/token.info';
-import { delay } from '@stacks-monorepo/common/utils/await-success';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { GatewayContract } from '../gateway.contract';
 import { GasServiceContract } from '../gas-service.contract';
@@ -44,9 +42,7 @@ import {
   InterchainTokenDeploymentStartedEvent,
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
-
-const SETUP_MAX_RETRY = 3;
-const SETUP_DELAY = 300;
+import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 
 @Injectable()
 export class ItsContract implements OnModuleInit {
@@ -56,7 +52,7 @@ export class ItsContract implements OnModuleInit {
   private readonly storageContractAddress;
   private readonly storageContractName;
 
-    private itsImpl: string | null = null;
+  private itsImpl: string | null = null;
 
   constructor(
     proxyContract: string,
@@ -68,6 +64,7 @@ export class ItsContract implements OnModuleInit {
     private readonly gatewayContract: GatewayContract,
     private readonly gasServiceContract: GasServiceContract,
     private readonly axelarContractIts: string,
+    private readonly verifyOnchain: VerifyOnchainContract,
   ) {
     [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
     [this.storageContractAddress, this.storageContractName] = splitContractId(storageContract);
@@ -104,12 +101,9 @@ export class ItsContract implements OnModuleInit {
     payloadHex: string,
     availableGasBalance: string,
   ): Promise<StacksTransaction | null> {
-    if (
-      sourceChain !== CONSTANTS.AXELAR_CHAIN ||
-      sourceAddress !== this.axelarContractIts
-    ) {
+    if (sourceChain !== CONSTANTS.AXELAR_CHAIN || sourceAddress !== this.axelarContractIts) {
       this.logger.warn(
-        `Received message for Stacks ITS from non ITS Hub contract. Message ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
+        `Received message for Stacks ITS from non ITS Hub contract, NOT handling it. Message ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
       );
 
       return null;
@@ -167,6 +161,73 @@ export class ItsContract implements OnModuleInit {
     );
   }
 
+  async handleDeployNativeInterchainToken(
+    senderKey: string,
+    message: ReceiveFromHub,
+    messageId: string,
+    sourceChain: string,
+    sourceAddress: string,
+    availableGasBalance: string,
+  ): Promise<StacksTransaction> {
+    this.logger.debug(
+      `Handling deploy native interchain token for message ID: ${messageId}, message: ${JSON.stringify(message)}`,
+    );
+
+    const gasCheckerPayload = await this.buildDeployInterchainTokenGasCheckerPayload(
+      senderKey,
+      message,
+      messageId,
+      sourceChain,
+      sourceAddress,
+    );
+    await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, gasCheckerPayload);
+
+    this.logger.debug(`Deploying native interchain token contract...`);
+
+    const innerMessage = message.payload as DeployInterchainToken;
+    const { success: deploySuccess, transaction: deployTransaction } =
+      await this.nativeInterchainTokenContract.doDeployContract(senderKey, innerMessage.name);
+
+    this.logger.debug(`Deploy native interchain contract success: ${deploySuccess}, txId: ${deployTransaction?.tx_id}`);
+
+    if (!deploySuccess || !deployTransaction || deployTransaction.tx_type !== 'smart_contract') {
+      throw new Error(`Could not deploy native interchain token, hash = ${deployTransaction?.tx_id}`);
+    }
+
+    this.logger.debug(`Calling setup function on the native interchain token contract...`);
+
+    const [smartContractAddress, smartContractName] = splitContractId(deployTransaction.smart_contract.contract_id);
+    const { success: setupSuccess, transaction: setupTransaction } =
+      await this.nativeInterchainTokenContract.doSetupContract(
+        senderKey,
+        smartContractAddress,
+        smartContractName,
+        message,
+      );
+
+    this.logger.debug(`Setup native interchain contract success: ${setupSuccess}, txId: ${setupTransaction?.tx_id}`);
+
+    if (!setupSuccess || !setupTransaction) {
+      throw new Error(`Could not setup native interchain token, hash = ${setupTransaction?.tx_id}`);
+    }
+
+    const payload = HubMessage.clarityEncode(message);
+
+    this.logger.debug(`Calling execute-deploy-interchain-token function...`);
+
+    const verificationParams = await this.verifyOnchain.buildNativeInterchainTokenVerificationParams(deployTransaction);
+
+    return await this.executeDeployInterchainToken(
+      senderKey,
+      payload,
+      messageId,
+      sourceChain,
+      sourceAddress,
+      deployTransaction.smart_contract.contract_id,
+      verificationParams,
+    );
+  }
+
   async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
     try {
       const response = await callReadOnlyFunction({
@@ -180,12 +241,10 @@ export class ItsContract implements OnModuleInit {
 
       const parsedResponse = cvToJSON(response);
 
-      const tokenInfo: TokenInfo = {
+      return {
         managerAddress: parsedResponse.value['manager-address'].value,
         tokenType: parsedResponse.value['token-type'].value,
       };
-
-      return tokenInfo;
     } catch (e) {
       this.logger.error('Failed to call get-token-info');
       this.logger.error(e);
@@ -201,7 +260,7 @@ export class ItsContract implements OnModuleInit {
     tokenInfo: TokenInfo,
     availableGasBalance: string,
   ): Promise<StacksTransaction> {
-    const tokenAddress = await this.getTokenAddress(tokenInfo);
+    const tokenAddress = await this.tokenManagerContract.getTokenAddress(tokenInfo);
     if (!tokenAddress) {
       throw new Error('Could not get token address');
     }
@@ -211,7 +270,7 @@ export class ItsContract implements OnModuleInit {
     const innerMessage = message.payload as InterchainTransfer;
 
     const destinationContract = optionalCVOf(
-      isEmptyData(innerMessage.data) ? undefined : principalCV(innerMessage.data),
+      isEmptyData(innerMessage.data) ? undefined : principalCV(innerMessage.destinationAddress),
     );
     const payload = HubMessage.clarityEncode(message);
 
@@ -240,125 +299,6 @@ export class ItsContract implements OnModuleInit {
     return transaction;
   }
 
-  async getTokenAddress(tokenInfo: TokenInfo) {
-    if (tokenInfo.tokenType === TokenType.NATIVE_INTERCHAIN_TOKEN) {
-      return tokenInfo.managerAddress;
-    }
-
-    return await this.tokenManagerContract.getTokenAddress(tokenInfo.managerAddress);
-  }
-
-  async handleDeployNativeInterchainToken(
-    senderKey: string,
-    message: ReceiveFromHub,
-    messageId: string,
-    sourceChain: string,
-    sourceAddress: string,
-    availableGasBalance: string,
-  ): Promise<StacksTransaction> {
-    this.logger.debug(
-      `Handling deploy native interchain token for message ID: ${messageId}, message: ${JSON.stringify(message)}`,
-    );
-
-    const gasCheckerPayload = await this.buildDeployInterchainTokenGasCheckerPayload(
-      senderKey,
-      message,
-      messageId,
-      sourceChain,
-      sourceAddress,
-    );
-    await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, gasCheckerPayload);
-
-    this.logger.debug(`Deploying native interchain token contract...`);
-
-    const innerMessage = message.payload as DeployInterchainToken;
-    const { success: deploySuccess, transaction: deployTransaction } = await this.deployNativeInterchainTokenContract(
-      senderKey,
-      innerMessage.name,
-    );
-
-    this.logger.debug(`Deploy native interchain contract success: ${deploySuccess}, txId: ${deployTransaction?.tx_id}`);
-
-    if (!deploySuccess || !deployTransaction || deployTransaction.tx_type !== 'smart_contract') {
-      throw new Error(`Could not deploy native interchain token, hash = ${deployTransaction?.tx_id}`);
-    }
-
-    this.logger.debug(`Calling setup function on the native interchain token contract...`);
-
-    const [smartContractAddress, smartContractName] = splitContractId(deployTransaction.smart_contract.contract_id);
-    const { success: setupSuccess, transaction: setupTransaction } = await this.setupNativeInterchainTokenContract(
-      senderKey,
-      smartContractAddress,
-      smartContractName,
-      message,
-    );
-
-    this.logger.debug(`Setup native interchain contract success: ${setupSuccess}, txId: ${setupTransaction?.tx_id}`);
-
-    if (!setupSuccess || !setupTransaction) {
-      throw new Error(`Could not setup native interchain token, hash = ${setupTransaction?.tx_id}`);
-    }
-
-    const payload = HubMessage.clarityEncode(message);
-
-    this.logger.debug(`Calling execute-deploy-interchain-token function...`);
-
-    return await this.executeDeployInterchainToken(
-      senderKey,
-      payload,
-      messageId,
-      sourceChain,
-      sourceAddress,
-      deployTransaction.smart_contract.contract_id,
-    );
-  }
-
-  async deployNativeInterchainTokenContract(senderKey: string, name: string) {
-    const deployTx = await this.nativeInterchainTokenContract.deployContract(senderKey, name);
-    const deployHash = await this.transactionsHelper.sendTransaction(deployTx);
-    return await this.transactionsHelper.awaitSuccess(deployHash);
-  }
-
-  async setupNativeInterchainTokenContract(
-    senderKey: string,
-    smartContractAddress: string,
-    smartContractName: string,
-    message: ReceiveFromHub,
-    retry = 0,
-  ): Promise<{
-    success: boolean;
-    transaction: Transaction | null;
-  }> {
-    if (retry >= SETUP_MAX_RETRY) {
-      throw new Error(`Could not setup ${smartContractAddress}.${smartContractName} after ${retry} retries`);
-    }
-
-    try {
-      const innerMessage = message.payload as DeployInterchainToken;
-      const setupTx = await this.nativeInterchainTokenContract.setup(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        innerMessage,
-      );
-      const setupHash = await this.transactionsHelper.sendTransaction(setupTx);
-      return await this.transactionsHelper.awaitSuccess(setupHash);
-    } catch (e) {
-      this.logger.error(`Could not setup ${smartContractAddress}.${smartContractName}. Retrying in ${SETUP_DELAY} ms`);
-      this.logger.error(e);
-
-      await delay(SETUP_DELAY);
-
-      return await this.setupNativeInterchainTokenContract(
-        senderKey,
-        smartContractAddress,
-        smartContractName,
-        message,
-        retry + 1,
-      );
-    }
-  }
-
   async executeDeployInterchainToken(
     senderKey: string,
     payload: ClarityValue,
@@ -366,6 +306,7 @@ export class ItsContract implements OnModuleInit {
     sourceChain: string,
     sourceAddress: string,
     tokenAddress: string,
+    verificationParams: TupleCV,
   ): Promise<StacksTransaction> {
     const postCondition = createSTXPostCondition(
       this.transactionsHelper.getWalletSignerAddress(),
@@ -375,7 +316,6 @@ export class ItsContract implements OnModuleInit {
 
     const [gatewayImpl, itsImpl, gasImpl] = await this.getImplContracts();
 
-    // TODO: Update after contract changes
     return await this.transactionsHelper.makeContractCall({
       contractAddress: this.proxyContractAddress,
       contractName: this.proxyContractName,
@@ -389,6 +329,7 @@ export class ItsContract implements OnModuleInit {
         stringAsciiCV(sourceAddress),
         principalCV(tokenAddress),
         payload,
+        verificationParams,
       ],
       senderKey,
       network: this.network,
@@ -398,7 +339,10 @@ export class ItsContract implements OnModuleInit {
   }
 
   decodeInterchainTokenDeploymentStartedEvent(event: ScEvent): InterchainTokenDeploymentStartedEvent {
-    return DecodingUtils.decodeEvent<InterchainTokenDeploymentStartedEvent>(event, interchainTokenDeploymentStartedEventDecoder);
+    return DecodingUtils.decodeEvent<InterchainTokenDeploymentStartedEvent>(
+      event,
+      interchainTokenDeploymentStartedEventDecoder,
+    );
   }
 
   decodeInterchainTransferEvent(event: ScEvent): InterchainTransferEvent {
@@ -422,12 +366,14 @@ export class ItsContract implements OnModuleInit {
   ): Promise<GasCheckerPayload[]> {
     const gasCheckerPayload: GasCheckerPayload[] = [];
     const innerMessage = message.payload as DeployInterchainToken;
-    const deployTx = await this.nativeInterchainTokenContract.deployContract(senderKey, innerMessage.name);
+    const deployTx = await this.nativeInterchainTokenContract.deployContractTransaction(senderKey, innerMessage.name);
     gasCheckerPayload.push({ transaction: deployTx, deployContract: true });
 
     const templateContractId = this.nativeInterchainTokenContract.getTemplaceContractId();
+    const templateDeployTx =
+      (await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams()) as TupleCV;
     const [templateContractAddress, templateContractName] = splitContractId(templateContractId);
-    const setupTx = await this.nativeInterchainTokenContract.setup(
+    const setupTx = await this.nativeInterchainTokenContract.setupTransaction(
       senderKey,
       templateContractAddress,
       templateContractName,
@@ -444,6 +390,7 @@ export class ItsContract implements OnModuleInit {
       sourceChain,
       sourceAddress,
       templateContractId,
+      templateDeployTx,
     );
     gasCheckerPayload.push({ transaction: executeDeployInterchainTokenTx });
 
