@@ -1,5 +1,5 @@
 import { sha512_256 } from '@noble/hashes/sha512';
-import { bufferCV, deserializeTransaction, listCV, tupleCV, uintCV } from '@stacks/transactions';
+import { bufferCV, BytesReader, deserializeTransaction, listCV, tupleCV, uintCV } from '@stacks/transactions';
 import { bytesToHex, hexToBytes } from '@stacks/common';
 
 function tagged_sha512_256(tag: Uint8Array, data: Uint8Array): Uint8Array {
@@ -113,12 +113,10 @@ export function getBlockHeader(blockRaw: Buffer, txIndex: number) {
   // const signerBitVecLen = Number("0x" + bytesToHex(block.slice(pastSignatures, pastSignatures + 2)))
   const signerBitVecByteLen = Number('0x' + bytesToHex(block.slice(pastSignatures + 2, pastSignatures + 6)));
   const signer_bitvec = block.slice(pastSignatures, pastSignatures + 6 + signerBitVecByteLen);
-  const txids = bytesToHex(block.slice(pastSignatures + 10 + signerBitVecByteLen))
-    .split('808000000004')
-    .map((item) => '808000000004' + item)
-    .slice(1)
-    .map((item) => hexToBytes(deserializeTransaction(item).txid()));
-  const tx_merkle_tree = MerkleTree.new(txids);
+
+  const txs = block.slice(pastSignatures + 10 + signerBitVecByteLen);
+  const txids = deserializeRawBlockTxs(txs);
+  const tx_merkle_tree = MerkleTree.new(txids.map(hexToBytes));
 
   const blockHeader = new Uint8Array([
     ...block_version,
@@ -144,4 +142,25 @@ export function proofPathToCV(tx_index: number, hashes: Uint8Array[], tree_depth
     hashes: listCV(hashes.map(bufferCV)),
     'tree-depth': uintCV(tree_depth),
   });
+}
+
+function deserializeRawBlockTxs(
+  txs: Uint8Array | BytesReader,
+  processedTxs: string[] = [],
+) {
+  const { transaction, reader } = deserializeTransactionCustom(
+    txs instanceof BytesReader ? txs : new BytesReader(txs),
+  );
+
+  processedTxs = processedTxs.concat(transaction.txid());
+
+  if (reader.consumed === reader.source.length) {
+    return processedTxs;
+  }
+  return deserializeRawBlockTxs(reader, processedTxs);
+}
+
+function deserializeTransactionCustom(bytesReader: BytesReader) {
+  const transaction = deserializeTransaction(bytesReader);
+  return { transaction, reader: bytesReader };
 }
