@@ -82,6 +82,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       updatedAt: new Date(),
       successTimes: null,
       taskItemId: null,
+      extraData: {},
     };
 
     messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
@@ -116,6 +117,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       updatedAt: new Date(),
       successTimes: null,
       taskItemId: null,
+      extraData: {},
     };
 
     messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
@@ -146,6 +148,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       updatedAt: new Date(),
       successTimes: null,
       taskItemId: null,
+      extraData: {},
     };
 
     messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
@@ -174,6 +177,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       updatedAt: new Date(),
       successTimes: null,
       taskItemId: null,
+      extraData: {},
     };
 
     messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
@@ -200,6 +204,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       updatedAt: new Date(),
       successTimes: null,
       taskItemId: null,
+      extraData: {},
     };
 
     messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);

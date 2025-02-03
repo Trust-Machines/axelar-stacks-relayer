@@ -2,9 +2,12 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { buildContractName } from '@stacks-monorepo/common/utils/build-contract-name';
 import { StacksNetwork } from '@stacks/network';
 import {
-  AnchorMode, ClarityVersion,
-  optionalCVOf, PostConditionMode,
-  principalCV, SignedContractDeployOptions,
+  AnchorMode,
+  ClarityVersion,
+  optionalCVOf,
+  PostConditionMode,
+  principalCV,
+  SignedContractDeployOptions,
   StacksTransaction,
   stringAsciiCV,
   TupleCV,
@@ -166,10 +169,8 @@ export class NativeInterchainTokenContract implements OnModuleInit {
 
       const txId = await this.hiroApiHelper.getContractInfoTxId(this.templateContractId);
 
-      const deployTransaction = await this.hiroApiHelper.getTransaction(txId);
-
       this.templateDeployVerificationParams =
-        await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(deployTransaction);
+        await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(txId);
 
       this.logger.log('Successfully fetched template verification params');
 

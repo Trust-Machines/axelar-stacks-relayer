@@ -71,6 +71,7 @@ export class ApprovalsProcessorService {
       try {
         const response = await this.axelarGmpApi.getTasks(CONSTANTS.SOURCE_CHAIN_NAME, lastTaskUUID);
 
+        // TODO: Remove
         // response.data.tasks.push({
         //   id: 'test',
         //   type: 'GATEWAY_TX',
@@ -304,7 +305,6 @@ export class ApprovalsProcessorService {
       response.remainingGasBalance.amount,
     );
 
-    // TODO: Handle retries in case of transaction failing?
     const txHash = await this.transactionsHelper.sendTransaction(transaction);
 
     this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);

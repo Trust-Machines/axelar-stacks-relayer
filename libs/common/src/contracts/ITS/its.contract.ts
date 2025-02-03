@@ -79,7 +79,6 @@ export class ItsContract implements OnModuleInit {
     private readonly gasServiceContract: GasServiceContract,
     private readonly axelarContractIts: string,
     private readonly verifyOnchain: VerifyOnchainContract,
-    private readonly hiroApiHelper: HiroApiHelper,
   ) {
     [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
     [this.storageContractAddress, this.storageContractName] = splitContractId(storageContract);
@@ -208,14 +207,14 @@ export class ItsContract implements OnModuleInit {
   ): Promise<MessageApprovedData> {
     // In case we haven't started deploying anything for this yet, check gas first
     if (!extraData?.step) {
-      const gasCheckerPayload = await this.buildDeployInterchainTokenGasCheckerPayload(
+      await this.checkDeployInterchainTokenGasBalance(
         senderKey,
         message,
         messageId,
         sourceChain,
         sourceAddress,
+        availableGasBalance,
       );
-      await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, gasCheckerPayload);
 
       extraData = {
         step: 'CONTRACT_DEPLOY',
@@ -228,32 +227,13 @@ export class ItsContract implements OnModuleInit {
       `Handling deploy native interchain token for message ID: ${messageId}, message: ${JSON.stringify(message)}, step: ${extraData.step}`,
     );
 
-    // Check if pending transaction succeeded
+    // If we have an executeTxHash, the deploy process is in progress so we need to check if the transaction has succeeded
+    // before moving forward
     if (executeTxHash) {
-      const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
-        executeTxHash,
-        extraData.timestamp as number,
-      );
+      const result = await this.checkPendingTransactionSuccess(executeTxHash, extraData);
 
-      // If not yet finished wait more
-      if (!isFinished) {
-        this.logger.debug(`Deploy native interchain contract transaction txId: ${executeTxHash} not yet finished`);
-
-        return {
-          transaction: null,
-          incrementRetry: false,
-          extraData,
-        };
-      }
-
-      if (!success) {
-        this.logger.error(`Could not deploy native interchain token, txId: ${executeTxHash}`);
-
-        return {
-          transaction: null,
-          incrementRetry: true,
-          extraData,
-        };
+      if (result) {
+        return result;
       }
     }
 
@@ -270,17 +250,15 @@ export class ItsContract implements OnModuleInit {
             innerMessage.name,
           );
 
-          const newExtraData: ItsExtraData = {
-            step: 'CONTRACT_DEPLOY',
-            contractId: this.transactionsHelper.makeContractId(contractName),
-            timestamp: Date.now(),
-            deployTxHash: transaction.txid(),
-          };
-
           return {
             transaction,
             incrementRetry: false,
-            extraData: newExtraData,
+            extraData: {
+              step: 'CONTRACT_DEPLOY',
+              contractId: this.transactionsHelper.makeContractId(contractName),
+              timestamp: Date.now(),
+              deployTxHash: transaction.txid(),
+            } as ItsExtraData,
           };
         }
 
@@ -307,17 +285,15 @@ export class ItsContract implements OnModuleInit {
             innerMessage,
           );
 
-          const newExtraData: ItsExtraData = {
-            step: 'CONTRACT_SETUP',
-            contractId: contractId,
-            timestamp: Date.now(),
-            deployTxHash: extraData.deployTxHash,
-          };
-
           return {
             transaction,
             incrementRetry: false,
-            extraData: newExtraData,
+            extraData: {
+              step: 'CONTRACT_SETUP',
+              contractId: contractId,
+              timestamp: Date.now(),
+              deployTxHash: extraData.deployTxHash,
+            } as ItsExtraData,
           };
         }
 
@@ -328,14 +304,13 @@ export class ItsContract implements OnModuleInit {
         // No break here is intentional
       }
       case 'ITS_EXECUTE': {
-        const payload = HubMessage.clarityEncode(message);
-
         this.logger.debug(`Calling execute-deploy-interchain-token function...`);
 
-        const deployTransaction = await this.hiroApiHelper.getTransaction(extraData.deployTxHash as string);
+        const verificationParams = await this.verifyOnchain.buildNativeInterchainTokenVerificationParams(
+          extraData.deployTxHash as string,
+        );
 
-        const verificationParams =
-          await this.verifyOnchain.buildNativeInterchainTokenVerificationParams(deployTransaction);
+        const payload = HubMessage.clarityEncode(message);
 
         const transaction = await this.executeDeployInterchainToken(
           senderKey,
@@ -347,39 +322,17 @@ export class ItsContract implements OnModuleInit {
           verificationParams,
         );
 
-        const newExtraData: ItsExtraData = {
-          step: 'ITS_EXECUTE',
-          contractId: extraData.contractId,
-          timestamp: undefined,
-          deployTxHash: extraData.deployTxHash,
+        return {
+          transaction,
+          incrementRetry: true,
+          extraData: {
+            step: 'ITS_EXECUTE',
+            contractId: extraData.contractId,
+            timestamp: undefined,
+            deployTxHash: extraData.deployTxHash,
+          } as ItsExtraData,
         };
-
-        return { transaction, incrementRetry: true, extraData: newExtraData };
       }
-    }
-  }
-
-  async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
-    try {
-      const response = await callReadOnlyFunction({
-        contractAddress: this.storageContractAddress,
-        contractName: this.storageContractName,
-        functionName: 'get-token-info',
-        functionArgs: [bufferCV(Buffer.from(tokenId, 'hex'))],
-        network: this.network,
-        senderAddress: this.storageContractAddress,
-      });
-
-      const parsedResponse = cvToJSON(response);
-
-      return {
-        managerAddress: parsedResponse.value['manager-address'].value,
-        tokenType: parsedResponse.value['token-type'].value,
-      };
-    } catch (e) {
-      this.logger.error('Failed to call get-token-info');
-      this.logger.error(e);
-      return null;
     }
   }
 
@@ -396,7 +349,8 @@ export class ItsContract implements OnModuleInit {
       throw new Error('Could not get token address');
     }
 
-    const [gatewayImpl, itsImpl] = await this.getImplContracts();
+    const itsImpl = await this.getItsImpl();
+    const gatewayImpl = await this.gatewayContract.getGatewayImpl();
 
     const innerMessage = message.payload as InterchainTransfer;
 
@@ -446,28 +400,33 @@ export class ItsContract implements OnModuleInit {
       0,
     );
 
-    const [gatewayImpl, itsImpl, gasImpl] = await this.getImplContracts();
+    const itsImpl = await this.getItsImpl();
+    const gatewayImpl = await this.gatewayContract.getGatewayImpl();
+    const gasImpl = await this.gasServiceContract.getGasImpl();
 
-    return await this.transactionsHelper.makeContractCall({
-      contractAddress: this.proxyContractAddress,
-      contractName: this.proxyContractName,
-      functionName: 'execute-deploy-interchain-token',
-      functionArgs: [
-        principalCV(gatewayImpl),
-        principalCV(gasImpl),
-        principalCV(itsImpl),
-        stringAsciiCV(sourceChain),
-        stringAsciiCV(messageId),
-        stringAsciiCV(sourceAddress),
-        principalCV(tokenAddress),
-        payload,
-        verificationParams,
-      ],
-      senderKey,
-      network: this.network,
-      anchorMode: AnchorMode.Any,
-      postConditions: [postCondition],
-    }, simulate);
+    return await this.transactionsHelper.makeContractCall(
+      {
+        contractAddress: this.proxyContractAddress,
+        contractName: this.proxyContractName,
+        functionName: 'execute-deploy-interchain-token',
+        functionArgs: [
+          principalCV(gatewayImpl),
+          principalCV(gasImpl),
+          principalCV(itsImpl),
+          stringAsciiCV(sourceChain),
+          stringAsciiCV(messageId),
+          stringAsciiCV(sourceAddress),
+          principalCV(tokenAddress),
+          payload,
+          verificationParams,
+        ],
+        senderKey,
+        network: this.network,
+        anchorMode: AnchorMode.Any,
+        postConditions: [postCondition],
+      },
+      simulate,
+    );
   }
 
   decodeInterchainTokenDeploymentStartedEvent(event: ScEvent): InterchainTokenDeploymentStartedEvent {
@@ -481,27 +440,41 @@ export class ItsContract implements OnModuleInit {
     return DecodingUtils.decodeEvent<InterchainTransferEvent>(event, interchainTransferEventDecoder);
   }
 
-  private async getImplContracts(): Promise<[string, string, string]> {
-    const gatewayImpl = await this.gatewayContract.getGatewayImpl();
-    const itsImpl = await this.getItsImpl();
-    const gasImpl = await this.gasServiceContract.getGasImpl();
+  private async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
+    try {
+      const response = await callReadOnlyFunction({
+        contractAddress: this.storageContractAddress,
+        contractName: this.storageContractName,
+        functionName: 'get-token-info',
+        functionArgs: [bufferCV(Buffer.from(tokenId, 'hex'))],
+        network: this.network,
+        senderAddress: this.storageContractAddress,
+      });
 
-    return [gatewayImpl, itsImpl, gasImpl];
+      const parsedResponse = cvToJSON(response);
+
+      return {
+        managerAddress: parsedResponse.value['manager-address'].value,
+        tokenType: parsedResponse.value['token-type'].value,
+      };
+    } catch (e) {
+      this.logger.error('Failed to call get-token-info');
+      this.logger.error(e);
+      return null;
+    }
   }
 
-  private async buildDeployInterchainTokenGasCheckerPayload(
+  private async checkDeployInterchainTokenGasBalance(
     senderKey: string,
     message: ReceiveFromHub,
     messageId: string,
     sourceChain: string,
     sourceAddress: string,
-  ): Promise<GasCheckerPayload[]> {
+    availableGasBalance: string,
+  ) {
     const gasCheckerPayload: GasCheckerPayload[] = [];
     const innerMessage = message.payload as DeployInterchainToken;
 
-    // const nextNonce = await this.transactionsHelper.getNextSignerNonce();
-
-    // TODO: This increments the nonces and it shouldn't...
     const { transaction: deployTx } = await this.nativeInterchainTokenContract.deployContractTransaction(
       senderKey,
       innerMessage.name,
@@ -536,6 +509,39 @@ export class ItsContract implements OnModuleInit {
     );
     gasCheckerPayload.push({ transaction: executeDeployInterchainTokenTx });
 
-    return gasCheckerPayload;
+    await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, gasCheckerPayload);
+  }
+
+  private async checkPendingTransactionSuccess(
+    executeTxHash: string,
+    extraData: ItsExtraData,
+  ): Promise<MessageApprovedData | null> {
+    const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
+      executeTxHash,
+      extraData.timestamp as number,
+    );
+
+    // If not yet finished wait more
+    if (!isFinished) {
+      this.logger.debug(`Deploy native interchain contract transaction txId: ${executeTxHash} not yet finished`);
+
+      return {
+        transaction: null,
+        incrementRetry: false,
+        extraData,
+      };
+    }
+
+    if (!success) {
+      this.logger.error(`Could not deploy native interchain token, txId: ${executeTxHash}`);
+
+      return {
+        transaction: null,
+        incrementRetry: true,
+        extraData,
+      };
+    }
+
+    return null;
   }
 }

@@ -237,7 +237,7 @@ export class GatewayProcessor {
         finalized: true,
         timestamp,
       },
-      status: 'SUCCESSFUL', // TODO: How to handle reverted?
+      status: 'SUCCESSFUL',
     };
 
     this.logger.debug(

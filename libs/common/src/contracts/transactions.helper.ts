@@ -22,6 +22,8 @@ import { awaitSuccess, delay } from '../utils/await-success';
 import { TooLowAvailableBalanceError } from './entities/too-low-available-balance.error';
 import { ApiConfigService } from '../config';
 import { GasCheckerPayload } from './entities/gas-checker-payload';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
 
 const TX_TIMEOUT_MILLIS = 600_000;
 const TX_POLL_INTERVAL = 6000;

@@ -16,7 +16,8 @@ export class VerifyOnchainContract {
     private readonly hiroApiHelper: HiroApiHelper,
   ) {}
 
-  async buildNativeInterchainTokenVerificationParams(deployTransaction: Transaction): Promise<TupleCV> {
+  async buildNativeInterchainTokenVerificationParams(txHash: string): Promise<TupleCV> {
+    const deployTransaction = await this.hiroApiHelper.getTransaction(txHash);
     const rawTx = await this.hiroApiHelper.getTransactionRaw(deployTransaction.tx_id);
 
     const txIndex = deployTransaction.tx_index;
