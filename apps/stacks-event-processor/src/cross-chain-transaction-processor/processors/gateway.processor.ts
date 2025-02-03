@@ -242,6 +242,7 @@ export class GatewayProcessor {
 
     this.logger.debug(
       `Successfully executed message from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
+      messageExecuted,
     );
 
     return {

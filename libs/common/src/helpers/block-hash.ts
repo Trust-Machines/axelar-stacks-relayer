@@ -144,13 +144,8 @@ export function proofPathToCV(tx_index: number, hashes: Uint8Array[], tree_depth
   });
 }
 
-function deserializeRawBlockTxs(
-  txs: Uint8Array | BytesReader,
-  processedTxs: string[] = [],
-) {
-  const { transaction, reader } = deserializeTransactionCustom(
-    txs instanceof BytesReader ? txs : new BytesReader(txs),
-  );
+function deserializeRawBlockTxs(txs: Uint8Array | BytesReader, processedTxs: string[] = []) {
+  const { transaction, reader } = deserializeTransactionCustom(txs instanceof BytesReader ? txs : new BytesReader(txs));
 
   processedTxs = processedTxs.concat(transaction.txid());
 

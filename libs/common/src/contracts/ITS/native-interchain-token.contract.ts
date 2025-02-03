@@ -2,9 +2,9 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { buildContractName } from '@stacks-monorepo/common/utils/build-contract-name';
 import { StacksNetwork } from '@stacks/network';
 import {
-  AnchorMode,
-  optionalCVOf,
-  principalCV,
+  AnchorMode, ClarityVersion,
+  optionalCVOf, PostConditionMode,
+  principalCV, SignedContractDeployOptions,
   StacksTransaction,
   stringAsciiCV,
   TupleCV,
@@ -95,11 +95,13 @@ export class NativeInterchainTokenContract implements OnModuleInit {
 
     const contractName = buildContractName(name);
 
-    const txOptions = {
+    const txOptions: SignedContractDeployOptions = {
       contractName,
       codeBody: sourceCode,
       senderKey: senderKey,
       network: this.network,
+      clarityVersion: ClarityVersion.Clarity3,
+      postConditionMode: PostConditionMode.Allow,
       anchorMode: AnchorMode.Any,
     };
 
