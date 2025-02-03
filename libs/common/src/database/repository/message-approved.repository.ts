@@ -22,16 +22,23 @@ export class MessageApprovedRepository {
 
   findPending(page: number = 0, take: number = 10): Promise<MessageApproved[] | null> {
     // Last updated more than six minutes ago, if retrying
-    const lastUpdatedAt = new Date(new Date().getTime() - 360_000);
+    const lastUpdatedAtRetry = new Date(new Date().getTime() - 360_000);
+    // Prevent frequent retries of special transactions
+    const lastUpdated = new Date(new Date().getTime() - 15_000);
 
     return this.prisma.messageApproved.findMany({
       where: {
         status: MessageApprovedStatus.PENDING,
         OR: [
-          { retry: 0 },
+          {
+            retry: 0,
+            updatedAt: {
+              lt: lastUpdated,
+            },
+          },
           {
             updatedAt: {
-              lt: lastUpdatedAt,
+              lt: lastUpdatedAtRetry,
             },
           },
         ],
@@ -71,6 +78,8 @@ export class MessageApprovedRepository {
             retry: data.retry,
             executeTxHash: data.executeTxHash,
             successTimes: data.successTimes,
+            // @ts-ignore
+            extraData: data.extraData,
           },
         });
       }),

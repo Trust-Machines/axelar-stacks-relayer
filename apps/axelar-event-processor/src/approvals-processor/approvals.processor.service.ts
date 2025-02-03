@@ -22,6 +22,7 @@ import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
+import { AxiosError } from 'axios';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -70,6 +71,16 @@ export class ApprovalsProcessorService {
       try {
         const response = await this.axelarGmpApi.getTasks(CONSTANTS.SOURCE_CHAIN_NAME, lastTaskUUID);
 
+        // response.data.tasks.push({
+        //   id: 'test',
+        //   type: 'GATEWAY_TX',
+        //   chain: 'stacks',
+        //   timestamp: '',
+        //   task: {
+        //     executeData: Buffer.from('0c00000003046461746102000001410b000000010c0000000510636f6e74726163742d61646472657373061a8675ab7c8fc22258bde371272c80e5710a25885218696e746572636861696e2d746f6b656e2d736572766963650a6d6573736167652d69640d000000483078346230353932616464383130616361616632383338326539346434656162303237613530333832633566343361663065343737623635633863353661636263342d34373732310c7061796c6f61642d68617368020000002020e12deade346d07016d83bf18bc315e11eb984e446d4158ce64faea79cca09e0e736f757263652d616464726573730d000000416178656c6172313537686c376770756b6e6a6d6874616332716e706875617a76327965726661677661376c73753976756a3270676e33327a323271613236646b340c736f757263652d636861696e0d000000066178656c61720866756e6374696f6e0d00000010617070726f76652d6d657373616765730570726f6f6602000001df0c000000020a7369676e6174757265730b0000000202000000413ec83c61581292465e98207bf6a7cfe63945bfc994a43ec65855d1d5d984776803f5bc05bd89646b74a411b49a2c9de2d7447e8500f9ca8529f5467fc7919d0f010200000041d7d80c9efe8ba857f3fa4e2cec358a08661fe010911681b9aaf277faaf4b9c871820f75320bf29cfd91098f2e2484f3f681a322d3dc555c68160fef4a5265d0901077369676e6572730c00000003056e6f6e63650200000020000000000000000000000000000000000000000000000000000000000038d32c077369676e6572730b000000030c00000002067369676e65720200000021026e4a6fc3a6988c4cd7d3bc02e07bac8b72a9f5342d92f42161e7b6e57dd47e180677656967687401000000000000000000000000000000010c00000002067369676e6572020000002102d19c406d763c98d98554c980ae03543b936aad0c3f1289a367a0c2aafb71e8c10677656967687401000000000000000000000000000000010c00000002067369676e6572020000002103ea531f69879b3b15b6e3fe262250d5ceca6217e03e4def6919d4bdce3a7ec389067765696768740100000000000000000000000000000001097468726573686f6c640100000000000000000000000000000002', 'hex').toString('base64'),
+        //   }
+        // });
+
         if (response.data.tasks.length === 0) {
           this.logger.debug('No tasks left to process for now...');
 
@@ -88,14 +99,18 @@ export class ApprovalsProcessorService {
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
 
-            // Stop processing in case of an error and retry from the sam task
+            // Stop processing in case of an error and retry from the same task
             return;
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length}`);
+        this.logger.debug(`Successfully processed ${tasks.length}, last task UUID ${lastTaskUUID}`);
       } catch (e) {
-        this.logger.error('Error retrieving tasks...', e);
+        this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
+
+        if (e instanceof AxiosError) {
+          this.logger.error(e.response?.data);
+        }
 
         return;
       }

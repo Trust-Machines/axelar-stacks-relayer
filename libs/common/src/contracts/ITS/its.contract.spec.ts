@@ -371,7 +371,7 @@ describe('ItsContract', () => {
       };
       const setupTx = { tx_id: 'setupTxId' };
       const executeTx = { tx_id: 'executeTxId' };
-      jest.spyOn(mockNativeInterchainTokenContract as any, 'doDeployContract').mockResolvedValue(deployTx);
+      jest.spyOn(mockNativeInterchainTokenContract as any, 'deployContractTransaction').mockResolvedValue(deployTx);
       jest
         .spyOn(mockNativeInterchainTokenContract as any, 'doSetupContract')
         .mockResolvedValue({ success: true, transaction: setupTx });
@@ -390,7 +390,7 @@ describe('ItsContract', () => {
       expect(mockNativeInterchainTokenContract.getTemplateDeployVerificationParams).toHaveBeenCalledTimes(1);
       expect(mockVerifyOnchain.buildNativeInterchainTokenVerificationParams).toHaveBeenCalledTimes(1);
 
-      expect(mockNativeInterchainTokenContract.doDeployContract).toHaveBeenCalledWith(
+      expect(mockNativeInterchainTokenContract.deployContractTransaction).toHaveBeenCalledWith(
         senderKey,
         (message.payload as DeployInterchainToken).name,
       );
@@ -429,7 +429,7 @@ describe('ItsContract', () => {
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
       jest
-        .spyOn(mockNativeInterchainTokenContract, 'doDeployContract')
+        .spyOn(mockNativeInterchainTokenContract, 'deployContractTransaction')
         .mockResolvedValue({ success: false, transaction: null });
       jest.spyOn(mockNativeInterchainTokenContract, 'doSetupContract').mockImplementation(jest.fn());
       jest.spyOn(service, 'executeDeployInterchainToken').mockImplementation(jest.fn());
@@ -453,7 +453,7 @@ describe('ItsContract', () => {
       const sourceChain = 'sourceChain';
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
-      jest.spyOn(mockNativeInterchainTokenContract, 'doDeployContract').mockResolvedValue({
+      jest.spyOn(mockNativeInterchainTokenContract, 'deployContractTransaction').mockResolvedValue({
         success: true,
         transaction: {
           tx_id: 'mockDeployTxId',
@@ -486,7 +486,7 @@ describe('ItsContract', () => {
       const sourceChain = 'sourceChain';
       const sourceAddress = 'sourceAddress';
       const availableGasBalance = '100';
-      jest.spyOn(mockNativeInterchainTokenContract, 'doDeployContract').mockImplementation(jest.fn());
+      jest.spyOn(mockNativeInterchainTokenContract, 'deployContractTransaction').mockImplementation(jest.fn());
       jest.spyOn(mockNativeInterchainTokenContract, 'doSetupContract').mockImplementation(jest.fn());
       jest.spyOn(service, 'executeDeployInterchainToken').mockImplementation(jest.fn());
       mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));

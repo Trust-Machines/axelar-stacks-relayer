@@ -44,12 +44,6 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     await this.getTemplateDeployVerificationParams();
   }
 
-  async doDeployContract(senderKey: string, name: string) {
-    const deployTx = await this.deployContractTransaction(senderKey, name);
-    const deployHash = await this.transactionsHelper.sendTransaction(deployTx);
-    return await this.transactionsHelper.awaitSuccess(deployHash);
-  }
-
   async doSetupContract(
     senderKey: string,
     smartContractAddress: string,
@@ -86,21 +80,32 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     }
   }
 
-  async deployContractTransaction(senderKey: string, name: string) {
+  async deployContractTransaction(
+    senderKey: string,
+    name: string,
+    simulate: boolean = false,
+  ): Promise<{
+    transaction: StacksTransaction;
+    contractName: string;
+  }> {
     const sourceCode = await this.getTemplateSourceCode();
     if (!sourceCode) {
       throw new Error('Native Interchain Token source code not found');
     }
 
+    const contractName = buildContractName(name);
+
     const txOptions = {
-      contractName: buildContractName(name),
+      contractName,
       codeBody: sourceCode,
       senderKey: senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,
     };
 
-    return await this.transactionsHelper.makeContractDeploy(txOptions);
+    const transaction = await this.transactionsHelper.makeContractDeploy(txOptions, simulate);
+
+    return { transaction, contractName };
   }
 
   async setupTransaction(
@@ -108,25 +113,29 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     contractAddress: string,
     contractName: string,
     message: DeployInterchainToken,
+    simulate: boolean = false,
   ): Promise<StacksTransaction> {
-    return await this.transactionsHelper.makeContractCall({
-      contractAddress: contractAddress,
-      contractName: contractName,
-      functionName: 'setup',
-      functionArgs: [
-        bufferFromHex(message.tokenId),
-        uintCV(TokenType.NATIVE_INTERCHAIN_TOKEN),
-        optionalCVOf(), // operator-address
-        stringAsciiCV(message.name),
-        stringAsciiCV(message.symbol),
-        uintCV(message.decimals),
-        optionalCVOf(), // token uri
-        optionalCVOf(isEmptyData(message.minter) ? undefined : principalCV(message.minter)),
-      ],
-      senderKey,
-      network: this.network,
-      anchorMode: AnchorMode.Any,
-    });
+    return await this.transactionsHelper.makeContractCall(
+      {
+        contractAddress: contractAddress,
+        contractName: contractName,
+        functionName: 'setup',
+        functionArgs: [
+          bufferFromHex(message.tokenId),
+          uintCV(TokenType.NATIVE_INTERCHAIN_TOKEN),
+          optionalCVOf(), // operator-address
+          stringAsciiCV(message.name),
+          stringAsciiCV(message.symbol),
+          uintCV(message.decimals),
+          optionalCVOf(), // token uri
+          optionalCVOf(isEmptyData(message.minter) ? undefined : principalCV(message.minter)),
+        ],
+        senderKey,
+        network: this.network,
+        anchorMode: AnchorMode.Any,
+      },
+      simulate,
+    );
   }
 
   async getTemplateSourceCode(): Promise<string | null> {
@@ -157,7 +166,8 @@ export class NativeInterchainTokenContract implements OnModuleInit {
 
       const deployTransaction = await this.hiroApiHelper.getTransaction(txId);
 
-      this.templateDeployVerificationParams = await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(deployTransaction);
+      this.templateDeployVerificationParams =
+        await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(deployTransaction);
 
       this.logger.log('Successfully fetched template verification params');
 

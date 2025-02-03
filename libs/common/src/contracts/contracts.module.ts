@@ -96,6 +96,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
         gatewayContract: GatewayContract,
         gasServiceContract: GasServiceContract,
         verifyOnchain: VerifyOnchainContract,
+        hiroApiHelper: HiroApiHelper,
       ) => {
         return new ItsContract(
           apiConfigService.getContractItsProxy(),
@@ -108,6 +109,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
           gasServiceContract,
           apiConfigService.getAxelarContractIts(),
           verifyOnchain,
+          hiroApiHelper,
         );
       },
       inject: [
@@ -118,6 +120,8 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
         TransactionsHelper,
         GatewayContract,
         GasServiceContract,
+        VerifyOnchainContract,
+        HiroApiHelper,
       ],
     },
     {
