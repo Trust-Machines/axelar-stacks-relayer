@@ -232,6 +232,7 @@ describe('ItsContract', () => {
         receiveFromHub,
         messageId,
         sourceChain,
+        'axelarContract',
         availableGasBalance,
       );
     });
@@ -307,14 +308,15 @@ describe('ItsContract', () => {
     it('should handle interchain transfer successfully', async () => {
       const senderKey = 'senderKey';
       const messageId = 'messageId';
-      const sourceChain = 'sourceChain';
+      const sourceChain = 'itsHubChain';
+      const sourceAddress = 'itsHubAddress';
       const availableGasBalance = '100';
       const message = {
         messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: {
           tokenId: 'tokenId',
-          sourceAddress: 'sourceAddress',
+          senderAddress: 'sourceAddress',
           data: '',
         },
       } as ReceiveFromHub;
@@ -334,6 +336,7 @@ describe('ItsContract', () => {
         message,
         messageId,
         sourceChain,
+        sourceAddress,
         availableGasBalance,
       );
 
@@ -343,6 +346,7 @@ describe('ItsContract', () => {
         message,
         messageId,
         sourceChain,
+        sourceAddress,
         tokenInfo,
         availableGasBalance,
       );
@@ -352,14 +356,15 @@ describe('ItsContract', () => {
     it('should throw an error if token info cannot be fetched', async () => {
       const senderKey = 'senderKey';
       const messageId = 'messageId';
-      const sourceChain = 'sourceChain';
+      const sourceChain = 'itsHubChain';
+      const sourceAddress = 'itsHubAddress';
       const availableGasBalance = '100';
       const message = {
         messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: {
           tokenId: 'tokenId',
-          sourceAddress: 'sourceAddress',
+          senderAddress: 'sourceAddress',
           data: '',
         },
       } as ReceiveFromHub;
@@ -368,7 +373,7 @@ describe('ItsContract', () => {
       jest.spyOn(service as any, 'executeReceiveInterchainToken').mockResolvedValue(undefined);
 
       await expect(
-        service.handleInterchainTransfer(senderKey, message, messageId, sourceChain, availableGasBalance),
+        service.handleInterchainTransfer(senderKey, message, messageId, sourceChain, sourceAddress, availableGasBalance),
       ).rejects.toThrow('Could not get token info');
       expect(service['getTokenInfo']).toHaveBeenCalledWith(message.payload.tokenId);
       expect(service['executeReceiveInterchainToken']).not.toHaveBeenCalled();

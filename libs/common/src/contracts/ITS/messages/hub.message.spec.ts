@@ -14,7 +14,7 @@ describe('HubMessage Static Method Tests', () => {
       expect((result?.payload as InterchainTransfer).tokenId).toEqual(
         '0x2c2a94e0c1200b3432349f28ac617a7c9242bbc9d2c9cb46d7fe9ac555104710',
       );
-      expect((result?.payload as InterchainTransfer).sourceAddress).toEqual(
+      expect((result?.payload as InterchainTransfer).senderAddress).toEqual(
         '0x77588c18055a483754b68c2378d5e7a6fa4e1d4e0302dadf5db12e7a50a1b5bf',
       );
       expect((result?.payload as InterchainTransfer).destinationAddress).toEqual(

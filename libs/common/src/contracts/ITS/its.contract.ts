@@ -43,6 +43,8 @@ import {
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
+import { BinaryUtils } from '@stacks-monorepo/common';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 export interface ItsExtraData {
   step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
@@ -144,6 +146,7 @@ export class ItsContract implements OnModuleInit {
           message,
           messageId,
           sourceChain,
+          sourceAddress,
           availableGasBalance,
         );
 
@@ -176,12 +179,15 @@ export class ItsContract implements OnModuleInit {
     message: ReceiveFromHub,
     messageId: string,
     sourceChain: string,
+    sourceAddress: string,
     availableGasBalance: string,
   ) {
     this.logger.debug(`Handling interchain transfer for message ID: ${messageId}, message: ${JSON.stringify(message)}`);
     const tokenInfo = await this.getTokenInfo(message.payload.tokenId);
     if (!tokenInfo) {
-      throw new Error('Could not get token info');
+      throw new ItsError(
+        `Could not get token info for token id ${message.payload.tokenId}, not yet deployed on Stacks`,
+      );
     }
 
     return await this.executeReceiveInterchainToken(
@@ -189,6 +195,7 @@ export class ItsContract implements OnModuleInit {
       message,
       messageId,
       sourceChain,
+      sourceAddress,
       tokenInfo,
       availableGasBalance,
     );
@@ -340,6 +347,7 @@ export class ItsContract implements OnModuleInit {
     message: ReceiveFromHub,
     messageId: string,
     sourceChain: string,
+    sourceAddress: string,
     tokenInfo: TokenInfo,
     availableGasBalance: string,
   ): Promise<StacksTransaction> {
@@ -367,7 +375,7 @@ export class ItsContract implements OnModuleInit {
         principalCV(itsImpl),
         stringAsciiCV(sourceChain),
         stringAsciiCV(messageId),
-        stringAsciiCV(innerMessage.sourceAddress),
+        stringAsciiCV(sourceAddress),
         principalCV(tokenInfo.managerAddress),
         principalCV(tokenAddress),
         payload,
@@ -445,21 +453,27 @@ export class ItsContract implements OnModuleInit {
         contractAddress: this.storageContractAddress,
         contractName: this.storageContractName,
         functionName: 'get-token-info',
-        functionArgs: [bufferCV(Buffer.from(tokenId, 'hex'))],
+        functionArgs: [bufferCV(BinaryUtils.hexToBuffer(tokenId))],
         network: this.network,
         senderAddress: this.storageContractAddress,
       });
 
       const parsedResponse = cvToJSON(response);
 
+      // Token not yet registered with Stacks ITS contract
+      if (parsedResponse.value === null) {
+        return null;
+      }
+
       return {
-        managerAddress: parsedResponse.value['manager-address'].value,
-        tokenType: parsedResponse.value['token-type'].value,
+        managerAddress: parsedResponse.value.value['manager-address'].value,
+        tokenType: parsedResponse.value.value['token-type'].value,
       };
     } catch (e) {
-      this.logger.error('Failed to call get-token-info');
+      this.logger.error(`Failed to call get-token-info for ${tokenId}`);
       this.logger.error(e);
-      return null;
+
+      throw e;
     }
   }
 

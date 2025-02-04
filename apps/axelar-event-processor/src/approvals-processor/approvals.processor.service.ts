@@ -248,6 +248,10 @@ export class ApprovalsProcessorService {
       // Only support native token for gas
       availableGasBalance: !response.availableGasBalance.tokenID ? response.availableGasBalance.amount : '0',
     });
+
+    this.logger.debug(
+      `Processed EXECUTE task ${taskItemId}, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   private async processRefundTask(response: RefundTask) {
@@ -312,6 +316,10 @@ export class ApprovalsProcessorService {
       CacheInfo.PendingCosmWasmTransaction(id).key,
       constructProofTransaction,
     );
+
+    this.logger.debug(
+      `Processed CONSTRUCT_PROOF task, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   async processVerifyTask(response: VerifyTask) {
@@ -327,6 +335,10 @@ export class ApprovalsProcessorService {
       CacheInfo.PendingCosmWasmTransaction(id).key,
       verifyTransaction,
     );
+
+    this.logger.debug(
+      `Processed VERIFY task, message to ${response.destinationChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   async handlePendingCosmWasmTransactionRaw() {
@@ -340,7 +352,9 @@ export class ApprovalsProcessorService {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
       if (!cachedValue) continue;
 
-      this.logger.debug(`Trying to process ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`);
+      this.logger.debug(
+        `Trying to send CosmWasm transaction for ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`,
+      );
 
       if (cachedValue.broadcastID) {
         await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);

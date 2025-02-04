@@ -13,6 +13,7 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { AxiosError } from 'axios';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
 const MAX_NUMBER_OF_RETRIES: number = 3;
@@ -105,7 +106,7 @@ export class MessageApprovedProcessorService {
 
             await this.transactionsHelper.deleteNonce();
 
-            if (e instanceof GasError) {
+            if (e instanceof GasError || e instanceof ItsError) {
               messageApproved.retry += 1;
 
               entriesToUpdate.push(messageApproved);

@@ -67,7 +67,7 @@ export class HubInnerMessage {
     return {
       messageType: parseInt(decoded[0]),
       tokenId: decoded[1].toString(),
-      sourceAddress: decoded[2].toString(),
+      senderAddress: decoded[2].toString(),
       destinationAddress: decoded[3].toString(),
       amount: decoded[4].toString(),
       data: decoded?.[5] ? decoded[5].toString() : '',
@@ -94,7 +94,7 @@ export class HubInnerMessage {
         tupleCV({
           type: uintCV(message.messageType),
           'token-id': bufferCV(BinaryUtils.hexToBuffer(message.tokenId)),
-          'source-address': bufferCV(BinaryUtils.hexToBuffer(message.sourceAddress)),
+          'source-address': bufferCV(BinaryUtils.hexToBuffer(message.senderAddress)),
           'destination-address': bufferCV(BinaryUtils.hexToBuffer(message.destinationAddress)),
           amount: uintCV(message.amount),
           data: bufferCV(BinaryUtils.hexToBuffer(message.data)),
@@ -125,7 +125,7 @@ export class HubInnerMessage {
     return AbiCoder.defaultAbiCoder().encode(types, [
       message.messageType,
       BinaryUtils.hexToBuffer(message.tokenId),
-      BinaryUtils.hexToBuffer(cvToHex(principalCV(message.sourceAddress))),
+      BinaryUtils.hexToBuffer(cvToHex(principalCV(message.senderAddress))),
       BinaryUtils.hexToBuffer(message.destinationAddress),
       BigInt(message.amount),
       BinaryUtils.hexToBuffer(message.data),

@@ -7,7 +7,7 @@ export interface ReceiveFromHub {
 export interface InterchainTransfer {
   messageType: number;
   tokenId: string;
-  sourceAddress: string;
+  senderAddress: string;
   destinationAddress: string;
   amount: string;
   data: string;

@@ -9,14 +9,12 @@ import {
   MessageExecutedEvent,
   WeightedSignersEvent,
 } from '../contracts/entities/gateway-events';
-import {
-  DeployInterchainToken,
-  InterchainTransfer,
-} from '../contracts/ITS/messages/hub.message.types';
+import { DeployInterchainToken, InterchainTransfer } from '../contracts/ITS/messages/hub.message.types';
 import {
   InterchainTokenDeploymentStartedEvent,
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
+import { BinaryUtils } from '@stacks-monorepo/common';
 
 export class DecodingUtils {
   static deserialize(hex: string) {
@@ -51,7 +49,7 @@ export const contractCallDecoder = (json: any): ContractCallEvent => ({
   destinationChain: json['destination-chain'].value,
   destinationAddress: json['destination-contract-address'].value,
   payloadHash: json['payload-hash'].value,
-  payload: Buffer.from(json['payload'].value.replace('0x', ''), 'hex'),
+  payload: BinaryUtils.hexToBuffer(json['payload'].value),
 });
 
 export const messageApprovedDecoder = (json: any): MessageApprovedEvent => ({
@@ -77,7 +75,7 @@ export const weightedSignersDecoder = (json: any): WeightedSignersEvent => ({
   threshold: new BigNumber(json.signers.value['threshold'].value),
   nonce: json.signers.value['nonce'].value,
   epoch: parseInt(json['epoch'].value),
-  signersHash: Buffer.from(json['signers-hash'].value.replace('0x', ''), 'hex'),
+  signersHash: BinaryUtils.hexToBuffer(json['signers-hash'].value),
 });
 
 export const gasPaidForContractCallDecoder = (json: any): GasPaidForContractCallEvent => ({
@@ -106,7 +104,7 @@ export const refundedDecoder = (json: any): RefundedEvent => ({
 export const interchainTransferDecoder = (json: any): InterchainTransfer => ({
   messageType: parseInt(json.value['type'].value),
   tokenId: json.value['token-id'].value,
-  sourceAddress: json.value['source-address'].value,
+  senderAddress: json.value['source-address'].value,
   destinationAddress: json.value['destination-address'].value,
   amount: new BigNumber(json.value['amount'].value).toFixed(),
   data: json.value['data'].value,
