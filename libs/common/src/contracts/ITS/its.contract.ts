@@ -43,9 +43,8 @@ import {
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
-import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 
-interface ItsExtraData {
+export interface ItsExtraData {
   step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
   contractId?: string;
   timestamp?: number; // in milliseconds
@@ -222,7 +221,6 @@ export class ItsContract implements OnModuleInit {
     }
 
     extraData = extraData as ItsExtraData;
-
     this.logger.debug(
       `Handling deploy native interchain token for message ID: ${messageId}, message: ${JSON.stringify(message)}, step: ${extraData.step}`,
     );
@@ -232,6 +230,7 @@ export class ItsContract implements OnModuleInit {
     if (executeTxHash) {
       const result = await this.checkPendingTransactionSuccess(executeTxHash, extraData);
 
+      // If transaction is still pending or it has not succeded, we will exit here
       if (result) {
         return result;
       }
@@ -290,7 +289,7 @@ export class ItsContract implements OnModuleInit {
             incrementRetry: false,
             extraData: {
               step: 'CONTRACT_SETUP',
-              contractId: contractId,
+              contractId,
               timestamp: Date.now(),
               deployTxHash: extraData.deployTxHash,
             } as ItsExtraData,
@@ -324,7 +323,7 @@ export class ItsContract implements OnModuleInit {
 
         return {
           transaction,
-          incrementRetry: true,
+          incrementRetry: false,
           extraData: {
             step: 'ITS_EXECUTE',
             contractId: extraData.contractId,
@@ -440,7 +439,7 @@ export class ItsContract implements OnModuleInit {
     return DecodingUtils.decodeEvent<InterchainTransferEvent>(event, interchainTransferEventDecoder);
   }
 
-  private async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
+  async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
     try {
       const response = await callReadOnlyFunction({
         contractAddress: this.storageContractAddress,

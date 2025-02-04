@@ -5,24 +5,6 @@ import { ConfigService } from '@nestjs/config';
 export class ApiConfigService {
   constructor(private readonly configService: ConfigService) {}
 
-  getApiUrl(): string {
-    const apiUrl = this.configService.get<string>('API_URL');
-    if (!apiUrl) {
-      throw new Error('No API url present');
-    }
-
-    return apiUrl;
-  }
-
-  getHiroWsUrl(): string {
-    const hiroUrl = this.configService.get<string>('HIRO_WS_URL');
-    if (!hiroUrl) {
-      throw new Error('No HIRO WS url present');
-    }
-
-    return hiroUrl;
-  }
-
   getHiroApiUrl(): string {
     const hiroUrl = this.configService.get<string>('HIRO_API_URL');
     if (!hiroUrl) {
@@ -50,15 +32,6 @@ export class ApiConfigService {
     }
 
     return 6379;
-  }
-
-  getEventsNotifierUrl(): string {
-    const eventsNotifierUrl = this.configService.get<string>('EVENTS_NOTIFIER_URL');
-    if (!eventsNotifierUrl) {
-      throw new Error('No Events Notifier url present');
-    }
-
-    return eventsNotifierUrl;
   }
 
   getContractGatewayStorage(): string {
@@ -194,22 +167,6 @@ export class ApiConfigService {
     }
 
     return privateKey;
-  }
-
-  getPoolLimit(): number {
-    return this.configService.get<number>('CACHING_POOL_LIMIT') ?? 100;
-  }
-
-  getProcessTtl(): number {
-    return this.configService.get<number>('CACHING_PROCESS_TTL') ?? 60;
-  }
-
-  getApiTimeout(): number {
-    return this.configService.get<number>('API_TIMEOUT') ?? 30_000; // 30 seconds default
-  }
-
-  getGatewayTimeout(): number {
-    return this.configService.get<number>('GATEWAY_TIMEOUT') ?? 30_000; // 30 seconds default
   }
 
   getAvailableGasCheckEnabled(): boolean {

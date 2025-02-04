@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApprovedStatus } from '@prisma/client';
+import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -275,7 +275,7 @@ describe('GatewayProcessor', () => {
     it('Should handle event update contract call approved', async () => {
       gatewayContract.decodeMessageExecutedEvent.mockReturnValueOnce(messageExecutedEvent);
 
-      const messageApproved = {
+      const messageApproved: MessageApproved = {
         sourceChain: 'ethereum',
         messageId: 'messageId',
         status: MessageApprovedStatus.PENDING,
@@ -290,6 +290,7 @@ describe('GatewayProcessor', () => {
         successTimes: null,
         taskItemId: null,
         availableGasBalance: '0',
+        extraData: {},
       };
 
       messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(messageApproved));

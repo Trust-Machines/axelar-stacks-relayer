@@ -15,17 +15,12 @@ import {
 } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { TransactionsHelper } from '../transactions.helper';
-import { DeployInterchainToken, ReceiveFromHub } from './messages/hub.message.types';
+import { DeployInterchainToken } from './messages/hub.message.types';
 import { TokenType } from './types/token-type';
 import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
-import { delay } from '@stacks-monorepo/common/utils/await-success';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
-
-const SETUP_MAX_RETRY = 3;
-const SETUP_DELAY = 300;
 
 @Injectable()
 export class NativeInterchainTokenContract implements OnModuleInit {
@@ -45,42 +40,6 @@ export class NativeInterchainTokenContract implements OnModuleInit {
   async onModuleInit() {
     await this.getTemplateSourceCode();
     await this.getTemplateDeployVerificationParams();
-  }
-
-  async doSetupContract(
-    senderKey: string,
-    smartContractAddress: string,
-    smartContractName: string,
-    message: ReceiveFromHub,
-    retry = 0,
-  ): Promise<{
-    success: boolean;
-    transaction: Transaction | null;
-  }> {
-    if (retry >= SETUP_MAX_RETRY) {
-      throw new Error(`Could not setup ${smartContractAddress}.${smartContractName} after ${retry} retries`);
-    }
-
-    try {
-      const innerMessage = message.payload as DeployInterchainToken;
-
-      this.logger.error('inner message');
-
-      const setupTx = await this.setupTransaction(senderKey, smartContractAddress, smartContractName, innerMessage);
-
-      this.logger.error('setup tx');
-      const setupHash = await this.transactionsHelper.sendTransaction(setupTx);
-
-      this.logger.error('setup hash');
-      return await this.transactionsHelper.awaitSuccess(setupHash);
-    } catch (e) {
-      this.logger.error(`Could not setup ${smartContractAddress}.${smartContractName}. Retrying in ${SETUP_DELAY} ms`);
-      this.logger.error(e);
-
-      await delay(SETUP_DELAY);
-
-      return await this.doSetupContract(senderKey, smartContractAddress, smartContractName, message, retry + 1);
-    }
   }
 
   async deployContractTransaction(

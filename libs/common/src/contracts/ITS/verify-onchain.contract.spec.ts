@@ -55,11 +55,16 @@ describe('VerifyOnchain', () => {
         data: nitMockParams.sig,
       };
 
+      mockHiroApiHelper.getTransaction.mockReturnValue(Promise.resolve(deployTransaction));
       mockHiroApiHelper.getTransactionRaw.mockReturnValue(Promise.resolve(rawTx));
       mockHiroApiHelper.getBlock.mockReturnValue(Promise.resolve(Buffer.from(mockBlock)));
 
-      const result = await service.buildNativeInterchainTokenVerificationParams(deployTransaction);
+      const result = await service.buildNativeInterchainTokenVerificationParams('txHash');
       const tuple = cvToJSON(result);
+
+      expect(mockHiroApiHelper.getTransaction).toHaveBeenCalledTimes(1);
+      expect(mockHiroApiHelper.getTransactionRaw).toHaveBeenCalledTimes(1);
+      expect(mockHiroApiHelper.getBlock).toHaveBeenCalledTimes(1);
 
       expect(tuple.value.nonce.value).toEqual('0x0000000000000001');
       expect(tuple.value['fee-rate'].value).toEqual('0x0000000000002710');

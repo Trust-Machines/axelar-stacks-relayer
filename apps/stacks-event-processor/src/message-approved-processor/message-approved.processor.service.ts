@@ -87,7 +87,7 @@ export class MessageApprovedProcessorService {
             }
 
             if (!transaction) {
-            entriesToUpdate.push(messageApproved);
+              entriesToUpdate.push(messageApproved);
 
               continue;
             }

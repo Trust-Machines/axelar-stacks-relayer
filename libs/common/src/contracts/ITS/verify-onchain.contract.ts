@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StacksNetwork } from '@stacks/network';
 import { callReadOnlyFunction, Cl, SingleSigSpendingCondition, StringUtf8CV, TupleCV } from '@stacks/transactions';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { intToHex } from '@stacks/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { getBlockHeader, proofPathToCV } from '@stacks-monorepo/common/helpers/block-hash';

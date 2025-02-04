@@ -15,6 +15,8 @@ import { StacksNetwork } from '@stacks/network';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
+const mockItsContractId = 'mockItsAddress.contract_name';
+
 describe('MessageApprovedProcessorService - processPendingMessageApproved', () => {
   let service: MessageApprovedProcessorService;
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
@@ -35,7 +37,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
     apiConfigService = createMock();
     walletSigner = 'mock-wallet-signer';
 
-    apiConfigService.getContractItsProxy.mockReturnValue('mock-contract-its-address');
+    apiConfigService.getContractItsProxy.mockReturnValue(mockItsContractId);
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
@@ -99,6 +101,13 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
     expect(transactionsHelper.makeContractCall).toHaveBeenCalledTimes(1);
     expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
     expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+
+    // @ts-ignore
+    const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+
+    expect(updatedMessageApproved.extraData).toBe(null);
+    expect(updatedMessageApproved.retry).toBe(1);
+    expect(updatedMessageApproved.executeTxHash).toBe('mock-txid');
   });
 
   it('should not process if max retries have been reached', async () => {
@@ -217,5 +226,154 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       expect.objectContaining({ status: MessageApprovedStatus.FAILED }),
     ]);
     expect(handleMessageApprovedFailedSpy).toHaveBeenCalledWith(expect.any(Object), 'INSUFFICIENT_GAS');
+  });
+
+  describe('Execute ITS', () => {
+    const mockItsEntry: MessageApproved = {
+      sourceChain: 'avalanche-fuji',
+      messageId: 'msg1',
+      status: MessageApprovedStatus.PENDING,
+      sourceAddress: 'mock-source-address',
+      contractAddress: mockItsContractId,
+      payloadHash: 'mock-hash',
+      payload: Buffer.from('mock-payload'),
+      retry: 0,
+      executeTxHash: null,
+      availableGasBalance: '1000',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      successTimes: null,
+      taskItemId: null,
+      extraData: {},
+    };
+
+    it('should process ITS entry with transaction and incrementRetry', async () => {
+      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
+      transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
+      transactionsHelper.sendTransactions.mockResolvedValueOnce(['mock-txid']);
+
+      itsContract.execute.mockReturnValueOnce(
+        Promise.resolve({
+          transaction: {
+            txid: jest.fn(() => 'mock-txid'),
+            tx_id: 'mock-txid',
+          } as unknown as StacksTransaction,
+          incrementRetry: true,
+          extraData: null,
+        }),
+      );
+
+      await service.processPendingMessageApproved();
+
+      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
+      expect(itsContract.execute).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+
+      // @ts-ignore
+      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+
+      expect(updatedMessageApproved.extraData).toBe(null);
+      expect(updatedMessageApproved.retry).toBe(1);
+      expect(updatedMessageApproved.executeTxHash).toBe('mock-txid');
+    });
+
+    it('should process ITS entry with transaction and no increment retry', async () => {
+      mockItsEntry.retry = 0;
+      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
+      transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
+      transactionsHelper.sendTransactions.mockResolvedValueOnce(['mock-txid']);
+
+      itsContract.execute.mockReturnValueOnce(
+        Promise.resolve({
+          transaction: {
+            txid: jest.fn(() => 'mock-txid'),
+            tx_id: 'mock-txid',
+          } as unknown as StacksTransaction,
+          incrementRetry: false,
+          extraData: null,
+        }),
+      );
+
+      await service.processPendingMessageApproved();
+
+      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
+      expect(itsContract.execute).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+
+      // @ts-ignore
+      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+
+      expect(updatedMessageApproved.extraData).toBe(null);
+      expect(updatedMessageApproved.retry).toBe(0);
+      expect(updatedMessageApproved.executeTxHash).toBe('mock-txid');
+    });
+
+    it('should process ITS entry with no transaction and no retry', async () => {
+      mockItsEntry.executeTxHash = 'mock-txid';
+      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
+      transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
+
+      itsContract.execute.mockReturnValueOnce(
+        Promise.resolve({
+          transaction: null,
+          incrementRetry: false,
+          extraData: {
+            test: 'data',
+          },
+        }),
+      );
+
+      await service.processPendingMessageApproved();
+
+      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
+      expect(itsContract.execute).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledWith([]);
+      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+
+      // @ts-ignore
+      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+
+      expect(updatedMessageApproved.extraData).toEqual({
+        test: 'data',
+      });
+      expect(updatedMessageApproved.retry).toBe(0);
+      expect(updatedMessageApproved.executeTxHash).toBe('mock-txid');
+    });
+
+    it('should process ITS entry with no transaction, increment retry and old executeTxHash', async () => {
+      mockItsEntry.executeTxHash = 'mock-txid';
+      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
+      transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
+
+      itsContract.execute.mockReturnValueOnce(
+        Promise.resolve({
+          transaction: null,
+          incrementRetry: true,
+          extraData: {
+            test: 'data',
+          },
+        }),
+      );
+
+      await service.processPendingMessageApproved();
+
+      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
+      expect(itsContract.execute).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransactions).toHaveBeenCalledWith([]);
+      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+
+      // @ts-ignore
+      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+
+      expect(updatedMessageApproved.extraData).toEqual({
+        test: 'data',
+      });
+      expect(updatedMessageApproved.retry).toBe(1);
+      expect(updatedMessageApproved.executeTxHash).toBe(null);
+    });
   });
 });
