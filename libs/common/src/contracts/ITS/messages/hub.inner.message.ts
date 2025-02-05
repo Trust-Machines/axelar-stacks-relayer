@@ -16,6 +16,7 @@ import {
   deployInterchainTokenDecoder,
   interchainTransferDecoder,
 } from '@stacks-monorepo/common/utils/decoding.utils';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 export class HubInnerMessage {
   static abiDecode(payload: string): InterchainTransfer | DeployInterchainToken | null {
@@ -28,7 +29,7 @@ export class HubInnerMessage {
       case HubMessageType.DeployInterchainToken:
         return this.decodeDeployInterchainToken(payload);
       default:
-        throw new Error(`Unsupported messageType for abiDecode: ${messageType}`);
+        throw new ItsError(`Unsupported messageType for abiDecode: ${messageType}`);
     }
   }
 
@@ -42,7 +43,7 @@ export class HubInnerMessage {
       case HubMessageType.DeployInterchainToken:
         return this.abiEncodeDeployInterchainToken(deployInterchainTokenDecoder(json));
       default:
-        throw new Error(`Unsupported messageType for abiEncode: ${type}`);
+        throw new ItsError(`Unsupported messageType for abiEncode: ${type}`);
     }
   }
 
@@ -56,7 +57,7 @@ export class HubInnerMessage {
       case HubMessageType.DeployInterchainToken:
         return this.clarityEncodeDeployInterchainToken(message as DeployInterchainToken, sourceChain);
       default:
-        throw new Error(`Unsupported messageType for clarityEncode: ${message.messageType}`);
+        throw new ItsError(`Unsupported messageType for clarityEncode: ${message.messageType}`);
     }
   }
 
