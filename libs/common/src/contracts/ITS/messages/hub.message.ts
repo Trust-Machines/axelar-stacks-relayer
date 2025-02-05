@@ -59,12 +59,4 @@ export class HubMessage {
   static clarityEncode(message: ReceiveFromHub): ClarityValue {
     return HubInnerMessage.clarityEncode(message.payload, message.sourceChain);
   }
-
-  static clarityEncodeFromPayload(payloadHex: string): ClarityValue {
-    const abiDecoded = HubMessage.abiDecode(payloadHex);
-    if (!abiDecoded) {
-      throw new Error('Invalid RECEIVE_FROM_HUB payload');
-    }
-    return this.clarityEncode(abiDecoded);
-  }
 }

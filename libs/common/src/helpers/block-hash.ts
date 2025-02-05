@@ -1,6 +1,7 @@
 import { sha512_256 } from '@noble/hashes/sha512';
 import { bufferCV, BytesReader, deserializeTransaction, listCV, tupleCV, uintCV } from '@stacks/transactions';
 import { bytesToHex, hexToBytes } from '@stacks/common';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 function tagged_sha512_256(tag: Uint8Array, data: Uint8Array): Uint8Array {
   return sha512_256(new Uint8Array([...tag, ...data]));
@@ -79,7 +80,7 @@ export class MerkleTree {
       return [];
     }
     if (index > this.nodes[0].length - 1) {
-      throw new Error('Index out of bounds');
+      throw new ItsError('Index out of bounds');
     }
     const depth = this.nodes.length - 1;
     const path = Math.pow(2, depth) + index;

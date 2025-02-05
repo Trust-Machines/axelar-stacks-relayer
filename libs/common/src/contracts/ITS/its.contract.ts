@@ -353,7 +353,7 @@ export class ItsContract implements OnModuleInit {
   ): Promise<StacksTransaction> {
     const tokenAddress = await this.tokenManagerContract.getTokenAddress(tokenInfo);
     if (!tokenAddress) {
-      throw new Error('Could not get token address');
+      throw new ItsError(`Could not get token address for token id ${message.payload.tokenId}`);
     }
 
     const itsImpl = await this.getItsImpl();

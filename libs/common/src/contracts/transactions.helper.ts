@@ -101,13 +101,15 @@ export class TransactionsHelper {
   }
 
   async makeContractDeploy(opts: SignedContractDeployOptions, simulate: boolean = false): Promise<StacksTransaction> {
+    if (simulate) {
+      return await makeContractDeploy(opts);
+    }
+
     try {
-      if (!simulate) {
-        opts.nonce = await this.getSignerNonce();
-      }
+      const nonce = await this.getSignerNonce();
       this.logger.debug(`Calling makeContractDeploy with nonce: ${opts.nonce}`);
 
-      return await makeContractDeploy(opts);
+      return await makeContractDeploy({ ...opts, nonce });
     } catch (e) {
       await this.deleteNonce();
 

@@ -56,7 +56,7 @@ export class ItsProcessor {
 
     const event: ITSInterchainTokenDeploymentStartedEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
-      messageID: DecodingUtils.getEventId(txHash, index + 1), // Contract Call event happens after this event
+      messageID: DecodingUtils.getEventId(txHash, index + 3), // Contract Call event happens after this event
       destinationChain: interchainTokenDeploymentStartedEvent.destinationChain,
       token: {
         id: interchainTokenDeploymentStartedEvent.tokenId,
@@ -94,7 +94,7 @@ export class ItsProcessor {
 
     const event: ITSInterchainTransferEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
-      messageID: DecodingUtils.getEventId(txHash, index + 1), // Contract Call event happens after this event
+      messageID: DecodingUtils.getEventId(txHash, index + 3), // Contract Call event happens after this event
       destinationChain: interchainTransferEvent.destinationChain,
       tokenSpent: {
         tokenID: interchainTransferEvent.tokenId,
