@@ -29,7 +29,7 @@ const TX_POLL_INTERVAL = 6000;
 @Injectable()
 export class TransactionsHelper {
   private readonly logger: Logger;
-  private readonly walletSignerAddress;
+  private readonly walletSignerAddress: string;
   private readonly availableGasCheckEnabled: boolean;
 
   constructor(
@@ -100,12 +100,14 @@ export class TransactionsHelper {
     }
   }
 
-  async makeContractDeploy(opts: SignedContractDeployOptions) {
+  async makeContractDeploy(opts: SignedContractDeployOptions, simulate: boolean = false): Promise<StacksTransaction> {
     try {
-      const nonce = await this.getSignerNonce();
-      this.logger.debug(`Calling makeContractDeploy with nonce: ${nonce}`);
+      if (!simulate) {
+        opts.nonce = await this.getSignerNonce();
+      }
+      this.logger.debug(`Calling makeContractDeploy with nonce: ${opts.nonce}`);
 
-      return await makeContractDeploy({ ...opts, nonce });
+      return await makeContractDeploy(opts);
     } catch (e) {
       await this.deleteNonce();
 
@@ -157,6 +159,30 @@ export class TransactionsHelper {
     }
 
     return { success: true, transaction: result };
+  }
+
+  async isTransactionSuccessfulWithTimeout(
+    txHash: string,
+    timestampMillis: number,
+  ): Promise<{
+    isFinished: boolean;
+    success: boolean;
+  }> {
+    const transaction = await this.hiroApiHelper.getTransaction(txHash);
+
+    const isPending = (transaction.tx_status as any) === 'pending';
+
+    // Exit early if the transaction is still pending after timeout
+    if (isPending && Date.now() - timestampMillis > TX_TIMEOUT_MILLIS) {
+      return {
+        isFinished: true,
+        success: false,
+      };
+    }
+
+    const success = transaction.tx_status === 'success';
+
+    return { isFinished: !isPending, success };
   }
 
   private async getSignerNonce(): Promise<number> {
@@ -232,14 +258,14 @@ export class TransactionsHelper {
       totalEstimatedFees += estimatedFee;
     }
 
-    if (!this.availableGasCheckEnabled) {
-      this.logger.warn(
-        `[messageId: ${messageId}] gas checker disabled: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}`,
-      );
-      return true;
-    }
-
     if (availableBalance < totalEstimatedFees) {
+      if (!this.availableGasCheckEnabled) {
+        this.logger.warn(
+          `[messageId: ${messageId}] Not enough gas paid but gas checker is disabled: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}`,
+        );
+        return true;
+      }
+
       this.logger.error(
         `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}. `,
       );
@@ -250,5 +276,9 @@ export class TransactionsHelper {
       `[messageId: ${messageId}] Enough gas was paid: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}`,
     );
     return true;
+  }
+
+  makeContractId(contractName: string): string {
+    return `${this.walletSignerAddress}.${contractName}`;
   }
 }

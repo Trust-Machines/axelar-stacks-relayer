@@ -6,10 +6,10 @@ import { HubInnerMessage } from './hub.inner.message';
 import { HubMessageType, ReceiveFromHub } from './hub.message.types';
 
 export class HubMessage {
-  static abiDecode(payload: string): ReceiveFromHub | null {
+  static abiDecode(payloadHex: string): ReceiveFromHub | null {
     try {
       const types = ['uint256', 'string', 'bytes'];
-      const decoded = AbiCoder.defaultAbiCoder().decode(types, BinaryUtils.addHexPrefix(payload));
+      const decoded = AbiCoder.defaultAbiCoder().decode(types, BinaryUtils.addHexPrefix(payloadHex));
 
       const messageType = parseInt(decoded[0]);
       const sourceChain = decoded[1];
@@ -32,9 +32,9 @@ export class HubMessage {
     }
   }
 
-  static abiEncode(payload: string): string | null {
+  static abiEncode(payloadHex: string): string | null {
     try {
-      const json = DecodingUtils.deserialize(payload);
+      const json = DecodingUtils.deserialize(payloadHex);
 
       const type = parseInt(json.value['type'].value);
 
@@ -44,12 +44,10 @@ export class HubMessage {
 
         const destinationChain = json.value['destination-chain'].value;
 
-        const encoded = AbiCoder.defaultAbiCoder().encode(
+        return AbiCoder.defaultAbiCoder().encode(
           ['uint256', 'string', 'bytes'],
           [type, destinationChain, innerPayloadAbiEncoded],
         );
-
-        return encoded;
       }
 
       return null;
@@ -62,8 +60,8 @@ export class HubMessage {
     return HubInnerMessage.clarityEncode(message.payload, message.sourceChain);
   }
 
-  static clarityEncodeFromPayload(payload: string): ClarityValue {
-    const abiDecoded = HubMessage.abiDecode(payload);
+  static clarityEncodeFromPayload(payloadHex: string): ClarityValue {
+    const abiDecoded = HubMessage.abiDecode(payloadHex);
     if (!abiDecoded) {
       throw new Error('Invalid RECEIVE_FROM_HUB payload');
     }

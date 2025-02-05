@@ -9,17 +9,16 @@ import {
   uintCV,
 } from '@stacks/transactions';
 import { AbiCoder } from 'ethers';
-import { DeployInterchainToken, DeployTokenManager, HubMessageType, InterchainTransfer } from './hub.message.types';
+import { DeployInterchainToken, HubMessageType, InterchainTransfer } from './hub.message.types';
 import { BinaryUtils } from '@stacks-monorepo/common/utils';
 import {
   DecodingUtils,
   deployInterchainTokenDecoder,
-  deployTokenManagerDecoder,
   interchainTransferDecoder,
 } from '@stacks-monorepo/common/utils/decoding.utils';
 
 export class HubInnerMessage {
-  static abiDecode(payload: string): InterchainTransfer | DeployInterchainToken | DeployTokenManager | null {
+  static abiDecode(payload: string): InterchainTransfer | DeployInterchainToken | null {
     const decoded = AbiCoder.defaultAbiCoder().decode(['uint256'], payload);
     const messageType = parseInt(decoded[0]);
 
@@ -28,8 +27,6 @@ export class HubInnerMessage {
         return this.decodeInterchainTransfer(payload);
       case HubMessageType.DeployInterchainToken:
         return this.decodeDeployInterchainToken(payload);
-      case HubMessageType.DeployTokenManager:
-        return this.decodeDeployTokenManager(payload);
       default:
         throw new Error(`Unsupported messageType for abiDecode: ${messageType}`);
     }
@@ -44,15 +41,13 @@ export class HubInnerMessage {
         return this.abiEncodeInterchainTransfer(interchainTransferDecoder(json));
       case HubMessageType.DeployInterchainToken:
         return this.abiEncodeDeployInterchainToken(deployInterchainTokenDecoder(json));
-      case HubMessageType.DeployTokenManager:
-        return this.abiEncodeDeployTokenManager(deployTokenManagerDecoder(json));
       default:
         throw new Error(`Unsupported messageType for abiEncode: ${type}`);
     }
   }
 
   static clarityEncode(
-    message: InterchainTransfer | DeployInterchainToken | DeployTokenManager,
+    message: InterchainTransfer | DeployInterchainToken,
     sourceChain: string,
   ): ClarityValue {
     switch (message.messageType) {
@@ -60,8 +55,6 @@ export class HubInnerMessage {
         return this.clarityEncodeInterchainTransfer(message as InterchainTransfer, sourceChain);
       case HubMessageType.DeployInterchainToken:
         return this.clarityEncodeDeployInterchainToken(message as DeployInterchainToken, sourceChain);
-      case HubMessageType.DeployTokenManager:
-        return this.clarityEncodeDeployTokenManager(message as DeployTokenManager, sourceChain);
       default:
         throw new Error(`Unsupported messageType for clarityEncode: ${message.messageType}`);
     }
@@ -74,7 +67,7 @@ export class HubInnerMessage {
     return {
       messageType: parseInt(decoded[0]),
       tokenId: decoded[1].toString(),
-      sourceAddress: decoded[2].toString(),
+      senderAddress: decoded[2].toString(),
       destinationAddress: decoded[3].toString(),
       amount: decoded[4].toString(),
       data: decoded?.[5] ? decoded[5].toString() : '',
@@ -95,25 +88,13 @@ export class HubInnerMessage {
     };
   }
 
-  static decodeDeployTokenManager(payload: string): DeployTokenManager {
-    const types = ['uint256', 'bytes32', 'uint256', 'bytes'];
-    const decoded = AbiCoder.defaultAbiCoder().decode(types, payload);
-
-    return {
-      messageType: parseInt(decoded[0]),
-      tokenId: decoded[1],
-      tokenManagerType: parseInt(decoded[2]),
-      params: decoded[3].toString(),
-    };
-  }
-
   static clarityEncodeInterchainTransfer(message: InterchainTransfer, sourceChain: string): ClarityValue {
     return bufferCV(
       serializeCV(
         tupleCV({
           type: uintCV(message.messageType),
           'token-id': bufferCV(BinaryUtils.hexToBuffer(message.tokenId)),
-          'source-address': bufferCV(BinaryUtils.hexToBuffer(message.sourceAddress)),
+          'source-address': bufferCV(BinaryUtils.hexToBuffer(message.senderAddress)),
           'destination-address': bufferCV(BinaryUtils.hexToBuffer(message.destinationAddress)),
           amount: uintCV(message.amount),
           data: bufferCV(BinaryUtils.hexToBuffer(message.data)),
@@ -139,26 +120,12 @@ export class HubInnerMessage {
     );
   }
 
-  static clarityEncodeDeployTokenManager(message: DeployTokenManager, sourceChain: string): ClarityValue {
-    return bufferCV(
-      serializeCV(
-        tupleCV({
-          type: uintCV(message.messageType),
-          'token-id': bufferCV(BinaryUtils.hexToBuffer(message.tokenId)),
-          'token-manager-type': uintCV(message.tokenManagerType),
-          params: bufferCV(BinaryUtils.hexToBuffer(message.params)),
-          'source-chain': stringAsciiCV(sourceChain),
-        }),
-      ),
-    );
-  }
-
   static abiEncodeInterchainTransfer(message: InterchainTransfer): string {
     const types = ['uint256', 'bytes32', 'bytes', 'bytes', 'uint256', 'bytes'];
     return AbiCoder.defaultAbiCoder().encode(types, [
       message.messageType,
       BinaryUtils.hexToBuffer(message.tokenId),
-      BinaryUtils.hexToBuffer(cvToHex(principalCV(message.sourceAddress))),
+      BinaryUtils.hexToBuffer(cvToHex(principalCV(message.senderAddress))),
       BinaryUtils.hexToBuffer(message.destinationAddress),
       BigInt(message.amount),
       BinaryUtils.hexToBuffer(message.data),
@@ -174,17 +141,6 @@ export class HubInnerMessage {
       message.symbol,
       message.decimals,
       BinaryUtils.hexToBuffer(message.minter),
-    ]);
-  }
-
-  static abiEncodeDeployTokenManager(message: DeployTokenManager): string {
-    const types = ['uint256', 'bytes32', 'uint256', 'bytes'];
-
-    return AbiCoder.defaultAbiCoder().encode(types, [
-      message.messageType,
-      BinaryUtils.hexToBuffer(message.tokenId),
-      message.tokenManagerType,
-      BinaryUtils.hexToBuffer(message.params),
     ]);
   }
 }

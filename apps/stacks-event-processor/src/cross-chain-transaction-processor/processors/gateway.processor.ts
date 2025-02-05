@@ -40,7 +40,13 @@ export class GatewayProcessor {
     const eventName = getEventType(rawEvent);
 
     if (eventName === Events.CONTRACT_CALL_EVENT) {
-      return this.handleContractCallEvent(rawEvent, transaction.tx_id, transaction.block_time_iso, index);
+      return this.handleContractCallEvent(
+        rawEvent,
+        transaction.tx_id,
+        transaction.block_time_iso,
+        transaction.sender_address,
+        index,
+      );
     }
 
     if (eventName === Events.MESSAGE_APPROVED_EVENT) {
@@ -82,6 +88,7 @@ export class GatewayProcessor {
     rawEvent: ScEvent,
     txHash: string,
     timestamp: string,
+    senderAddress: string,
     index: number,
   ): Event | undefined {
     const contractCallEvent = this.gatewayContract.decodeContractCallEvent(rawEvent);
@@ -106,7 +113,7 @@ export class GatewayProcessor {
       payload: payload,
       meta: {
         txID: txHash,
-        fromAddress: contractCallEvent.sender,
+        fromAddress: senderAddress,
         finalized: true,
         timestamp,
       },
@@ -230,11 +237,12 @@ export class GatewayProcessor {
         finalized: true,
         timestamp,
       },
-      status: 'SUCCESSFUL', // TODO: How to handle reverted?
+      status: 'SUCCESSFUL',
     };
 
     this.logger.debug(
       `Successfully executed message from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
+      messageExecuted,
     );
 
     return {

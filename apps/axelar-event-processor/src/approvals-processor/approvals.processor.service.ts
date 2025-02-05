@@ -22,9 +22,9 @@ import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
+import { AxiosError } from 'axios';
 
 const MAX_NUMBER_OF_RETRIES = 3;
-export const AXELAR_CHAIN = 'axelar';
 
 @Injectable()
 export class ApprovalsProcessorService {
@@ -89,14 +89,18 @@ export class ApprovalsProcessorService {
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
 
-            // Stop processing in case of an error and retry from the sam task
+            // Stop processing in case of an error and retry from the same task
             return;
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length}`);
+        this.logger.debug(`Successfully processed ${tasks.length}, last task UUID ${lastTaskUUID}`);
       } catch (e) {
-        this.logger.error('Error retrieving tasks...', e);
+        this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
+
+        if (e instanceof AxiosError) {
+          this.logger.error(e.response?.data);
+        }
 
         return;
       }
@@ -244,6 +248,10 @@ export class ApprovalsProcessorService {
       // Only support native token for gas
       availableGasBalance: !response.availableGasBalance.tokenID ? response.availableGasBalance.amount : '0',
     });
+
+    this.logger.debug(
+      `Processed EXECUTE task ${taskItemId}, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   private async processRefundTask(response: RefundTask) {
@@ -290,7 +298,6 @@ export class ApprovalsProcessorService {
       response.remainingGasBalance.amount,
     );
 
-    // TODO: Handle retries in case of transaction failing?
     const txHash = await this.transactionsHelper.sendTransaction(transaction);
 
     this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);
@@ -309,6 +316,10 @@ export class ApprovalsProcessorService {
       CacheInfo.PendingCosmWasmTransaction(id).key,
       constructProofTransaction,
     );
+
+    this.logger.debug(
+      `Processed CONSTRUCT_PROOF task, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   async processVerifyTask(response: VerifyTask) {
@@ -324,6 +335,10 @@ export class ApprovalsProcessorService {
       CacheInfo.PendingCosmWasmTransaction(id).key,
       verifyTransaction,
     );
+
+    this.logger.debug(
+      `Processed VERIFY task, message to ${response.destinationChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   async handlePendingCosmWasmTransactionRaw() {
@@ -337,7 +352,9 @@ export class ApprovalsProcessorService {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
       if (!cachedValue) continue;
 
-      this.logger.debug(`Trying to process ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`);
+      this.logger.debug(
+        `Trying to send CosmWasm transaction for ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`,
+      );
 
       if (cachedValue.broadcastID) {
         await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);

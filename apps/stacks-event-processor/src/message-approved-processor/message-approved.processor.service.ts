@@ -5,7 +5,7 @@ import { ApiConfigService, AxelarGmpApi, GatewayContract, Locker } from '@stacks
 import { CannotExecuteMessageEventV2, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
 import { TooLowAvailableBalanceError } from '@stacks-monorepo/common/contracts/entities/too-low-available-balance.error';
-import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
+import { ItsContract, MessageApprovedData } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
@@ -13,6 +13,7 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { AxiosError } from 'axios';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
 const MAX_NUMBER_OF_RETRIES: number = 3;
@@ -77,19 +78,24 @@ export class MessageApprovedProcessorService {
           }
 
           try {
-            const transaction = await this.buildExecuteTransaction(messageApproved);
-            if (!transaction) {
-              // this will only happen for ITS if an invalid message type is received
-              messageApproved.status = MessageApprovedStatus.FAILED;
+            const { transaction, incrementRetry, extraData } = await this.buildExecuteTransaction(messageApproved);
 
+            messageApproved.extraData = extraData;
+
+            if (incrementRetry) {
+              messageApproved.retry += 1;
+              messageApproved.executeTxHash = null;
+            }
+
+            if (!transaction) {
               entriesToUpdate.push(messageApproved);
+
               continue;
             }
 
             transactionsToSend.push(transaction);
 
             messageApproved.executeTxHash = transaction.txid();
-            messageApproved.retry += 1;
 
             entriesWithTransactions.push(messageApproved);
           } catch (e) {
@@ -100,7 +106,7 @@ export class MessageApprovedProcessorService {
 
             await this.transactionsHelper.deleteNonce();
 
-            if (e instanceof GasError) {
+            if (e instanceof GasError || e instanceof ItsError) {
               messageApproved.retry += 1;
 
               entriesToUpdate.push(messageApproved);
@@ -141,48 +147,51 @@ export class MessageApprovedProcessorService {
     });
   }
 
-  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<StacksTransaction | null> {
+  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<MessageApprovedData> {
     const contractId = messageApproved.contractAddress;
     const contractSplit = contractId.split('.');
     const [contractAddress, contractName] = [contractSplit[0], contractSplit[1]];
 
-    if (contractId !== this.contractItsAddress) {
-      const gatewayImpl = await this.gatewayContract.getGatewayImpl();
-
-      const transaction = await this.transactionsHelper.makeContractCall({
-        contractAddress: contractAddress,
-        contractName: contractName,
-        functionName: 'execute',
-        functionArgs: [
-          stringAsciiCV(messageApproved.sourceChain),
-          stringAsciiCV(messageApproved.messageId),
-          stringAsciiCV(messageApproved.sourceAddress),
-          bufferCV(messageApproved.payload),
-          principalCV(gatewayImpl),
-        ],
-        senderKey: this.walletSigner,
-        network: this.network,
-        anchorMode: AnchorMode.Any,
-      });
-
-      await this.transactionsHelper.checkAvailableGasBalance(
+    if (contractId === this.contractItsAddress) {
+      return await this.itsContract.execute(
+        this.walletSigner,
+        messageApproved.sourceChain,
         messageApproved.messageId,
+        messageApproved.sourceAddress,
+        messageApproved.contractAddress,
+        messageApproved.payload.toString('hex'),
         messageApproved.availableGasBalance,
-        [{ transaction }],
+        messageApproved.executeTxHash,
+        // @ts-ignore
+        messageApproved.extraData,
       );
-
-      return transaction;
     }
 
-    return await this.itsContract.execute(
-      this.walletSigner,
-      messageApproved.sourceChain,
+    const gatewayImpl = await this.gatewayContract.getGatewayImpl();
+
+    const transaction = await this.transactionsHelper.makeContractCall({
+      contractAddress: contractAddress,
+      contractName: contractName,
+      functionName: 'execute',
+      functionArgs: [
+        stringAsciiCV(messageApproved.sourceChain),
+        stringAsciiCV(messageApproved.messageId),
+        stringAsciiCV(messageApproved.sourceAddress),
+        bufferCV(messageApproved.payload),
+        principalCV(gatewayImpl),
+      ],
+      senderKey: this.walletSigner,
+      network: this.network,
+      anchorMode: AnchorMode.Any,
+    });
+
+    await this.transactionsHelper.checkAvailableGasBalance(
       messageApproved.messageId,
-      messageApproved.sourceAddress,
-      messageApproved.contractAddress,
-      messageApproved.payload.toString('hex'),
       messageApproved.availableGasBalance,
+      [{ transaction }],
     );
+
+    return { transaction, incrementRetry: true, extraData: null };
   }
 
   async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
@@ -197,7 +206,7 @@ export class MessageApprovedProcessorService {
       messageID: messageApproved.messageId,
       sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
       reason,
-      details: 'CANNOT_EXECUTE_MESSAGE/V2',
+      details: `retried ${messageApproved.retry} times`,
       meta: {
         txID: messageApproved.executeTxHash,
         taskItemID: messageApproved.taskItemId || '',

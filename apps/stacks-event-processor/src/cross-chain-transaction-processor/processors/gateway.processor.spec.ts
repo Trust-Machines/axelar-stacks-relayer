@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApprovedStatus } from '@prisma/client';
+import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -158,6 +158,7 @@ describe('GatewayProcessor', () => {
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
       transaction.block_time_iso = '11.05.2024';
+      transaction.sender_address = 'sender';
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
 
@@ -178,7 +179,7 @@ describe('GatewayProcessor', () => {
       expect(event.payload).toBe(contractCallEvent.payload.toString('base64'));
       expect(event.meta).toEqual({
         txID: 'txHash',
-        fromAddress: contractCallEvent.sender,
+        fromAddress: transaction.sender_address,
         finalized: true,
         timestamp: '11.05.2024',
       });
@@ -274,7 +275,7 @@ describe('GatewayProcessor', () => {
     it('Should handle event update contract call approved', async () => {
       gatewayContract.decodeMessageExecutedEvent.mockReturnValueOnce(messageExecutedEvent);
 
-      const messageApproved = {
+      const messageApproved: MessageApproved = {
         sourceChain: 'ethereum',
         messageId: 'messageId',
         status: MessageApprovedStatus.PENDING,
@@ -289,6 +290,7 @@ describe('GatewayProcessor', () => {
         successTimes: null,
         taskItemId: null,
         availableGasBalance: '0',
+        extraData: {},
       };
 
       messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(messageApproved));

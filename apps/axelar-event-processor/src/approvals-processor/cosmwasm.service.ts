@@ -5,12 +5,12 @@ import {
   Components,
   ConstructProofTask,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { AXELAR_CHAIN } from './approvals.processor.service';
 import { ApiConfigService, AxelarGmpApi, Constants } from '@stacks-monorepo/common';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import VerifyTask = Components.Schemas.VerifyTask;
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 
 const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 10_000;
 const COSM_WASM_TRANSACTION_POLL_INTERVAL = 3_000;
@@ -36,7 +36,7 @@ export class CosmwasmService {
 
   buildConstructProofRequest(task: ConstructProofTask): BroadcastRequest {
     // Handle ITS Hub -> Stacks ITS case
-    if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === AXELAR_CHAIN) {
+    if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === CONSTANTS.AXELAR_CHAIN) {
       return {
         construct_proof_with_payload: {
           message_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
@@ -62,13 +62,13 @@ export class CosmwasmService {
     if (
       task.message.sourceAddress === this.stacksContractItsProxy &&
       task.message.destinationAddress === this.axelarContractIts &&
-      task.destinationChain === AXELAR_CHAIN
+      task.destinationChain === CONSTANTS.AXELAR_CHAIN
     ) {
       return {
         verify_message_with_payload: {
           message: {
             cc_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
-            destination_chain: AXELAR_CHAIN,
+            destination_chain: CONSTANTS.AXELAR_CHAIN,
             destination_address: task.message.destinationAddress,
             source_address: task.message.sourceAddress,
             payload_hash: payloadHash,

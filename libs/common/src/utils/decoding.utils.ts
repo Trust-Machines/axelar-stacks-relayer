@@ -7,16 +7,14 @@ import {
   GatewayExternalData,
   MessageApprovedEvent,
   MessageExecutedEvent,
-  TokenManagerParams,
-  VerifyInterchainTokenEvent,
-  VerifyTokenManagerEvent,
   WeightedSignersEvent,
 } from '../contracts/entities/gateway-events';
+import { DeployInterchainToken, InterchainTransfer } from '../contracts/ITS/messages/hub.message.types';
 import {
-  DeployInterchainToken,
-  DeployTokenManager,
-  InterchainTransfer,
-} from '../contracts/ITS/messages/hub.message.types';
+  InterchainTokenDeploymentStartedEvent,
+  InterchainTransferEvent,
+} from '@stacks-monorepo/common/contracts/entities/its-events';
+import { BinaryUtils } from '@stacks-monorepo/common';
 
 export class DecodingUtils {
   static deserialize(hex: string) {
@@ -51,7 +49,7 @@ export const contractCallDecoder = (json: any): ContractCallEvent => ({
   destinationChain: json['destination-chain'].value,
   destinationAddress: json['destination-contract-address'].value,
   payloadHash: json['payload-hash'].value,
-  payload: Buffer.from(json['payload'].value.replace('0x', ''), 'hex'),
+  payload: BinaryUtils.hexToBuffer(json['payload'].value),
 });
 
 export const messageApprovedDecoder = (json: any): MessageApprovedEvent => ({
@@ -77,7 +75,7 @@ export const weightedSignersDecoder = (json: any): WeightedSignersEvent => ({
   threshold: new BigNumber(json.signers.value['threshold'].value),
   nonce: json.signers.value['nonce'].value,
   epoch: parseInt(json['epoch'].value),
-  signersHash: Buffer.from(json['signers-hash'].value.replace('0x', ''), 'hex'),
+  signersHash: BinaryUtils.hexToBuffer(json['signers-hash'].value),
 });
 
 export const gasPaidForContractCallDecoder = (json: any): GasPaidForContractCallEvent => ({
@@ -103,30 +101,10 @@ export const refundedDecoder = (json: any): RefundedEvent => ({
   amount: new BigNumber(json['amount'].value),
 });
 
-export const verifyInterchainTokenDecoder = (json: any): VerifyInterchainTokenEvent => ({
-  tokenAddress: json.value['token-address'].value,
-});
-
-export const verifyTokenManagerDecoder = (json: any): VerifyTokenManagerEvent => {
-  return {
-    tokenManagerAddress: json.value['token-manager-address'].value,
-    tokenId: json.value['token-id'].value,
-    tokenType: Number(json.value['token-type'].value),
-    operator: json.value['operator'].value,
-  };
-};
-
-export const tokenManagerParamsDecoder = (json: any): TokenManagerParams => {
-  return {
-    operator: json.value['operator']?.value,
-    tokenAddress: json.value['token-address'].value,
-  };
-};
-
 export const interchainTransferDecoder = (json: any): InterchainTransfer => ({
   messageType: parseInt(json.value['type'].value),
   tokenId: json.value['token-id'].value,
-  sourceAddress: json.value['source-address'].value,
+  senderAddress: json.value['source-address'].value,
   destinationAddress: json.value['destination-address'].value,
   amount: new BigNumber(json.value['amount'].value).toFixed(),
   data: json.value['data'].value,
@@ -141,9 +119,20 @@ export const deployInterchainTokenDecoder = (json: any): DeployInterchainToken =
   minter: json.value['minter'].value,
 });
 
-export const deployTokenManagerDecoder = (json: any): DeployTokenManager => ({
-  messageType: parseInt(json.value['type'].value),
-  tokenId: json.value['token-id'].value,
-  tokenManagerType: json.value['token-manager-type'].value,
-  params: json.value['params'].value,
+export const interchainTokenDeploymentStartedEventDecoder = (json: any): InterchainTokenDeploymentStartedEvent => ({
+  destinationChain: json['destination-chain'].value,
+  tokenId: json['token-id'].value,
+  name: json['name'].value,
+  symbol: json['symbol'].value,
+  decimals: parseInt(json['decimals'].value),
+  minter: json['minter'].value,
+});
+
+export const interchainTransferEventDecoder = (json: any): InterchainTransferEvent => ({
+  tokenId: json['token-id'].value,
+  sourceAddress: json['source-address'].value,
+  destinationChain: json['destination-chain'].value,
+  destinationAddress: json['destination-address'].value,
+  amount: new BigNumber(json['amount'].value).toFixed(),
+  data: json['data'].value,
 });

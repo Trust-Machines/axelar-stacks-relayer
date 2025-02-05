@@ -68,10 +68,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /contracts/{wasmContractAddress}/queries:
+    post:
+      summary: Query arbitrary contract state
+      operationId: queryContractState
+      parameters:
+        - $ref: '#/components/parameters/wasmContractAddress'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContractQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContractQueryResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Contract Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /chains/{chain}/events:
     post:
       summary: Publish on-chain events
-      operationID: publishEvents
+      operationId: publishEvents
       parameters:
         - $ref: '#/components/parameters/chain'
       requestBody:
@@ -122,6 +159,66 @@ paths:
                 $ref: '#/components/schemas/GetTasksResult'
         '404':
           description: Chain Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payloads:
+    post:
+      summary: Temporarily store a large payload against its hash to bypass size restrictions on some chains.
+      operationId: storePayload
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorePayloadResult'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payloads/{hash}:
+    get:
+      summary: Retrieve a stored payload by its hash
+      operationId: getPayload
+      parameters:
+        - name: hash
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Keccak256Hash'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Payload Not Found
           content:
             application/json:
               schema:
@@ -198,11 +295,12 @@ components:
         - MESSAGE_EXECUTED
         - CANNOT_EXECUTE_MESSAGE
         - CANNOT_EXECUTE_MESSAGE/V2
+        - CANNOT_ROUTE_MESSAGE
         - SIGNERS_ROTATED
         - ITS/INTERCHAIN_TOKEN_DEPLOYMENT_STARTED
         - ITS/INTERCHAIN_TRANSFER
-        - ITS_APP/INTERCHAIN_TRANSFER_SENT
-        - ITS_APP/INTERCHAIN_TRANSFER_RECEIVED
+        - APP/INTERCHAIN_TRANSFER_SENT
+        - APP/INTERCHAIN_TRANSFER_RECEIVED
       x-enum-varnames:
         - EventTypeGasCredit
         - EventTypeGasRefunded
@@ -211,11 +309,12 @@ components:
         - EventTypeMessageExecuted
         - EventTypeCannotExecuteMessage
         - EventTypeCannotExecuteMessageV2
+        - EventTypeCannotRouteMessage
         - EventTypeSignersRotated
         - EventTypeITSInterchainTokenDeploymentStarted
         - EventTypeITSInterchainTransfer
-        - EventTypeITSAppInterchainTransferSent
-        - EventTypeITSAppInterchainTransferReceived
+        - EventTypeAppInterchainTransferSent
+        - EventTypeAppInterchainTransferReceived
     EventMetadata:
       type: object
       properties:
@@ -251,6 +350,8 @@ components:
               nullable: true
               x-omitempty: true
               minLength: 1
+            sourceContext:
+              $ref: '#/components/schemas/MessageContext'
     MessageApprovedEventMetadata:
       allOf:
         - $ref: '#/components/schemas/EventMetadata'
@@ -262,26 +363,26 @@ components:
               # TODO: use exact length
               minLength: 1
     MessageExecutedEventMetadata:
-      allOf:
-        - $ref: '#/components/schemas/EventMetadata'
-        - properties:
-            commandID:
-              type: string
-              nullable: true
-              x-omitempty: true
-              # TODO: use exact length
-              minLength: 1
-            childMessageIDs:
-              type: array
-              nullable: true
-              x-omitempty: true
-              items:
+        allOf:
+          - $ref: '#/components/schemas/EventMetadata'
+          - properties:
+              commandID:
                 type: string
+                nullable: true
+                x-omitempty: true
+                # TODO: use exact length
                 minLength: 1
-            revertReason:
-              type: string
-              nullable: true
-              x-omitempty: true
+              childMessageIDs:
+                type: array
+                nullable: true
+                x-omitempty: true
+                items:
+                  type: string
+                  minLength: 1
+              revertReason:
+                type: string
+                nullable: true
+                x-omitempty: true
     CannotExecuteMessageEventMetadata:
       type: object
       properties:
@@ -318,7 +419,7 @@ components:
               type: integer
               format: int64
               minimum: 0
-    ITSAppEventMetadata:
+    AppEventMetadata:
       allOf:
         - $ref: '#/components/schemas/EventMetadata'
         - properties:
@@ -336,11 +437,12 @@ components:
         - $ref: '#/components/schemas/MessageExecutedEvent'
         - $ref: '#/components/schemas/CannotExecuteMessageEvent'
         - $ref: '#/components/schemas/CannotExecuteMessageEventV2'
+        - $ref: '#/components/schemas/CannotRouteMessageEvent'
         - $ref: '#/components/schemas/SignersRotatedEvent'
         - $ref: '#/components/schemas/ITSInterchainTokenDeploymentStartedEvent'
         - $ref: '#/components/schemas/ITSInterchainTransferEvent'
-        - $ref: '#/components/schemas/ITSAppInterchainTransferSentEvent'
-        - $ref: '#/components/schemas/ITSAppInterchainTransferReceivedEvent'
+        - $ref: '#/components/schemas/AppInterchainTransferSentEvent'
+        - $ref: '#/components/schemas/AppInterchainTransferReceivedEvent'
       discriminator:
         propertyName: type
         mapping:
@@ -351,29 +453,30 @@ components:
           MESSAGE_EXECUTED: '#/components/schemas/MessageExecutedEvent'
           CANNOT_EXECUTE_MESSAGE: '#/components/schemas/CannotExecuteMessageEvent'
           CANNOT_EXECUTE_MESSAGE/V2: '#/components/schemas/CannotExecuteMessageEventV2'
+          CANNOT_ROUTE_MESSAGE: '#/components/schemas/CannotRouteMessageEvent'
           SIGNERS_ROTATED: '#/components/schemas/SignersRotatedEvent'
           ITS/INTERCHAIN_TOKEN_DEPLOYMENT_STARTED: '#/components/schemas/ITSInterchainTokenDeploymentStartedEvent'
           ITS/INTERCHAIN_TRANSFER: '#/components/schemas/ITSInterchainTransferEvent'
-          ITS_APP/INTERCHAIN_TRANSFER_SENT: '#/components/schemas/ITSAppInterchainTransferSentEvent'
-          ITS_APP/INTERCHAIN_TRANSFER_RECEIVED: '#/components/schemas/ITSAppInterchainTransferReceivedEvent'
+          APP/INTERCHAIN_TRANSFER_SENT: '#/components/schemas/AppInterchainTransferSentEvent'
+          APP/INTERCHAIN_TRANSFER_RECEIVED: '#/components/schemas/AppInterchainTransferReceivedEvent'
       properties:
         type:
           $ref: '#/components/schemas/EventType'
       required:
         - type
     EventBase:
-      type: object
-      properties:
-        eventID:
-          type: string
-          minLength: 1
-        meta:
-          allOf:
-            - $ref: '#/components/schemas/EventMetadata'
-          nullable: true
-          x-omitempty: true
-      required:
-        - eventID
+        type: object
+        properties:
+          eventID:
+            type: string
+            minLength: 1
+          meta:
+            allOf:
+              - $ref: '#/components/schemas/EventMetadata'
+            nullable: true
+            x-omitempty: true
+        required:
+          - eventID
     GasCreditEvent:
       type: object
       allOf:
@@ -421,7 +524,7 @@ components:
               x-omitempty: true
         - properties:
             message:
-              $ref: "#/components/schemas/GatewayV2Message"
+              $ref: "#/components/schemas/Message"
             destinationChain:
               type: string
               minLength: 1
@@ -429,7 +532,7 @@ components:
               type: string
               format: byte
             withToken:
-              $ref: '#/components/schemas/Token'
+                $ref: '#/components/schemas/Token'
           required:
             - message
             - destinationChain
@@ -446,7 +549,7 @@ components:
               x-omitempty: true
         - properties:
             message:
-              $ref: '#/components/schemas/GatewayV2Message'
+              $ref: '#/components/schemas/Message'
             cost:
               $ref: '#/components/schemas/Token'
           required:
@@ -487,27 +590,27 @@ components:
         - MessageExecutionStatusSuccessful
         - MessageExecutionStatusReverted
     CannotExecuteMessageEvent:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/EventBase'
-        - properties:
-            meta:
-              allOf:
-                - $ref: '#/components/schemas/CannotExecuteMessageEventMetadata'
-              nullable: true
-              x-omitempty: true
-        - properties:
-            taskItemID:
-              $ref: '#/components/schemas/TaskItemID'
-            reason:
-              $ref: '#/components/schemas/CannotExecuteMessageReason'
-            details:
-              type: string
-              minLength: 1
-          required:
-            - taskItemID
-            - reason
-            - details
+        type: object
+        allOf:
+          - $ref: '#/components/schemas/EventBase'
+          - properties:
+              meta:
+                allOf:
+                  - $ref: '#/components/schemas/CannotExecuteMessageEventMetadata'
+                nullable: true
+                x-omitempty: true
+          - properties:
+              taskItemID:
+                $ref: '#/components/schemas/TaskItemID'
+              reason:
+                $ref: '#/components/schemas/CannotExecuteMessageReason'
+              details:
+                type: string
+                minLength: 1
+            required:
+                - taskItemID
+                - reason
+                - details
     CannotExecuteMessageEventV2:
       type: object
       allOf:
@@ -543,22 +646,49 @@ components:
       x-enum-varnames:
         - CannotExecuteMessageReasonInsufficientGas
         - CannotExecuteMessageReasonError
-    SignersRotatedEvent:
+    CannotRouteMessageEvent:
+      description: |
+        Event emitted when a message cannot be routed. Source chain of the message is implied to be the chain from which the event is emitted.
       type: object
       allOf:
         - $ref: '#/components/schemas/EventBase'
         - properties:
-            meta:
-              allOf:
-                - $ref: '#/components/schemas/SignersRotatedEventMetadata'
-              nullable: true
-              x-omitempty: true
-        - properties:
             messageID:
+              type: string
+              minLength: 1
+            reason:
+              $ref: '#/components/schemas/CannotRouteMessageReason'
+            details:
               type: string
               minLength: 1
           required:
             - messageID
+            - reason
+            - details
+    CannotRouteMessageReason:
+      type: string
+      enum:
+        - CUSTOM
+        - ERROR
+      x-enum-varnames:
+        - CannotRouteMessageReasonCustom
+        - CannotRouteMessageReasonError
+    SignersRotatedEvent:
+        type: object
+        allOf:
+            - $ref: '#/components/schemas/EventBase'
+            - properties:
+                meta:
+                  allOf:
+                    - $ref: '#/components/schemas/SignersRotatedEventMetadata'
+                  nullable: true
+                  x-omitempty: true
+            - properties:
+                messageID:
+                  type: string
+                  minLength: 1
+              required:
+                - messageID
     ITSInterchainTokenDeploymentStartedEvent:
       type: object
       allOf:
@@ -606,14 +736,14 @@ components:
             - sourceAddress
             - destinationAddress
             - dataHash
-    ITSAppInterchainTransferSentEvent:
+    AppInterchainTransferSentEvent:
       type: object
       allOf:
         - $ref: '#/components/schemas/EventBase'
         - properties:
             meta:
               allOf:
-                - $ref: '#/components/schemas/ITSAppEventMetadata'
+                - $ref: '#/components/schemas/AppEventMetadata'
               nullable: true
               x-omitempty: true
         - properties:
@@ -640,14 +770,14 @@ components:
             - sender
             - recipient
             - tokenSpent
-    ITSAppInterchainTransferReceivedEvent:
+    AppInterchainTransferReceivedEvent:
       type: object
       allOf:
         - $ref: '#/components/schemas/EventBase'
         - properties:
             meta:
               allOf:
-                - $ref: '#/components/schemas/ITSAppEventMetadata'
+                - $ref: '#/components/schemas/AppEventMetadata'
               nullable: true
               x-omitempty: true
         - properties:
@@ -673,29 +803,47 @@ components:
             - sender
             - recipient
             - tokenReceived
-    GatewayV2Message:
+    Message:
+        type: object
+        properties:
+          messageID:
+            type: string
+            minLength: 1
+          sourceChain:
+            type: string
+            minLength: 1
+          sourceAddress:
+            $ref: '#/components/schemas/Address'
+          destinationAddress:
+            $ref: '#/components/schemas/Address'
+          payloadHash:
+            type: string
+            format: byte
+            minLength: 1
+        required:
+            - messageID
+            - sourceChain
+            - sourceAddress
+            - destinationAddress
+            - payloadHash
+    MessageContext:
+      type: object
+      additionalProperties:
+        type: string
+        maxLength: 1000
+      maxProperties: 10
+    CrossChainID:
       type: object
       properties:
-        messageID:
-          type: string
-          minLength: 1
         sourceChain:
           type: string
           minLength: 1
-        sourceAddress:
-          $ref: '#/components/schemas/Address'
-        destinationAddress:
-          $ref: '#/components/schemas/Address'
-        payloadHash:
+        messageID:
           type: string
-          format: byte
           minLength: 1
       required:
-        - messageID
         - sourceChain
-        - sourceAddress
-        - destinationAddress
-        - payloadHash
+        - messageID
     Token:
       type: object
       properties:
@@ -807,14 +955,37 @@ components:
         - CONSTRUCT_PROOF
         - EXECUTE
         - GATEWAY_TX
+        - REACT_TO_WASM_EVENT
         - REFUND
         - VERIFY
       x-enum-varnames:
         - TaskTypeConstructProof
         - TaskTypeExecute
         - TaskTypeGatewayTransaction
+        - TaskTypeReactToWasmEvent
         - TaskTypeRefund
         - TaskTypeVerify
+    TaskMetadata:
+      allOf:
+        - $ref: '#/components/schemas/GatewayTransactionTaskMetadata'
+        - $ref: '#/components/schemas/SourceChainTaskMetadata'
+    GatewayTransactionTaskMetadata:
+      description: |
+        Metadata attached to the GATEWAY_TX task. 
+        The property `scopedMessages` can be omitted if the task isn't associated with any message (e.g. when executing `rotateSigners` https://github.com/axelarnetwork/axelar-gmp-sdk-solidity/blob/432449d7b330ec6edf5a8e0746644a253486ca87/contracts/gateway/AxelarAmplifierGateway.sol#L103C14-L103C27).
+      type: object
+      properties:
+        scopedMessages:
+          type: array
+          items:
+            $ref: '#/components/schemas/CrossChainID'
+    SourceChainTaskMetadata:
+      description: |
+        Metadata attached to REFUND and VERIFY tasks. It carries values passed in the associated CALL event (if any) back to the source chain.
+      type: object
+      properties:
+        sourceContext:
+          $ref: '#/components/schemas/MessageContext'
     TaskItem:
       properties:
         id:
@@ -829,6 +1000,8 @@ components:
           format: date-time
         type:
           $ref: '#/components/schemas/TaskType'
+        meta:
+          $ref: '#/components/schemas/TaskMetadata'
         task:
           $ref: '#/components/schemas/Task'
       required:
@@ -847,14 +1020,15 @@ components:
     Task:
       oneOf:
         - $ref: '#/components/schemas/ConstructProofTask'
-        - $ref: '#/components/schemas/GatewayTransactionTask'
         - $ref: '#/components/schemas/ExecuteTask'
+        - $ref: '#/components/schemas/GatewayTransactionTask'
+        - $ref: '#/components/schemas/ReactToWasmEventTask'
         - $ref: '#/components/schemas/RefundTask'
         - $ref: '#/components/schemas/VerifyTask'
     ConstructProofTask:
       properties:
         message:
-          $ref: "#/components/schemas/GatewayV2Message"
+          $ref: "#/components/schemas/Message"
         payload:
           type: string
           format: byte
@@ -865,7 +1039,7 @@ components:
     ExecuteTask:
       properties:
         message:
-          $ref: "#/components/schemas/GatewayV2Message"
+          $ref: "#/components/schemas/Message"
         payload:
           type: string
           format: byte
@@ -884,10 +1058,21 @@ components:
           minLength: 1
       required:
         - executeData
+    ReactToWasmEventTask:
+      properties:
+        height:
+          type: integer
+          format: int64
+          minimum: 0
+        event:
+          $ref: '#/components/schemas/WasmEvent'
+      required:
+        - height
+        - event
     RefundTask:
       properties:
         message:
-          $ref: "#/components/schemas/GatewayV2Message"
+          $ref: "#/components/schemas/Message"
         refundRecipientAddress:
           $ref: '#/components/schemas/Address'
         remainingGasBalance:
@@ -899,7 +1084,7 @@ components:
     VerifyTask:
       properties:
         message:
-          $ref: "#/components/schemas/GatewayV2Message"
+          $ref: "#/components/schemas/Message"
         destinationChain:
           type: string
           minLength: 1
@@ -936,7 +1121,7 @@ components:
           type: array
           x-omitempty: true
           items:
-            $ref: '#/components/schemas/BroadcastTxEvent'
+            $ref: '#/components/schemas/WasmEvent'
         txHash:
           type: string
           nullable: true
@@ -950,7 +1135,7 @@ components:
       required:
         - receivedAt
         - status
-    BroadcastTxEvent:
+    WasmEvent:
       type: object
       properties:
         type:
@@ -959,11 +1144,11 @@ components:
         attributes:
           type: array
           items:
-            $ref: '#/components/schemas/BroadcastTxEventAttribute'
+            $ref: '#/components/schemas/WasmEventAttribute'
       required:
         - type
         - attributes
-    BroadcastTxEventAttribute:
+    WasmEventAttribute:
       type: object
       properties:
         key:
@@ -985,6 +1170,19 @@ components:
         - BroadcastStatusReceived
         - BroadcastStatusSuccess
         - BroadcastStatusError
+    ContractQuery:
+      type: object
+      additionalProperties: { }
+    ContractQueryResponse:
+      type: object
+      additionalProperties: { }
+    StorePayloadResult:
+      type: object
+      properties:
+        keccak256:
+          $ref: '#/components/schemas/Keccak256Hash'
+      required:
+        - keccak256
     ErrorResponse:
       type: object
       properties:
@@ -1009,3 +1207,6 @@ components:
     BigInt:
       type: string
       pattern: '^(0|[1-9]\d*)$'
+    Keccak256Hash:
+      type: string
+      pattern: '^0x[0-9a-f]{64}$'

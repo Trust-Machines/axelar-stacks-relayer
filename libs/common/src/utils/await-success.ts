@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { AxiosError } from 'axios';
 
 export async function awaitSuccess<T>(
   id: string,
@@ -20,6 +21,11 @@ export async function awaitSuccess<T>(
   } catch (error) {
     logger?.error(`Cannot await success for key: ${key}`);
     logger?.error(error);
+
+    if (error instanceof AxiosError) {
+      logger?.error(error.response?.data);
+    }
+
     return { success: false, result: null };
   }
 }

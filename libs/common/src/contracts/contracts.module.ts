@@ -8,9 +8,10 @@ import { HelpersModule } from '../helpers/helpers.module';
 import { CONSTANTS } from '../utils/constants.enum';
 import { GatewayContract } from './gateway.contract';
 import { ItsContract } from './ITS/its.contract';
-import { TokenManagerContract } from './ITS/token-manager.contract';
 import { NativeInterchainTokenContract } from './ITS/native-interchain-token.contract';
 import { HiroApiHelper } from '../helpers/hiro.api.helpers';
+import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/token-manager.contract';
+import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 
 @Module({
   imports: [HelpersModule],
@@ -59,38 +60,30 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
       inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
     },
     {
-      provide: TokenManagerContract,
-      useFactory: (
-        apiConfigService: ApiConfigService,
-        hiroApiHelper: HiroApiHelper,
-        network: StacksNetwork,
-        transactionsHelper: TransactionsHelper,
-      ) => {
-        return new TokenManagerContract(
-          apiConfigService.getContractTokenManagerTemplate(),
-          hiroApiHelper,
-          network,
-          transactionsHelper,
-        );
+      provide: VerifyOnchainContract,
+      useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork, hiroApiHelper: HiroApiHelper) => {
+        return new VerifyOnchainContract(apiConfigService.getContractVerifyOnchain(), network, hiroApiHelper);
       },
-      inject: [ApiConfigService, HiroApiHelper, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, HiroApiHelper],
     },
     {
       provide: NativeInterchainTokenContract,
       useFactory: (
         apiConfigService: ApiConfigService,
-        hiroApiHelper: HiroApiHelper,
+        verifyOnchainContract: VerifyOnchainContract,
         network: StacksNetwork,
         transactionsHelper: TransactionsHelper,
+        hiroApiHelper: HiroApiHelper,
       ) => {
         return new NativeInterchainTokenContract(
           apiConfigService.getContractIdNativeInterchainTokenTemplate(),
-          hiroApiHelper,
+          verifyOnchainContract,
           network,
           transactionsHelper,
+          hiroApiHelper,
         );
       },
-      inject: [ApiConfigService, HiroApiHelper, ProviderKeys.STACKS_NETWORK, TransactionsHelper],
+      inject: [ApiConfigService, VerifyOnchainContract, ProviderKeys.STACKS_NETWORK, TransactionsHelper, HiroApiHelper],
     },
     {
       provide: ItsContract,
@@ -102,6 +95,7 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         transactionsHelper: TransactionsHelper,
         gatewayContract: GatewayContract,
         gasServiceContract: GasServiceContract,
+        verifyOnchain: VerifyOnchainContract,
       ) => {
         return new ItsContract(
           apiConfigService.getContractItsProxy(),
@@ -112,6 +106,8 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
           transactionsHelper,
           gatewayContract,
           gasServiceContract,
+          apiConfigService.getAxelarContractIts(),
+          verifyOnchain,
         );
       },
       inject: [
@@ -122,6 +118,7 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
         TransactionsHelper,
         GatewayContract,
         GasServiceContract,
+        VerifyOnchainContract,
       ],
     },
     {
@@ -132,6 +129,7 @@ import { HiroApiHelper } from '../helpers/hiro.api.helpers';
       inject: [ApiConfigService],
     },
     TransactionsHelper,
+    TokenManagerContract,
   ],
   exports: [
     GatewayContract,

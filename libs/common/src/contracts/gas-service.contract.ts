@@ -68,20 +68,6 @@ export class GasServiceContract implements OnModuleInit {
     return this.gasImpl;
   }
 
-  async collectFees(sender: string, receiver: string, amount: string): Promise<StacksTransaction> {
-    const gasImpl = await this.getGasImpl();
-
-    return await this.transactionsHelper.makeContractCall({
-      contractAddress: this.proxyContractAddress,
-      contractName: this.proxyContractName,
-      functionName: 'collect-fees',
-      functionArgs: [principalCV(gasImpl), principalCV(receiver), uintCV(amount)],
-      senderKey: sender,
-      network: this.network,
-      anchorMode: AnchorMode.Any,
-    });
-  }
-
   async refund(
     sender: string,
     gasImpl: string,

@@ -10,9 +10,11 @@ import { getEventType, ScEvent } from './types';
 export class EventProcessorService {
   private readonly contractGatewayStorage: string;
   private readonly contractGasServiceStorage: string;
+  private readonly contractItsStorage: string;
 
   private contractGatewayEventsKey: string;
   private contractGasServiceEventsKey: string;
+  private contractItsEventsKey: string;
 
   private readonly logger: Logger;
 
@@ -23,8 +25,11 @@ export class EventProcessorService {
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.contractGasServiceStorage = apiConfigService.getContractGasServiceStorage();
+    this.contractItsStorage = apiConfigService.getContractItsStorage();
+
     this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGatewayStorage).key;
     this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasServiceStorage).key;
+    this.contractItsEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractItsStorage).key;
 
     this.logger = new Logger(EventProcessorService.name);
   }
@@ -32,9 +37,10 @@ export class EventProcessorService {
   @Cron(CronExpression.EVERY_10_SECONDS)
   async pollEvents() {
     await Locker.lock('eventsPolling', async () => {
-      const [gatewayLastProcessedEvent, gasLastProcessedEvent] = await Promise.all([
+      const [gatewayLastProcessedEvent, gasLastProcessedEvent, itsLastProcessedEvent] = await Promise.all([
         this.redisHelper.get<string>(this.contractGatewayEventsKey),
         this.redisHelper.get<string>(this.contractGasServiceEventsKey),
+        this.redisHelper.get<string>(this.contractItsEventsKey),
       ]);
 
       await this.getContractEvents(
@@ -47,6 +53,7 @@ export class EventProcessorService {
         this.contractGasServiceEventsKey,
         gasLastProcessedEvent,
       );
+      await this.getContractEvents(this.contractItsStorage, this.contractItsEventsKey, itsLastProcessedEvent);
     });
   }
 
@@ -163,6 +170,20 @@ export class EventProcessorService {
 
       if (validEvent) {
         this.logger.debug('Received Gateway event from Stacks:');
+        this.logger.debug(JSON.stringify(event));
+      }
+
+      return validEvent;
+    }
+
+    if (contractAddress === this.contractItsStorage) {
+      const eventName = getEventType(event);
+
+      const validEvent =
+        eventName === Events.INTERCHAIN_TOKEN_DEPLOYMENT_STARTED || eventName === Events.INTERCHAIN_TRANSFER;
+
+      if (validEvent) {
+        this.logger.debug('Received ITS event from Stacks:');
         this.logger.debug(JSON.stringify(event));
       }
 

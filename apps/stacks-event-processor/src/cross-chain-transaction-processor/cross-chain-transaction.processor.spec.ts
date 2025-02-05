@@ -7,7 +7,7 @@ import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { ScEvent } from '../event-processor/types';
 import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
-import { GasServiceProcessor, GatewayProcessor } from './processors';
+import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 
 const mockTransactionResponse = {
   tx_id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
@@ -21,10 +21,12 @@ const mockTransactionResponse = {
 
 const mockGatewayContractId = 'mockGatewayAddress.contract_name';
 const mockGasContractId = 'mockGasAddress.gas_contract_name';
+const mockItsContractId = 'mockItsAddress.its_contract_name';
 
 describe('CrossChainTransactionProcessor', () => {
   let gatewayProcessor: DeepMocked<GatewayProcessor>;
   let gasServiceProcessor: DeepMocked<GasServiceProcessor>;
+  let itsProcessor: DeepMocked<ItsProcessor>;
   let axelarGmpApi: DeepMocked<AxelarGmpApi>;
   let redisHelper: DeepMocked<RedisHelper>;
   let apiConfigService: DeepMocked<ApiConfigService>;
@@ -35,6 +37,7 @@ describe('CrossChainTransactionProcessor', () => {
   beforeEach(async () => {
     gatewayProcessor = createMock();
     gasServiceProcessor = createMock();
+    itsProcessor = createMock();
     axelarGmpApi = createMock();
     redisHelper = createMock();
     apiConfigService = createMock();
@@ -42,6 +45,7 @@ describe('CrossChainTransactionProcessor', () => {
 
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
     apiConfigService.getContractGasServiceStorage.mockReturnValue(mockGasContractId);
+    apiConfigService.getContractItsStorage.mockReturnValue(mockItsContractId);
 
     const moduleRef = await Test.createTestingModule({
       providers: [CrossChainTransactionProcessorService],
@@ -53,6 +57,10 @@ describe('CrossChainTransactionProcessor', () => {
 
         if (token === GasServiceProcessor) {
           return gasServiceProcessor;
+        }
+
+        if (token === ItsProcessor) {
+          return itsProcessor;
         }
 
         if (token === AxelarGmpApi) {
@@ -135,6 +143,20 @@ describe('CrossChainTransactionProcessor', () => {
       },
     };
 
+    const rawItsEvent: ScEvent = {
+      event_index: 3,
+      event_type: 'smart_contract_log',
+      tx_id: 'txHash',
+      contract_log: {
+        contract_id: mockItsContractId,
+        topic: Events.INTERCHAIN_TOKEN_DEPLOYMENT_STARTED,
+        value: {
+          hex: '',
+          repr: '',
+        },
+      },
+    };
+
     const rawApprovedEvent: ScEvent = {
       event_index: 2,
       event_type: 'smart_contract_log',
@@ -156,7 +178,7 @@ describe('CrossChainTransactionProcessor', () => {
     transaction.token_transfer.amount = 0;
 
     it('Should handle multiple events', async () => {
-      transaction.events = [rawGasEvent, rawGatewayEvent];
+      transaction.events = [rawGasEvent, rawGatewayEvent, rawItsEvent];
 
       redisHelper.smembers.mockReturnValueOnce(Promise.resolve(['txHash']));
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
@@ -182,6 +204,13 @@ describe('CrossChainTransactionProcessor', () => {
         1,
         '180',
         '0',
+      );
+
+      expect(itsProcessor.handleItsEvent).toHaveBeenCalledTimes(1);
+      expect(itsProcessor.handleItsEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        3,
       );
 
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);

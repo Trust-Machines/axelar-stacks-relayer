@@ -32,7 +32,7 @@ export class CacheInfo {
 
   static ContractLastProcessedEvent(contractId: string): CacheInfo {
     return {
-      key: `contractLastProcessedEvent${contractId}`,
+      key: `contractLastProcessedEvent:${contractId}`,
       ttl: Constants.oneMonth(),
     };
   }
@@ -40,7 +40,7 @@ export class CacheInfo {
   static WalletNonce(address: string): CacheInfo {
     return {
       key: `nonce:${address}`,
-      ttl: Constants.oneMinute() * 5,
+      ttl: Constants.oneMinute() * 2,
     };
   }
 }

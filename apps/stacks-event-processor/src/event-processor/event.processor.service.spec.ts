@@ -23,6 +23,7 @@ describe('EventProcessorService', () => {
 
     apiConfigService.getContractGatewayStorage.mockReturnValue('mockGatewayAddress.contract_name');
     apiConfigService.getContractGasServiceStorage.mockReturnValue('mockGasAddress.contract_name');
+    apiConfigService.getContractItsStorage.mockReturnValue('mockItsAddress.contract_name');
 
     const moduleRef = await Test.createTestingModule({
       providers: [EventProcessorService],
@@ -95,6 +96,37 @@ describe('EventProcessorService', () => {
           tx_id: 'txHash',
           contract_log: {
             contract_id: 'mockGasAddress.contract_name',
+            topic: 'print',
+            value: {
+              hex: `0x${hex.encode(message.buffer)}`,
+              repr: '',
+            },
+          },
+        },
+      ];
+
+      await service.consumeEvents(events);
+
+      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
+      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+    });
+
+    it('Should handle ITS event correctly', async () => {
+      const message = bufferCV(
+        serializeCV(
+          tupleCV({
+            type: stringAsciiCV(Events.INTERCHAIN_TOKEN_DEPLOYMENT_STARTED),
+          }),
+        ),
+      );
+
+      const events: ScEvent[] = [
+        {
+          event_type: 'smart_contract_log',
+          event_index: 0,
+          tx_id: 'txHash',
+          contract_log: {
+            contract_id: 'mockItsAddress.contract_name',
             topic: 'print',
             value: {
               hex: `0x${hex.encode(message.buffer)}`,
