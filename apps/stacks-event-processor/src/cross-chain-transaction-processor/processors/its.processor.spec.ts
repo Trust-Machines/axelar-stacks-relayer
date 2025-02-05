@@ -130,7 +130,7 @@ describe('ItsProcessor', () => {
       const event = result as ITSInterchainTokenDeploymentStartedEvent;
 
       expect(event.eventID).toBe('txHash-0');
-      expect(event.messageID).toBe('txHash-1');
+      expect(event.messageID).toBe('txHash-3');
       expect(event.destinationChain).toBe(interchainTokenDeploymentStartedEvent.destinationChain);
       expect(event.token).toEqual({
         id: interchainTokenDeploymentStartedEvent.tokenId,
@@ -186,7 +186,7 @@ describe('ItsProcessor', () => {
       const event = result as ITSInterchainTransferEvent;
 
       expect(event.eventID).toBe('txHash-0');
-      expect(event.messageID).toBe('txHash-1');
+      expect(event.messageID).toBe('txHash-3');
       expect(event.destinationChain).toBe(interchainTransferEvent.destinationChain);
       expect(event.tokenSpent).toEqual({
         tokenID: interchainTransferEvent.tokenId,
