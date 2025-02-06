@@ -352,10 +352,6 @@ export class ApprovalsProcessorService {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
       if (!cachedValue) continue;
 
-      this.logger.debug(
-        `Trying to send CosmWasm transaction for ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`,
-      );
-
       if (cachedValue.broadcastID) {
         await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);
       } else {

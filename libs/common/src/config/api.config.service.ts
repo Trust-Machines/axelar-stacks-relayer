@@ -124,6 +124,15 @@ export class ApiConfigService {
     return contract;
   }
 
+  getAxelarGatewayContract(): string {
+    const contract = this.configService.get<string>('AXELAR_GATEWAY_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Gateway present');
+    }
+
+    return contract;
+  }
+
   getAxelarGmpApiUrl(): string {
     const axelarGmpApiUrl = this.configService.get<string>('AXELAR_GMP_API_URL');
     if (!axelarGmpApiUrl) {

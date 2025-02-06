@@ -12,8 +12,8 @@ import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import VerifyTask = Components.Schemas.VerifyTask;
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 
-const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 10_000;
-const COSM_WASM_TRANSACTION_POLL_INTERVAL = 3_000;
+const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 20_000;
+const COSM_WASM_TRANSACTION_POLL_INTERVAL = 6_000;
 const MAX_NUMBER_OF_RETRIES = 3;
 
 @Injectable()
@@ -26,7 +26,7 @@ export class CosmwasmService {
   constructor(
     private readonly redisHelper: RedisHelper,
     private readonly axelarGmpApi: AxelarGmpApi,
-    apiConfigService: ApiConfigService,
+    private readonly apiConfigService: ApiConfigService,
   ) {
     this.axelarContractIts = apiConfigService.getAxelarContractIts();
     this.stacksContractItsProxy = apiConfigService.getContractItsProxy();
@@ -107,12 +107,23 @@ export class CosmwasmService {
       return;
     }
 
+    this.logger.debug(
+      `Waiting for success for CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+        cosmWasmTransaction.broadcastID
+      }`,
+    );
+
+    const wasmContractAddress =
+      cosmWasmTransaction.type === 'CONSTRUCT_PROOF'
+        ? this.apiConfigService.getMultisigProverContract()
+        : this.apiConfigService.getAxelarGatewayContract();
+
     const { success } = await awaitSuccess(
       cosmWasmTransaction.broadcastID,
       COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS,
       COSM_WASM_TRANSACTION_POLL_INTERVAL,
       `${cosmWasmTransaction.type}:${cosmWasmTransaction.broadcastID}`,
-      async (id) => await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id),
+      async (id) => await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id, wasmContractAddress),
       (status: BroadcastStatus) => status === 'SUCCESS',
       this.logger,
     );
@@ -120,7 +131,10 @@ export class CosmwasmService {
     if (success) {
       await this.redisHelper.delete(key);
     } else {
-      await this.updateRetry(key, cosmWasmTransaction);
+      await this.updateRetry(key, {
+        ...cosmWasmTransaction,
+        broadcastID: undefined,
+      });
     }
   }
 
@@ -133,11 +147,21 @@ export class CosmwasmService {
       return;
     }
 
+    const wasmContractAddress =
+      cosmWasmTransaction.type === 'CONSTRUCT_PROOF'
+        ? this.apiConfigService.getMultisigProverContract()
+        : this.apiConfigService.getAxelarGatewayContract();
+
     try {
       this.logger.debug(
-        `Broadcasting ${cosmWasmTransaction.type} request: ${JSON.stringify(cosmWasmTransaction.request)}`,
+        `Trying to send CosmWasm transaction for ${cosmWasmTransaction.type} request: ${JSON.stringify(
+          cosmWasmTransaction.request,
+        )}, retry ${cosmWasmTransaction.retry}`,
       );
-      const broadcastID = await this.axelarGmpApi.broadcastMsgExecuteContract(cosmWasmTransaction.request);
+      const broadcastID = await this.axelarGmpApi.broadcastMsgExecuteContract(
+        cosmWasmTransaction.request,
+        wasmContractAddress,
+      );
       await this.storeCosmWasmTransaction(key, { ...cosmWasmTransaction, broadcastID });
       this.logger.debug(`${cosmWasmTransaction.type} broadcast successful, ID: ${broadcastID}`);
     } catch (error) {

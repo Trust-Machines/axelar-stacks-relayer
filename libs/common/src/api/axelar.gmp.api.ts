@@ -1,13 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  Client as AxelarGmpApiClient,
   BroadcastID,
   BroadcastRequest,
+  Client as AxelarGmpApiClient,
   Components,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { ApiConfigService } from '../config';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
 import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;
@@ -16,10 +15,7 @@ import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;
 export class AxelarGmpApi {
   private readonly logger: Logger;
 
-  constructor(
-    @Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient,
-    private readonly apiConfigService: ApiConfigService,
-  ) {
+  constructor(@Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient) {
     this.logger = new Logger(AxelarGmpApi.name);
   }
 
@@ -69,10 +65,10 @@ export class AxelarGmpApi {
     });
   }
 
-  async broadcastMsgExecuteContract(request: BroadcastRequest) {
+  async broadcastMsgExecuteContract(request: BroadcastRequest, wasmContractAddress: string) {
     const response = await this.apiClient.broadcastMsgExecuteContract(
       {
-        wasmContractAddress: this.apiConfigService.getMultisigProverContract(),
+        wasmContractAddress,
       },
       request,
     );
@@ -80,9 +76,12 @@ export class AxelarGmpApi {
     return response.data.broadcastID;
   }
 
-  async getMsgExecuteContractBroadcastStatus(id: BroadcastID): Promise<Components.Schemas.BroadcastStatus> {
+  async getMsgExecuteContractBroadcastStatus(
+    id: BroadcastID,
+    wasmContractAddress: string,
+  ): Promise<Components.Schemas.BroadcastStatus> {
     const response = await this.apiClient.getMsgExecuteContractBroadcastStatus({
-      wasmContractAddress: this.apiConfigService.getMultisigProverContract(),
+      wasmContractAddress,
       broadcastID: id,
     });
 
