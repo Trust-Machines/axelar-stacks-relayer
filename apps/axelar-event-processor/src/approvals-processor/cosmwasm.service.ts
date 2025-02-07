@@ -107,12 +107,6 @@ export class CosmwasmService {
       return;
     }
 
-    this.logger.debug(
-      `Waiting for success for CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
-        cosmWasmTransaction.broadcastID
-      }`,
-    );
-
     const wasmContractAddress =
       cosmWasmTransaction.type === 'CONSTRUCT_PROOF'
         ? this.apiConfigService.getMultisigProverContract()
@@ -129,8 +123,20 @@ export class CosmwasmService {
     );
 
     if (success) {
+      this.logger.debug(
+        `Successfully sent CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+          cosmWasmTransaction.broadcastID
+        }`,
+      );
+
       await this.redisHelper.delete(key);
     } else {
+      this.logger.warn(
+        `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+          cosmWasmTransaction.broadcastID
+        }. Will be retried`,
+      );
+
       await this.updateRetry(key, {
         ...cosmWasmTransaction,
         broadcastID: undefined,

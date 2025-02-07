@@ -102,7 +102,7 @@ describe('ItsContract', () => {
 
     jest.spyOn(HubMessage, 'abiDecode').mockImplementation(jest.fn());
 
-    mockNativeInterchainTokenContract.getTemplaceContractId.mockReturnValue('mockTemplate.ContractId');
+    mockNativeInterchainTokenContract.getTemplateContractId.mockReturnValue('mockTemplate.ContractId');
     mockNativeInterchainTokenContract.getTemplateDeployVerificationParams.mockReturnValue(Promise.resolve(tupleCV({})));
 
     mockVerifyOnchain.buildNativeInterchainTokenVerificationParams.mockReturnValue(Promise.resolve(tupleCV({})));
@@ -432,7 +432,7 @@ describe('ItsContract', () => {
       });
 
       // From checkDeployInterchainTokenGasBalance
-      expect(mockNativeInterchainTokenContract.getTemplaceContractId).toHaveBeenCalledTimes(1);
+      expect(mockNativeInterchainTokenContract.getTemplateContractId).toHaveBeenCalledTimes(1);
       expect(mockNativeInterchainTokenContract.getTemplateDeployVerificationParams).toHaveBeenCalledTimes(1);
 
       expect(mockNativeInterchainTokenContract.deployContractTransaction).toHaveBeenCalledTimes(2);

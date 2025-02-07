@@ -120,28 +120,29 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     }
   }
 
-  async getTemplateDeployVerificationParams() {
-    try {
-      if (this.templateDeployVerificationParams) {
-        return this.templateDeployVerificationParams;
-      }
+  async getTemplateDeployVerificationParams(): Promise<TupleCV> {
+    if (this.templateDeployVerificationParams) {
+      return this.templateDeployVerificationParams;
+    }
 
+    try {
       const txId = await this.hiroApiHelper.getContractInfoTxId(this.templateContractId);
 
       this.templateDeployVerificationParams =
         await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(txId);
 
-      this.logger.log('Successfully fetched template verification params');
+      this.logger.log('Successfully fetched NIT template verification params');
 
       return this.templateDeployVerificationParams;
     } catch (error) {
-      this.logger.error('Failed to get verification params:');
+      this.logger.error('Failed to get NIT template verification params:');
       this.logger.error(error);
-      return null;
+
+      throw error;
     }
   }
 
-  getTemplaceContractId(): string {
+  getTemplateContractId(): string {
     return this.templateContractId;
   }
 }

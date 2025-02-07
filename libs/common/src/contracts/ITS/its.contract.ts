@@ -495,9 +495,8 @@ export class ItsContract implements OnModuleInit {
     );
     gasCheckerPayload.push({ transaction: deployTx, deployContract: true });
 
-    const templateContractId = this.nativeInterchainTokenContract.getTemplaceContractId();
-    const templateDeployTx =
-      (await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams()) as TupleCV;
+    const templateContractId = this.nativeInterchainTokenContract.getTemplateContractId();
+    const templateDeployTx = await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams();
     const [templateContractAddress, templateContractName] = splitContractId(templateContractId);
     const setupTx = await this.nativeInterchainTokenContract.setupTransaction(
       senderKey,

@@ -111,8 +111,6 @@ export class MessageApprovedProcessorService {
 
               entriesToUpdate.push(messageApproved);
             } else if (e instanceof TooLowAvailableBalanceError) {
-              await this.transactionsHelper.deleteNonce();
-
               await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
 
               entriesToUpdate.push(messageApproved);
