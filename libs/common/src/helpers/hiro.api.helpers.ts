@@ -8,6 +8,16 @@ import { deserializeTransaction, StacksTransaction } from '@stacks/transactions'
 
 export type AddressBalanceResponse = OperationResponse['get_account_balance']; // This is missing from the SDK so we import it manually
 
+export type ContractInfoResponse = {
+  tx_id: string;
+  canonical: boolean;
+  contract_id: string;
+  block_height: number;
+  clarity_version: number;
+  source_code: string;
+  abi: any;
+};
+
 const API_TIMEOUT = 30_000; // 30 seconds
 
 @Injectable()
@@ -46,10 +56,17 @@ export class HiroApiHelper {
     return response.data as AddressBalanceResponse;
   }
 
-  async getContractInfoTxId(contractId: string): Promise<string> {
+  async getContractInfo(contractId: string): Promise<ContractInfoResponse> {
     const response = await this.client.get(`/extended/v1/contract/${contractId}`);
 
-    return response.data.tx_id;
+    const data = response.data;
+
+    const abi = JSON.parse(data.abi || '');
+
+    return {
+      ...data,
+      abi,
+    };
   }
 
   async getContractEvents(contractId: string, offset: number, limit: number): Promise<ScEvent[]> {

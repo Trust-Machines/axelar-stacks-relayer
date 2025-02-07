@@ -4,12 +4,16 @@ import { addressToString, callReadOnlyFunction, ContractPrincipalCV, ResponseOkC
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { TokenInfo } from '@stacks-monorepo/common/contracts/ITS/types/token.info';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 
 @Injectable()
 export class TokenManagerContract {
   private readonly logger = new Logger(TokenManagerContract.name);
 
-  constructor(@Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork) {}
+  constructor(
+    @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
+    private readonly hiroApiHelper: HiroApiHelper,
+  ) {}
 
   async getTokenAddress(tokenInfo: TokenInfo) {
     if (tokenInfo.tokenType === TokenType.NATIVE_INTERCHAIN_TOKEN) {
@@ -17,6 +21,20 @@ export class TokenManagerContract {
     }
 
     return await this.getTokenAddressRaw(tokenInfo.managerAddress);
+  }
+
+  async getTokenContractFungibleTokens(tokenAddress: string): Promise<{ name: string }[] | null> {
+    try {
+      const contractInfo = await this.hiroApiHelper.getContractInfo(tokenAddress);
+
+      // Get fungible tokens from ABI since there is no other way to get this using the api
+      return contractInfo?.abi?.fungible_tokens || null;
+    } catch (e) {
+      this.logger.error(`Failed to get token symbol for token ${tokenAddress}`);
+      this.logger.error(e);
+
+      return null;
+    }
   }
 
   private async getTokenAddressRaw(tokenManagerContract: string) {
@@ -35,8 +53,9 @@ export class TokenManagerContract {
 
       return `${addressToString(response.value.address)}.${response.value.contractName.content}`;
     } catch (e) {
-      this.logger.error('Failed to call get-token-address');
+      this.logger.error(`Failed to call get-token-address on token manager contract ${tokenManagerContract}`);
       this.logger.error(e);
+
       return null;
     }
   }

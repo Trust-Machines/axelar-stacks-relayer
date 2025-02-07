@@ -94,7 +94,7 @@ export class ApprovalsProcessorService {
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length}, last task UUID ${lastTaskUUID}`);
+        this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
         this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
 

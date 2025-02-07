@@ -126,10 +126,10 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     }
 
     try {
-      const txId = await this.hiroApiHelper.getContractInfoTxId(this.templateContractId);
+      const contractInfo = await this.hiroApiHelper.getContractInfo(this.templateContractId);
 
       this.templateDeployVerificationParams =
-        await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(txId);
+        await this.verifyOnchainContract.buildNativeInterchainTokenVerificationParams(contractInfo.tx_id);
 
       this.logger.log('Successfully fetched NIT template verification params');
 

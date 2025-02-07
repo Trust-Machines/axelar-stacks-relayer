@@ -6,6 +6,8 @@ import {
   bufferCV,
   callReadOnlyFunction,
   cvToString,
+  FungibleConditionCode,
+  FungiblePostCondition,
   principalCV,
   serializeCV,
   StacksTransaction,
@@ -118,6 +120,7 @@ describe('ItsContract', () => {
         type: 'string_ascii',
         value: 'itsImpl',
       });
+      callReadOnlyMock.mockClear();
 
       (cvToString as jest.Mock).mockImplementation((clarityValue) => clarityValue.value);
 
@@ -306,7 +309,7 @@ describe('ItsContract', () => {
 
   describe('handleInterchainTransfer', () => {
     it('should handle interchain transfer successfully', async () => {
-      const senderKey = 'senderKey';
+      const senderKey = '753b7cc01a1a2e86221266a154af739463fce51219d97e4f856cd7200c3bd2a601';
       const messageId = 'messageId';
       const sourceChain = 'itsHubChain';
       const sourceAddress = 'itsHubAddress';
@@ -315,21 +318,42 @@ describe('ItsContract', () => {
         messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: {
+          messageType: 0,
           tokenId: 'tokenId',
           senderAddress: 'sourceAddress',
+          destinationAddress: 'address',
+          amount: '100',
           data: '',
-        },
+        } as InterchainTransfer,
       } as ReceiveFromHub;
 
       const tokenInfo = {
-        managerAddress: 'managerAddress',
-        tokenType: TokenType.NATIVE_INTERCHAIN_TOKEN,
+        managerAddress: 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.manager-address',
+        tokenType: TokenType.LOCK_UNLOCK_TOKEN,
       };
 
-      const transactionMock = { tx_id: 'transactionId' };
+      const transactionMock: StacksTransaction = { tx_id: 'transactionId' } as any as StacksTransaction;
 
       jest.spyOn(service, 'getTokenInfo' as any).mockResolvedValue(tokenInfo);
-      jest.spyOn(service, 'executeReceiveInterchainToken' as any).mockResolvedValue(transactionMock);
+      mockTokenManagerContract.getTokenAddress.mockResolvedValue(
+        'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.token-address',
+      );
+      mockTokenManagerContract.getTokenContractFungibleTokens.mockResolvedValue([
+        { name: 'token-1' },
+        { name: 'token-2' },
+      ]);
+      const callReadOnlyMock = (callReadOnlyFunction as jest.Mock).mockResolvedValue({
+        type: 'string_ascii',
+        value: 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.its-contract',
+      });
+      callReadOnlyMock.mockClear();
+      (cvToString as jest.Mock).mockImplementation((clarityValue) => clarityValue.value);
+
+      mockGatewayContract.getGatewayImpl.mockResolvedValue(
+        'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.gateway-contract',
+      );
+
+      mockTransactionsHelper.makeContractCall.mockResolvedValue(transactionMock);
 
       const result = await service.handleInterchainTransfer(
         senderKey,
@@ -340,17 +364,29 @@ describe('ItsContract', () => {
         availableGasBalance,
       );
 
-      expect(service.getTokenInfo).toHaveBeenCalledWith(message.payload.tokenId);
-      expect(service.executeReceiveInterchainToken).toHaveBeenCalledWith(
-        senderKey,
-        message,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        tokenInfo,
-        availableGasBalance,
-      );
       expect(result).toEqual(transactionMock);
+
+      expect(service.getTokenInfo).toHaveBeenCalledWith(message.payload.tokenId);
+      expect(mockTokenManagerContract.getTokenAddress).toHaveBeenCalledWith(tokenInfo);
+      expect(mockTokenManagerContract.getTokenContractFungibleTokens).toHaveBeenCalledWith(
+        'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.token-address',
+      );
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(1);
+
+      // @ts-ignore
+      const call = mockTransactionsHelper.makeContractCall.mock.lastCall[0];
+      expect(call.contractAddress).toBe('mockContractAddress');
+      expect(call.contractName).toBe('mockContractName-proxy');
+      expect(call.functionName).toBe('execute-receive-interchain-token');
+      expect(call.postConditions).toHaveLength(2);
+
+      const firstPostCondition = call.postConditions?.[0] as FungiblePostCondition;
+      expect(firstPostCondition.amount).toEqual(100n);
+      expect(firstPostCondition.conditionCode).toEqual(FungibleConditionCode.LessEqual);
+      expect(firstPostCondition.assetInfo.assetName.content).toEqual('token-1');
+
+      const secondPostCondition = call.postConditions?.[1] as FungiblePostCondition;
+      expect(secondPostCondition.assetInfo.assetName.content).toEqual('token-2');
     });
 
     it('should throw an error if token info cannot be fetched', async () => {
@@ -373,7 +409,14 @@ describe('ItsContract', () => {
       jest.spyOn(service as any, 'executeReceiveInterchainToken').mockResolvedValue(undefined);
 
       await expect(
-        service.handleInterchainTransfer(senderKey, message, messageId, sourceChain, sourceAddress, availableGasBalance),
+        service.handleInterchainTransfer(
+          senderKey,
+          message,
+          messageId,
+          sourceChain,
+          sourceAddress,
+          availableGasBalance,
+        ),
       ).rejects.toThrow('Could not get token info');
       expect(service['getTokenInfo']).toHaveBeenCalledWith(message.payload.tokenId);
       expect(service['executeReceiveInterchainToken']).not.toHaveBeenCalled();
@@ -557,7 +600,7 @@ describe('ItsContract', () => {
 
       expect(result).toEqual({
         transaction: null,
-        incrementRetry: true,  // retry will be incremented
+        incrementRetry: true, // retry will be incremented
         extraData: {
           step: 'CONTRACT_DEPLOY',
           contractId: 'address.contractId-1000',
@@ -680,7 +723,7 @@ describe('ItsContract', () => {
 
       expect(result).toEqual({
         transaction: null,
-        incrementRetry: true,  // retry will be incremented
+        incrementRetry: true, // retry will be incremented
         extraData: {
           step: 'CONTRACT_SETUP',
           contractId: 'address.contractId-1000',
@@ -780,7 +823,10 @@ describe('ItsContract', () => {
       });
 
       expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', undefined);
+      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'executeTxHash',
+        undefined,
+      );
     });
 
     it('should handle third step execute failed', async () => {
@@ -817,7 +863,10 @@ describe('ItsContract', () => {
       });
 
       expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', undefined);
+      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'executeTxHash',
+        undefined,
+      );
     });
 
     it('should fail if available gas balance check fails', async () => {
