@@ -205,7 +205,7 @@ export class TransactionsHelper {
 
   async getNextSignerNonce(): Promise<number> {
     const nonce = await this.hiroApiHelper.getNextNonce(this.walletSignerAddress);
-    if (!nonce) {
+    if (nonce === null || nonce === undefined) {
       throw new Error(`Could not fetch next nonce for address '${this.walletSignerAddress}'`);
     }
 
