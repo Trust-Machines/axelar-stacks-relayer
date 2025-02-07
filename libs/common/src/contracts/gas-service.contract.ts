@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
@@ -31,17 +31,14 @@ export class GasServiceContract implements OnModuleInit {
   private readonly proxyContractAddress;
   private readonly proxyContractName;
   private gasImpl?: string;
-  private readonly logger: Logger;
 
   constructor(
-    private readonly proxyContract: string,
-    private readonly storageContract: string,
+    proxyContractId: string,
+    private readonly storageContractId: string,
     private readonly network: StacksNetwork,
     private readonly transactionsHelper: TransactionsHelper,
   ) {
-    this.logger = new Logger(GasServiceContract.name);
-
-    [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
+    [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContractId);
   }
 
   async onModuleInit() {
@@ -53,7 +50,7 @@ export class GasServiceContract implements OnModuleInit {
       return this.gasImpl;
     }
 
-    const [storageContractAddress, storageContractName] = splitContractId(this.storageContract);
+    const [storageContractAddress, storageContractName] = splitContractId(this.storageContractId);
 
     const result = await callReadOnlyFunction({
       contractAddress: storageContractAddress,
@@ -65,6 +62,7 @@ export class GasServiceContract implements OnModuleInit {
     });
 
     this.gasImpl = cvToString(result);
+
     return this.gasImpl;
   }
 
@@ -106,9 +104,5 @@ export class GasServiceContract implements OnModuleInit {
 
   decodeRefundedEvent(event: ScEvent): RefundedEvent {
     return DecodingUtils.decodeEvent<RefundedEvent>(event, refundedDecoder);
-  }
-
-  getProxyContractAddress(): string {
-    return this.proxyContract;
   }
 }

@@ -7,11 +7,14 @@ import {
   bufferCV,
   callReadOnlyFunction,
   ClarityValue,
+  createAssetInfo,
+  createFungiblePostCondition,
   createSTXPostCondition,
   cvToJSON,
   cvToString,
   FungibleConditionCode,
   optionalCVOf,
+  PostCondition,
   principalCV,
   StacksTransaction,
   stringAsciiCV,
@@ -45,6 +48,7 @@ import {
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 import { BinaryUtils } from '@stacks-monorepo/common';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
+import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 
 export interface ItsExtraData {
   step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
@@ -104,6 +108,7 @@ export class ItsContract implements OnModuleInit {
     });
 
     this.itsImpl = cvToString(result);
+
     return this.itsImpl;
   }
 
@@ -366,6 +371,8 @@ export class ItsContract implements OnModuleInit {
     );
     const payload = HubMessage.clarityEncode(message);
 
+    const postConditions = await this.getExecuteReceivePostConditions(tokenInfo, innerMessage.amount, tokenAddress);
+
     const transaction = await this.transactionsHelper.makeContractCall({
       contractAddress: this.proxyContractAddress,
       contractName: this.proxyContractName,
@@ -384,6 +391,7 @@ export class ItsContract implements OnModuleInit {
       senderKey,
       network: this.network,
       anchorMode: AnchorMode.Any,
+      postConditions,
     });
 
     await this.transactionsHelper.checkAvailableGasBalance(messageId, availableGasBalance, [{ transaction }]);
@@ -477,6 +485,38 @@ export class ItsContract implements OnModuleInit {
     }
   }
 
+  private async getExecuteReceivePostConditions(
+    tokenInfo: TokenInfo,
+    amount: string,
+    tokenContractId: string,
+  ): Promise<PostCondition[] | undefined> {
+    if (tokenInfo.tokenType === TokenType.NATIVE_INTERCHAIN_TOKEN) {
+      return undefined;
+    }
+
+    const fungibleTokens = await this.tokenManagerContract.getTokenContractFungibleTokens(tokenContractId);
+    if (!fungibleTokens) {
+      throw new ItsError(`Could not get asset name for token ${tokenContractId}`);
+    }
+
+    const [tokenAddress, tokenContractName] = splitContractId(tokenContractId);
+
+    const postConditions = [];
+
+    for (const fungibleToken of fungibleTokens) {
+      const postCondition = createFungiblePostCondition(
+        tokenInfo.managerAddress,
+        FungibleConditionCode.LessEqual,
+        amount,
+        createAssetInfo(tokenAddress, tokenContractName, fungibleToken.name),
+      );
+
+      postConditions.push(postCondition);
+    }
+
+    return postConditions;
+  }
+
   private async checkDeployInterchainTokenGasBalance(
     senderKey: string,
     message: ReceiveFromHub,
@@ -495,9 +535,8 @@ export class ItsContract implements OnModuleInit {
     );
     gasCheckerPayload.push({ transaction: deployTx, deployContract: true });
 
-    const templateContractId = this.nativeInterchainTokenContract.getTemplaceContractId();
-    const templateDeployTx =
-      (await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams()) as TupleCV;
+    const templateContractId = this.nativeInterchainTokenContract.getTemplateContractId();
+    const templateDeployTx = await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams();
     const [templateContractAddress, templateContractName] = splitContractId(templateContractId);
     const setupTx = await this.nativeInterchainTokenContract.setupTransaction(
       senderKey,

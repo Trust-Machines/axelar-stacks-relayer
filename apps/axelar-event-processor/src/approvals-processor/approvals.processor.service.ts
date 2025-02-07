@@ -94,7 +94,7 @@ export class ApprovalsProcessorService {
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length}, last task UUID ${lastTaskUUID}`);
+        this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
         this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
 
@@ -351,10 +351,6 @@ export class ApprovalsProcessorService {
     for (const key of keys) {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
       if (!cachedValue) continue;
-
-      this.logger.debug(
-        `Trying to send CosmWasm transaction for ${cachedValue.type} task: ${JSON.stringify(cachedValue)}`,
-      );
 
       if (cachedValue.broadcastID) {
         await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);
