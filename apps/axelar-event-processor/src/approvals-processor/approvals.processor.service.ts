@@ -110,9 +110,7 @@ export class ApprovalsProcessorService {
   async handlePendingTransactionsRaw() {
     const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
     for (const key of keys) {
-      const cachedValue = await this.redisHelper.get<PendingTransaction>(key);
-
-      await this.redisHelper.delete(key);
+      const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
 
       if (cachedValue === undefined) {
         continue;

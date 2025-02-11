@@ -405,19 +405,17 @@ describe('ApprovalsProcessorService', () => {
     it('Should handle undefined', async () => {
       const key = CacheInfo.PendingTransaction('txHashUndefined').key;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(Promise.resolve(undefined));
+      redisHelper.getDel.mockReturnValueOnce(Promise.resolve(undefined));
       await service.handlePendingTransactionsRaw();
       expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledWith(key);
-      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
-      expect(redisHelper.delete).toHaveBeenCalledWith(key);
+      expect(redisHelper.getDel).toHaveBeenCalledTimes(1);
+      expect(redisHelper.getDel).toHaveBeenCalledWith(key);
       expect(transactionsHelper.awaitSuccess).not.toHaveBeenCalled();
     });
     it('Should handle success', async () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
+      redisHelper.getDel.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData: mockExternalData,
@@ -432,10 +430,8 @@ describe('ApprovalsProcessorService', () => {
       );
       await service.handlePendingTransactionsRaw();
       expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledWith(key);
-      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
-      expect(redisHelper.delete).toHaveBeenCalledWith(key);
+      expect(redisHelper.getDel).toHaveBeenCalledTimes(1);
+      expect(redisHelper.getDel).toHaveBeenCalledWith(key);
       expect(transactionsHelper.awaitSuccess).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.awaitSuccess).toHaveBeenCalledWith('txHashComplete');
       expect(transactionsHelper.getTransactionGas).not.toHaveBeenCalled();
@@ -445,7 +441,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
+      redisHelper.getDel.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -487,7 +483,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const executeData = Uint8Array.of(1, 2, 3, 4);
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
+      redisHelper.getDel.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData,
@@ -512,7 +508,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
+      redisHelper.getDel.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
