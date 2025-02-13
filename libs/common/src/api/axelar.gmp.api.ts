@@ -1,23 +1,21 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ApiConfigService } from '@mvx-monorepo/common/config';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
-import { Client as AxelarGmpApiClient, Components } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
+import {
+  BroadcastID,
+  BroadcastRequest,
+  Client as AxelarGmpApiClient,
+  Components,
+} from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
 import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;
 
 @Injectable()
 export class AxelarGmpApi {
-  // @ts-ignore
-  private readonly axelarContractVotingVerifier: string;
   private readonly logger: Logger;
 
-  constructor(
-    @Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient,
-    apiConfigService: ApiConfigService,
-  ) {
-    this.axelarContractVotingVerifier = apiConfigService.getAxelarContractVotingVerifier();
+  constructor(@Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient) {
     this.logger = new Logger(AxelarGmpApi.name);
   }
 
@@ -65,5 +63,28 @@ export class AxelarGmpApi {
       after: lastUUID,
       limit,
     });
+  }
+
+  async broadcastMsgExecuteContract(request: BroadcastRequest, wasmContractAddress: string) {
+    const response = await this.apiClient.broadcastMsgExecuteContract(
+      {
+        wasmContractAddress,
+      },
+      request,
+    );
+
+    return response.data.broadcastID;
+  }
+
+  async getMsgExecuteContractBroadcastStatus(
+    id: BroadcastID,
+    wasmContractAddress: string,
+  ): Promise<Components.Schemas.BroadcastStatus> {
+    const response = await this.apiClient.getMsgExecuteContractBroadcastStatus({
+      wasmContractAddress,
+      broadcastID: id,
+    });
+
+    return response.data.status;
   }
 }

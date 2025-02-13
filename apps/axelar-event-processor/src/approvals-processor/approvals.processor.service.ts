@@ -1,24 +1,28 @@
-import { BinaryUtils, Locker } from '@multiversx/sdk-nestjs-common';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { AxelarGmpApi } from '@mvx-monorepo/common/api/axelar.gmp.api';
-import { RedisCacheService } from '@multiversx/sdk-nestjs-cache';
-import { CacheInfo, GasServiceContract } from '@mvx-monorepo/common';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
-import { TransactionsHelper } from '@mvx-monorepo/common/contracts/transactions.helper';
-import { GatewayContract } from '@mvx-monorepo/common/contracts/gateway.contract';
-import { PendingTransaction } from './entities/pending-transaction';
-import { CONSTANTS } from '@mvx-monorepo/common/utils/constants.enum';
-import { Components, VerifyTask } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
 import { MessageApprovedStatus } from '@prisma/client';
-import { ApiNetworkProvider } from '@multiversx/sdk-network-providers/out';
+import { BinaryUtils, CacheInfo, GasServiceContract, Locker } from '@stacks-monorepo/common';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
+import { Components, ConstructProofTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { DecodingUtils, gatewayTxDataDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { StacksNetwork } from '@stacks/network';
 import BigNumber from 'bignumber.js';
+import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
+import { PendingTransaction } from './entities/pending-transaction';
+import { CosmwasmService } from './cosmwasm.service';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
+import VerifyTask = Components.Schemas.VerifyTask;
+import { AxiosError } from 'axios';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -28,31 +32,38 @@ export class ApprovalsProcessorService {
 
   constructor(
     private readonly axelarGmpApi: AxelarGmpApi,
-    private readonly redisCacheService: RedisCacheService,
-    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: UserSigner,
+    private readonly redisHelper: RedisHelper,
+    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: string,
     private readonly transactionsHelper: TransactionsHelper,
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly gasServiceContract: GasServiceContract,
-    private readonly api: ApiNetworkProvider,
+    private readonly hiroApiHelper: HiroApiHelper,
+    private readonly cosmWasmService: CosmwasmService,
+    @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
 
-  @Cron('0/20 * * * * *')
+  @Cron('0/15 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
 
-  @Cron('3/6 * * * * *')
+  @Cron('2/6 * * * * *')
   async handlePendingTransactions() {
     await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
-  async handleNewTasksRaw() {
-    let lastTaskUUID = (await this.redisCacheService.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
+  @Cron('4/6 * * * * *')
+  async handlePendingCosmWasmTransaction() {
+    await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
+  }
 
-    this.logger.debug(`Trying to process tasks for multiversx starting from id: ${lastTaskUUID}`);
+  async handleNewTasksRaw() {
+    let lastTaskUUID = (await this.redisHelper.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
+
+    this.logger.debug(`Trying to process tasks for stacks starting from id: ${lastTaskUUID}`);
 
     // Process as many tasks as possible until no tasks are left or there is an error
     let tasks: TaskItem[] = [];
@@ -74,18 +85,22 @@ export class ApprovalsProcessorService {
 
             lastTaskUUID = task.id;
 
-            await this.redisCacheService.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
+            await this.redisHelper.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
 
-            // Stop processing in case of an error and retry from the sam task
+            // Stop processing in case of an error and retry from the same task
             return;
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length}`);
+        this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
-        this.logger.error('Error retrieving tasks...', e);
+        this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
+
+        if (e instanceof AxiosError) {
+          this.logger.error(e.response?.data);
+        }
 
         return;
       }
@@ -93,11 +108,9 @@ export class ApprovalsProcessorService {
   }
 
   async handlePendingTransactionsRaw() {
-    const keys = await this.redisCacheService.scan(CacheInfo.PendingTransaction('*').key);
+    const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
     for (const key of keys) {
-      const cachedValue = await this.redisCacheService.get<PendingTransaction>(key);
-
-      await this.redisCacheService.delete(key);
+      const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
 
       if (cachedValue === undefined) {
         continue;
@@ -105,7 +118,7 @@ export class ApprovalsProcessorService {
 
       const { txHash, externalData, retry } = cachedValue;
 
-      const success = await this.transactionsHelper.awaitSuccess(txHash);
+      const { success } = await this.transactionsHelper.awaitSuccess(txHash);
 
       // Nothing to do on success
       if (success) {
@@ -127,7 +140,7 @@ export class ApprovalsProcessorService {
         this.logger.error(e);
 
         // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
-        await this.redisCacheService.set<PendingTransaction>(
+        await this.redisHelper.set<PendingTransaction>(
           CacheInfo.PendingTransaction(txHash).key,
           {
             txHash,
@@ -168,36 +181,47 @@ export class ApprovalsProcessorService {
       return;
     }
 
+    if (task.type === 'CONSTRUCT_PROOF') {
+      const response = task.task as ConstructProofTask;
+
+      await this.processConstructProofTask(response);
+
+      return;
+    }
+
     if (task.type === 'VERIFY') {
       const response = task.task as VerifyTask;
 
-      await this.processGatewayTxTask(response.payload);
+      await this.processVerifyTask(response);
 
       return;
     }
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
-    // The Amplifier for MultiversX encodes the executeData as hex, we need to decode it to string
-    // It will have the format `function@arg1HEX@arg2HEX...`
-    const decodedExecuteData = BinaryUtils.base64Decode(externalData);
+    const data = gatewayTxDataDecoder(DecodingUtils.deserialize(BinaryUtils.base64ToHex(externalData)));
 
-    this.logger.debug(`Trying to execute Gateway transaction with externalData:`);
-    this.logger.debug(decodedExecuteData);
+    this.logger.log(`Trying to execute Gateway transaction with externalData:`);
+    this.logger.log(data);
 
-    const nonce = await this.transactionsHelper.getAccountNonce(this.walletSigner.getAddress());
-    const transaction = this.gatewayContract.buildTransactionExternalFunction(
-      decodedExecuteData,
-      this.walletSigner.getAddress(),
-      nonce,
-    );
+    const initialTx = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
+    if (!initialTx) {
+      this.logger.log('Could not build gateway tx');
+      return;
+    }
 
-    const gas = await this.transactionsHelper.getTransactionGas(transaction, retry);
-    transaction.setGasLimit(gas);
+    const fee = await this.transactionsHelper.getTransactionGas(initialTx, retry, this.network);
 
-    const txHash = await this.transactionsHelper.signAndSendTransaction(transaction, this.walletSigner);
+    // After estimating the gas, we need to build the tx again
+    const transaction = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner, fee);
+    if (!transaction) {
+      this.logger.log('Could not build gateway tx');
+      return;
+    }
 
-    await this.redisCacheService.set<PendingTransaction>(
+    const txHash = await this.transactionsHelper.sendTransaction(transaction);
+
+    await this.redisHelper.set<PendingTransaction>(
       CacheInfo.PendingTransaction(txHash).key,
       {
         txHash,
@@ -209,49 +233,45 @@ export class ApprovalsProcessorService {
   }
 
   private async processExecuteTask(response: ExecuteTask, taskItemId: string) {
-    // TODO: Should we also save response.availableGasBalance and check if enough gas was payed before executing?
-    const messageApproved = await this.messageApprovedRepository.create({
+    await this.messageApprovedRepository.createOrUpdate({
       sourceChain: response.message.sourceChain,
       messageId: response.message.messageID,
       status: MessageApprovedStatus.PENDING,
       sourceAddress: response.message.sourceAddress,
       contractAddress: response.message.destinationAddress,
-      payloadHash: BinaryUtils.base64ToHex(response.message.payloadHash),
+      payloadHash: Buffer.from(response.message.payloadHash, 'base64').toString('hex'),
       payload: Buffer.from(response.payload, 'base64'),
       retry: 0,
       taskItemId,
+      // Only support native token for gas
+      availableGasBalance: !response.availableGasBalance.tokenID ? response.availableGasBalance.amount : '0',
     });
 
-    if (!messageApproved) {
-      this.logger.warn(
-        `Couldn't save message approved to database, duplicate exists for source chain ${response.message.sourceChain} and message id ${response.message.messageID}`,
-      );
-
-      return;
-    }
+    this.logger.debug(
+      `Processed EXECUTE task ${taskItemId}, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
   }
 
   private async processRefundTask(response: RefundTask) {
     let tokenBalance: BigNumber;
 
+    const gasImpl = await this.gasServiceContract.getGasImpl();
+
+    const addressBalance = await this.hiroApiHelper.getAccountBalance(gasImpl);
+
     try {
       if (response.remainingGasBalance.tokenID) {
-        const token = await this.api.getFungibleTokenOfAccount(
-          this.gasServiceContract.getContractAddress(),
-          response.remainingGasBalance.tokenID,
-        );
+        const token = addressBalance.fungible_tokens[response.remainingGasBalance.tokenID];
 
-        tokenBalance = token.balance;
+        tokenBalance = new BigNumber(token?.balance ?? 0);
       } else {
-        const account = await this.api.getAccount(this.gasServiceContract.getContractAddress());
-
-        tokenBalance = account.balance;
+        tokenBalance = new BigNumber(addressBalance.stx.balance ?? 0);
       }
 
       if (tokenBalance.lt(response.remainingGasBalance.amount)) {
         throw new Error(
-          `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.EGLD_IDENTIFIER}` +
-            ` in gas service contract ${this.gasServiceContract.getContractAddress()}. Needed ${response.remainingGasBalance.amount},` +
+          `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
+            ` in gas service impl contract ${gasImpl}. Needed ${response.remainingGasBalance.amount},` +
             ` but balance is ${tokenBalance.toFixed()}`,
         );
       }
@@ -267,18 +287,74 @@ export class ApprovalsProcessorService {
 
     const [messageTxHash, logIndex] = response.message.messageID.split('-');
 
-    const transaction = this.gasServiceContract.refund(
-      this.walletSigner.getAddress(),
-      messageTxHash.slice(2), // Remove 0x from start
+    const transaction = await this.gasServiceContract.refund(
+      this.walletSigner,
+      gasImpl,
+      messageTxHash,
       logIndex,
       response.refundRecipientAddress,
-      response.remainingGasBalance.tokenID || CONSTANTS.EGLD_IDENTIFIER,
       response.remainingGasBalance.amount,
     );
 
-    // TODO: Handle retries in case of transaction failing?
-    const txHash = await this.transactionsHelper.signAndSendTransactionAndGetNonce(transaction, this.walletSigner);
+    const txHash = await this.transactionsHelper.sendTransaction(transaction);
 
     this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);
+  }
+
+  async processConstructProofTask(response: ConstructProofTask) {
+    const request = this.cosmWasmService.buildConstructProofRequest(response);
+
+    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const constructProofTransaction: PendingCosmWasmTransaction = {
+      request,
+      retry: 0,
+      type: 'CONSTRUCT_PROOF',
+    };
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      constructProofTransaction,
+    );
+
+    this.logger.debug(
+      `Processed CONSTRUCT_PROOF task, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
+    );
+  }
+
+  async processVerifyTask(response: VerifyTask) {
+    const request = this.cosmWasmService.buildVerifyRequest(response);
+
+    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const verifyTransaction: PendingCosmWasmTransaction = {
+      request,
+      retry: 0,
+      type: 'VERIFY',
+    };
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      verifyTransaction,
+    );
+
+    this.logger.debug(
+      `Processed VERIFY task, message to ${response.destinationChain} with messageId ${response.message.messageID}`,
+    );
+  }
+
+  async handlePendingCosmWasmTransactionRaw() {
+    const keys = await this.redisHelper.scan(CacheInfo.PendingCosmWasmTransaction('*').key);
+
+    if (keys.length === 0) {
+      return;
+    }
+
+    for (const key of keys) {
+      const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
+      if (!cachedValue) continue;
+
+      if (cachedValue.broadcastID) {
+        await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);
+      } else {
+        await this.cosmWasmService.broadcastCosmWasmTransaction(key, cachedValue);
+      }
+    }
   }
 }

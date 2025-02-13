@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
-import { DatabaseModule, ApiModule } from '@mvx-monorepo/common';
-import { ContractsModule } from '@mvx-monorepo/common/contracts/contracts.module';
+import { ApiConfigModule, ApiModule, DatabaseModule } from '@stacks-monorepo/common';
+import { ContractsModule } from '@stacks-monorepo/common/contracts/contracts.module';
 import { MessageApprovedProcessorService } from './message-approved.processor.service';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), DatabaseModule, ContractsModule, ApiModule],
+  imports: [ScheduleModule.forRoot(), DatabaseModule, ContractsModule, ApiModule, ApiConfigModule],
   providers: [MessageApprovedProcessorService],
 })
 export class MessageApprovedProcessorModule {}

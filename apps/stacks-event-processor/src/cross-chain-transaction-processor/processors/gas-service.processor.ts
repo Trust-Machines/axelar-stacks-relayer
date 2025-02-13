@@ -1,23 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EventIdentifiers, Events } from '@mvx-monorepo/common/utils/event.enum';
-import { GasServiceContract } from '@mvx-monorepo/common/contracts/gas-service.contract';
+import { ApiConfigService, GatewayContract, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common';
+import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   GasAddedEvent,
   GasPaidForContractCallEvent,
   RefundedEvent,
-} from '@mvx-monorepo/common/contracts/entities/gas-service-events';
-import { ITransactionEvent } from '@multiversx/sdk-core/out';
-import { DecodingUtils } from '@mvx-monorepo/common/utils/decoding.utils';
-import { Components } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
-import { ApiConfigService, GatewayContract } from '@mvx-monorepo/common';
-import { TransactionOnNetwork } from '@multiversx/sdk-network-providers/out';
+} from '@stacks-monorepo/common/contracts/entities/gas-service-events';
+import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
+import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
+import { Events } from '@stacks-monorepo/common/utils/event.enum';
+import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { getEventType, ScEvent } from '../../event-processor/types';
 import GasRefundedEvent = Components.Schemas.GasRefundedEvent;
 import Event = Components.Schemas.Event;
 import GasCreditEvent = Components.Schemas.GasCreditEvent;
 
 @Injectable()
 export class GasServiceProcessor {
-  private readonly contractGateway: string;
+  private readonly contractGatewayStorage: string;
   private logger: Logger;
 
   constructor(
@@ -25,34 +25,18 @@ export class GasServiceProcessor {
     private readonly gatewayContract: GatewayContract,
     apiConfigService: ApiConfigService,
   ) {
-    this.contractGateway = apiConfigService.getContractGateway();
+    this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.logger = new Logger(GasServiceProcessor.name);
   }
 
   handleGasServiceEvent(
-    rawEvent: ITransactionEvent,
-    transaction: TransactionOnNetwork,
+    rawEvent: ScEvent,
+    transaction: Transaction,
     index: number,
+    eventIndex: number,
     fee: string,
   ): Event | undefined {
-    const eventName = rawEvent.topics?.[0]?.toString();
-
-    if (eventName === Events.GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
-      const gasEvent = this.gasServiceContract.decodeGasPaidForContractCallEvent(rawEvent);
-
-      const callContractIndex = this.findCorrespondingCallContractEvent(transaction, index, gasEvent);
-
-      if (callContractIndex === -1) {
-        this.logger.warn(
-          `Received Gas Paid For Contract Call event but could not find corresponding Call Contract event. Transaction: ${transaction.hash}`,
-          gasEvent,
-        );
-
-        return undefined;
-      }
-
-      return this.handleGasPaidEvent(gasEvent, transaction.hash, index, callContractIndex);
-    }
+    const eventName = getEventType(rawEvent);
 
     if (eventName === Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
       const gasEvent = this.gasServiceContract.decodeNativeGasPaidForContractCallEvent(rawEvent);
@@ -61,32 +45,45 @@ export class GasServiceProcessor {
 
       if (callContractIndex === -1) {
         this.logger.warn(
-          `Received Native Gas Paid For Contract Call event but could not find corresponding Call Contract event. Transaction: ${transaction.hash}`,
+          `Received Native Gas Paid For Contract Call event but could not find corresponding Call Contract event. Transaction: ${transaction.tx_id}`,
           gasEvent,
         );
 
         return undefined;
       }
 
-      return this.handleGasPaidEvent(gasEvent, transaction.hash, index, callContractIndex);
-    }
-
-    if (eventName === Events.GAS_ADDED_EVENT) {
-      const event = this.gasServiceContract.decodeGasAddedEvent(rawEvent);
-
-      return this.handleGasAddedEvent(event, transaction.sender.bech32(), transaction.hash, index);
+      return this.handleGasPaidEvent(
+        gasEvent,
+        transaction.tx_id,
+        eventIndex,
+        callContractIndex,
+        transaction.block_time_iso,
+      );
     }
 
     if (eventName === Events.NATIVE_GAS_ADDED_EVENT) {
       const event = this.gasServiceContract.decodeNativeGasAddedEvent(rawEvent);
 
-      return this.handleGasAddedEvent(event, transaction.sender.bech32(), transaction.hash, index);
+      return this.handleGasAddedEvent(
+        event,
+        transaction.sender_address,
+        transaction.tx_id,
+        eventIndex,
+        transaction.block_time_iso,
+      );
     }
 
     if (eventName === Events.REFUNDED_EVENT) {
       const event = this.gasServiceContract.decodeRefundedEvent(rawEvent);
 
-      return this.handleRefundedEvent(event, transaction.sender.bech32(), transaction.hash, index, fee);
+      return this.handleRefundedEvent(
+        event,
+        transaction.sender_address,
+        transaction.tx_id,
+        eventIndex,
+        fee,
+        transaction.block_time_iso,
+      );
     }
 
     return undefined;
@@ -97,19 +94,21 @@ export class GasServiceProcessor {
     txHash: string,
     index: number,
     contractCallIndex: number,
+    timestamp: string,
   ): Event | undefined {
     const gasCreditEvent: GasCreditEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(txHash, contractCallIndex),
-      refundAddress: event.data.refundAddress.bech32(),
+      refundAddress: event.refundAddress,
       payment: {
-        tokenID: event.data.gasToken,
-        amount: event.data.gasFeeAmount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       meta: {
         txID: txHash,
-        fromAddress: event.sender.bech32(),
+        fromAddress: event.sender,
         finalized: true,
+        timestamp,
       },
     };
 
@@ -124,19 +123,26 @@ export class GasServiceProcessor {
     };
   }
 
-  private handleGasAddedEvent(event: GasAddedEvent, sender: string, txHash: string, index: number): Event | undefined {
+  private handleGasAddedEvent(
+    event: GasAddedEvent,
+    sender: string,
+    txHash: string,
+    index: number,
+    timestamp: string,
+  ): Event | undefined {
     const gasCreditEvent: GasCreditEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(event.txHash, event.logIndex),
-      refundAddress: event.data.refundAddress.bech32(),
+      refundAddress: event.refundAddress,
       payment: {
-        tokenID: event.data.gasToken,
-        amount: event.data.gasFeeAmount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       meta: {
         txID: txHash,
         fromAddress: sender,
         finalized: true,
+        timestamp,
       },
     };
 
@@ -157,14 +163,15 @@ export class GasServiceProcessor {
     txHash: string,
     index: number,
     fee: string,
+    timestamp: string,
   ): Event | undefined {
     const gasRefundedEvent: GasRefundedEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(event.txHash, event.logIndex),
-      recipientAddress: event.data.receiver.bech32(),
+      recipientAddress: event.receiver,
       refundedAmount: {
-        tokenID: event.data.token,
-        amount: event.data.amount.toFixed(),
+        tokenID: null, // null if STX
+        amount: event.amount.toFixed(),
       },
       cost: {
         amount: fee,
@@ -173,6 +180,7 @@ export class GasServiceProcessor {
         txID: txHash,
         fromAddress: sender,
         finalized: true,
+        timestamp,
       },
     };
 
@@ -188,36 +196,31 @@ export class GasServiceProcessor {
   }
 
   private findCorrespondingCallContractEvent(
-    transaction: TransactionOnNetwork,
+    transaction: Transaction,
     index: number,
     gasEvent: GasPaidForContractCallEvent,
   ) {
-    // Search for the first corresponding callContract event starting from the current gas paid event index
-    const foundIndex = transaction.logs.events.slice(index + 1).findIndex((event) => {
-      const eventName = event.topics?.[0]?.toString();
+    const events = mapRawEventsToSmartContractEvents(transaction.events);
 
-      if (
-        event.address.bech32() === this.contractGateway &&
-        event.identifier === EventIdentifiers.CALL_CONTRACT &&
-        eventName === Events.CONTRACT_CALL_EVENT
-      ) {
+    // Search for the first corresponding callContract event starting from the current gas paid event index
+    const foundEvent = events.slice(index + 1).find((event) => {
+      const eventName = getEventType(event);
+      const address = event.contract_log.contract_id;
+
+      if (address === this.contractGatewayStorage && eventName === Events.CONTRACT_CALL_EVENT) {
         const contractCallEvent = this.gatewayContract.decodeContractCallEvent(event);
 
         return (
-          gasEvent.sender.bech32() === contractCallEvent.sender.bech32() &&
+          gasEvent.sender === contractCallEvent.sender &&
           gasEvent.destinationChain === contractCallEvent.destinationChain &&
           gasEvent.destinationAddress === contractCallEvent.destinationAddress &&
-          gasEvent.data.payloadHash === contractCallEvent.payloadHash
+          gasEvent.payloadHash === contractCallEvent.payloadHash
         );
       }
 
       return false;
     });
 
-    if (foundIndex === -1) {
-      return -1;
-    }
-
-    return index + 1 + foundIndex;
+    return foundEvent ? foundEvent.event_index : -1;
   }
 }

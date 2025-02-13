@@ -5,22 +5,13 @@ import { ConfigService } from '@nestjs/config';
 export class ApiConfigService {
   constructor(private readonly configService: ConfigService) {}
 
-  getApiUrl(): string {
-    const apiUrl = this.configService.get<string>('API_URL');
-    if (!apiUrl) {
-      throw new Error('No API url present');
+  getHiroApiUrl(): string {
+    const hiroUrl = this.configService.get<string>('HIRO_API_URL');
+    if (!hiroUrl) {
+      throw new Error('No HIRO API url present');
     }
 
-    return apiUrl;
-  }
-
-  getGatewayUrl(): string {
-    const gatewayUrl = this.configService.get<string>('GATEWAY_URL');
-    if (!gatewayUrl) {
-      throw new Error('No Gateway url present');
-    }
-
-    return gatewayUrl;
+    return hiroUrl;
   }
 
   getRedisUrl(): string {
@@ -43,58 +34,103 @@ export class ApiConfigService {
     return 6379;
   }
 
-  getEventsNotifierUrl(): string {
-    const eventsNotifierUrl = this.configService.get<string>('EVENTS_NOTIFIER_URL');
-    if (!eventsNotifierUrl) {
-      throw new Error('No Events Notifier url present');
+  getContractGatewayStorage(): string {
+    const contractGatewayStorage = this.configService.get<string>('CONTRACT_ID_GATEWAY_STORAGE');
+    if (!contractGatewayStorage) {
+      throw new Error('No Contract Gateway Storage present');
     }
 
-    return eventsNotifierUrl;
+    return contractGatewayStorage;
   }
 
-  getContractGateway(): string {
-    const contractGateway = this.configService.get<string>('CONTRACT_GATEWAY');
-    if (!contractGateway) {
-      throw new Error('No Contract Gateway present');
+  getContractGatewayProxy(): string {
+    const contractGatewayProxy = this.configService.get<string>('CONTRACT_ID_GATEWAY_PROXY');
+    if (!contractGatewayProxy) {
+      throw new Error('No Contract Gateway Proxy present');
     }
 
-    return contractGateway;
+    return contractGatewayProxy;
   }
 
-  getContractGasService(): string {
-    const contractGasService = this.configService.get<string>('CONTRACT_GAS_SERVICE');
-    if (!contractGasService) {
-      throw new Error('No Contract Gas Service present');
+  getContractGasServiceProxy(): string {
+    const contractGasServiceProxy = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE_PROXY');
+    if (!contractGasServiceProxy) {
+      throw new Error('No Contract Gas Service Proxy present');
     }
 
-    return contractGasService;
+    return contractGasServiceProxy;
   }
 
-  getContractIts(): string {
-    const contractIts = this.configService.get<string>('CONTRACT_ITS');
+  getContractGasServiceStorage(): string {
+    const contractGasServiceStorage = this.configService.get<string>('CONTRACT_ID_GAS_SERVICE_STORAGE');
+    if (!contractGasServiceStorage) {
+      throw new Error('No Contract Gas Service Storage present');
+    }
+
+    return contractGasServiceStorage;
+  }
+
+  getContractItsProxy(): string {
+    const contractIts = this.configService.get<string>('CONTRACT_ID_ITS_PROXY');
     if (!contractIts) {
-      throw new Error('No Contract ITS present');
+      throw new Error('No Contract ITS Proxy present');
     }
 
     return contractIts;
   }
 
-  getContractWegldSwap(): string {
-    const contractWegldSwap = this.configService.get<string>('CONTRACT_WEGLD_SWAP');
-    if (!contractWegldSwap) {
-      throw new Error('No Contract Wegld Swap present');
+  getContractItsStorage(): string {
+    const contractItsStorage = this.configService.get<string>('CONTRACT_ID_ITS_STORAGE');
+    if (!contractItsStorage) {
+      throw new Error('No Contract ITS Storage present');
     }
 
-    return contractWegldSwap;
+    return contractItsStorage;
   }
 
-  getAxelarContractVotingVerifier(): string {
-    const axelarContractVotingVerifier = this.configService.get<string>('AXELAR_CONTRACT_VOTING_VERIFIER');
-    if (!axelarContractVotingVerifier) {
-      throw new Error('No Axelar Contract Voting Verifier present');
+  getContractIdNativeInterchainTokenTemplate(): string {
+    const contract = this.configService.get<string>('CONTRACT_ID_NATIVE_INTERCHAIN_TOKEN_TEMPLATE');
+    if (!contract) {
+      throw new Error('No Contract Native Interchain Token Template present');
     }
 
-    return axelarContractVotingVerifier;
+    return contract;
+  }
+
+  getContractVerifyOnchain(): string {
+    const contract = this.configService.get<string>('CONTRACT_ID_VERIFY_ONCHAIN');
+    if (!contract) {
+      throw new Error('No Contract Verify Onchain present');
+    }
+
+    return contract;
+  }
+
+  getAxelarContractIts(): string {
+    const axelarContractIts = this.configService.get<string>('AXELAR_CONTRACT_ITS');
+    if (!axelarContractIts) {
+      throw new Error('No Axelar Contract ITS present');
+    }
+
+    return axelarContractIts;
+  }
+
+  getMultisigProverContract(): string {
+    const contract = this.configService.get<string>('AXELAR_MULTISIG_PROVER_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Multisig Prover present');
+    }
+
+    return contract;
+  }
+
+  getAxelarGatewayContract(): string {
+    const contract = this.configService.get<string>('AXELAR_GATEWAY_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Gateway present');
+    }
+
+    return contract;
   }
 
   getAxelarGmpApiUrl(): string {
@@ -124,37 +160,26 @@ export class ApiConfigService {
     return clientKey;
   }
 
-  getChainId(): string {
-    const chainId = this.configService.get<string>('CHAIN_ID');
-    if (!chainId) {
-      throw new Error('No Chain Id present');
+  getStacksNetwork(): string {
+    const network = this.configService.get<string>('STACKS_NETWORK');
+    if (!network) {
+      throw new Error('No Stacks Network present');
     }
 
-    return chainId;
+    return network;
   }
 
-  getWalletMnemonic(): string {
-    const walletMnemonic = this.configService.get<string>('WALLET_MNEMONIC');
-    if (!walletMnemonic) {
-      throw new Error('No Wallet Mnemonic present');
+  getWalletPrivateKey(): string {
+    const privateKey = this.configService.get<string>('WALLET_PRIVATE_KEY');
+    if (!privateKey) {
+      throw new Error('No Wallet Private Key present');
     }
 
-    return walletMnemonic;
+    return privateKey;
   }
 
-  getPoolLimit(): number {
-    return this.configService.get<number>('CACHING_POOL_LIMIT') ?? 100;
-  }
-
-  getProcessTtl(): number {
-    return this.configService.get<number>('CACHING_PROCESS_TTL') ?? 60;
-  }
-
-  getApiTimeout(): number {
-    return this.configService.get<number>('API_TIMEOUT') ?? 30_000; // 30 seconds default
-  }
-
-  getGatewayTimeout(): number {
-    return this.configService.get<number>('GATEWAY_TIMEOUT') ?? 30_000; // 30 seconds default
+  getAvailableGasCheckEnabled(): boolean {
+    const value = this.configService.get<string>('AVAILABLE_GAS_CHECK_ENABLED');
+    return value === 'true';
   }
 }

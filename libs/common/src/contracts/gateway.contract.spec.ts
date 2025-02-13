@@ -1,202 +1,256 @@
-import { createMock, DeepMocked } from '@golevelup/ts-jest';
+import { DeepMocked, createMock } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { BinaryUtils } from '@multiversx/sdk-nestjs-common';
-import { Events } from '@mvx-monorepo/common/utils/event.enum';
-import { AbiRegistry, Address, ResultsParser, SmartContract } from '@multiversx/sdk-core/out';
-import { GatewayContract } from '@mvx-monorepo/common/contracts/gateway.contract';
-import { TransactionEvent } from '@multiversx/sdk-network-providers/out';
-import { NotifierEvent } from '../../../../apps/stacks-event-processor/src/event-processor/types';
-
-import gatewayAbi from '../assets/gateway.abi.json';
+import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
+import { StacksNetwork } from '@stacks/network';
+import {
+  bufferCV,
+  callReadOnlyFunction,
+  cvToString,
+  listCV,
+  principalCV,
+  serializeCV,
+  stringAsciiCV,
+  tupleCV,
+  uintCV,
+} from '@stacks/transactions';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import BigNumber from 'bignumber.js';
-import { TransactionEventData } from '@multiversx/sdk-network-providers/out/transactionEvents';
+import { ApiConfigService } from '../config';
+import { ProviderKeys } from '../utils/provider.enum';
+import { getMockScEvent } from './gas-service.contract.spec';
+import { TransactionsHelper } from './transactions.helper';
+
+jest.mock('@stacks/transactions', () => {
+  const actual = jest.requireActual('@stacks/transactions');
+  return {
+    ...actual,
+    callReadOnlyFunction: jest.fn(),
+    cvToString: jest.fn(),
+  };
+});
 
 describe('GatewayContract', () => {
-  let smartContract: DeepMocked<SmartContract>;
-  let abi: AbiRegistry;
-  let resultsParser: ResultsParser;
-
   let contract: GatewayContract;
+  let mockNetwork: DeepMocked<StacksNetwork>;
+  let mockApiConfigService: DeepMocked<ApiConfigService>;
+  let mockTransactionsHelper: DeepMocked<TransactionsHelper>;
 
   beforeEach(async () => {
-    smartContract = createMock();
-    abi = AbiRegistry.create(gatewayAbi); // use real Gateway contract abi
-    resultsParser = new ResultsParser();
+    mockNetwork = createMock<StacksNetwork>();
+    mockApiConfigService = createMock<ApiConfigService>();
+    mockTransactionsHelper = createMock<TransactionsHelper>();
+
+    mockApiConfigService.getContractGatewayStorage.mockReturnValue('mockContractAddress.mockStorageContractName');
+    mockApiConfigService.getContractGatewayProxy.mockReturnValue('mockContractAddress.mockProxyContractName');
 
     const moduleRef = await Test.createTestingModule({
-      providers: [GatewayContract],
-    })
-      .useMocker((token) => {
-        if (token === SmartContract) {
-          return smartContract;
-        }
+      providers: [
+        {
+          provide: GatewayContract,
+          useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork) => {
+            return new GatewayContract(
+              apiConfigService.getContractGatewayStorage(),
+              apiConfigService.getContractGatewayProxy(),
+              network,
+              mockTransactionsHelper,
+            );
+          },
+          inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],
+        },
+        {
+          provide: ApiConfigService,
+          useValue: mockApiConfigService,
+        },
+        {
+          provide: ProviderKeys.STACKS_NETWORK,
+          useValue: mockNetwork,
+        },
+      ],
+    }).compile();
 
-        if (token === AbiRegistry) {
-          return abi;
-        }
+    contract = moduleRef.get<GatewayContract>(GatewayContract);
+  });
 
-        if (token === ResultsParser) {
-          return resultsParser;
-        }
+  describe('getGatewayImpl', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
 
-        // chainId
-        if (token === String) {
-          return 'test';
-        }
+    it('should return cached implementation if available', async () => {
+      const callReadOnlyMock = (callReadOnlyFunction as jest.Mock).mockResolvedValueOnce({
+        type: 'string_ascii',
+        value: 'gatewayImpl',
+      });
 
-        return null;
-      })
-      .compile();
+      (cvToString as jest.Mock).mockImplementation((clarityValue) => clarityValue.value);
 
-    contract = moduleRef.get(GatewayContract);
+      const result = await contract.getGatewayImpl();
+      expect(result).toEqual('gatewayImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(1);
+
+      callReadOnlyMock.mockClear();
+
+      const cachedResult = await contract.getGatewayImpl();
+      expect(cachedResult).toEqual('gatewayImpl');
+      expect(callReadOnlyMock).toHaveBeenCalledTimes(0);
+    });
+
+    it('should throw an error if call fails', async () => {
+      (callReadOnlyFunction as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
+      await expect(contract.getGatewayImpl()).rejects.toThrow('Failed to fetch');
+    });
   });
 
   describe('decodeContractCallEvent', () => {
-    const data = Buffer.from('payload');
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          sender: principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
+          'destination-chain': stringAsciiCV('ethereum'),
+          'destination-contract-address': stringAsciiCV('destinationAddress'),
+          'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
+          payload: bufferCV(Buffer.from('payload')),
+          type: stringAsciiCV('contract-call'),
+        }),
+      ),
+    );
 
-    const rawEvent: NotifierEvent = {
-      txHash: 'txHash',
-      address: 'mockGatewayAddress',
-      identifier: 'callContract',
-      data: data.toString('base64'),
-      topics: [
-        BinaryUtils.base64Encode(Events.CONTRACT_CALL_EVENT),
-        Buffer.from(
-          Address.fromBech32('erd1qqqqqqqqqqqqqpgqzqvm5ywqqf524efwrhr039tjs29w0qltkklsa05pk7').hex(),
-          'hex',
-        ).toString('base64'),
-        BinaryUtils.base64Encode('ethereum'),
-        BinaryUtils.base64Encode('destinationAddress'),
-        Buffer.from('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7', 'hex').toString('base64'),
-      ],
-    };
-    const event = TransactionEvent.fromHttpResponse(rawEvent);
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
-      const result = contract.decodeContractCallEvent(event);
+      const result = contract.decodeContractCallEvent(mockScEvent);
 
       expect(result).toEqual({
-        sender: Address.fromBech32('erd1qqqqqqqqqqqqqpgqzqvm5ywqqf524efwrhr039tjs29w0qltkklsa05pk7'),
+        sender: 'SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV',
         destinationChain: 'ethereum',
         destinationAddress: 'destinationAddress',
-        payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
+        payloadHash: '0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
         payload: Buffer.from('payload'),
       });
     });
 
     it('Should throw error while decoding', () => {
-      event.topics = [];
+      mockScEvent.contract_log.value.hex = '';
 
-      expect(() => contract.decodeContractCallEvent(event)).toThrow();
+      expect(() => contract.decodeContractCallEvent(mockScEvent)).toThrow();
     });
   });
 
   describe('decodeMessageApprovedEvent', () => {
-    const rawEvent: NotifierEvent = {
-      txHash: 'txHash',
-      address: 'mockGatewayAddress',
-      identifier: 'approveMessages',
-      data: '',
-      topics: [
-        BinaryUtils.base64Encode(Events.MESSAGE_APPROVED_EVENT),
-        Buffer.from('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da', 'hex').toString('base64'),
-        BinaryUtils.base64Encode('ethereum'),
-        BinaryUtils.base64Encode('messageId'),
-        BinaryUtils.base64Encode('sourceAddress'),
-        Buffer.from(
-          Address.fromBech32('erd1qqqqqqqqqqqqqpgqzqvm5ywqqf524efwrhr039tjs29w0qltkklsa05pk7').hex(),
-          'hex',
-        ).toString('base64'),
-        Buffer.from('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7', 'hex').toString('base64'),
-      ],
-    };
-    const event = TransactionEvent.fromHttpResponse(rawEvent);
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
+          'source-chain': stringAsciiCV('ethereum'),
+          'message-id': stringAsciiCV('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          'source-address': stringAsciiCV('000E91D671C29c2DBBc81D16adA4a8bDd6fE518F'),
+          'contract-address': principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
+          'payload-hash': bufferFromHex('ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7'),
+          type: stringAsciiCV('contract-call'),
+        }),
+      ),
+    );
+
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
-      const result = contract.decodeMessageApprovedEvent(event);
+      const result = contract.decodeMessageApprovedEvent(mockScEvent);
 
       expect(result).toEqual({
-        commandId: '0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
+        commandId: '0x0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
         sourceChain: 'ethereum',
-        sourceAddress: 'sourceAddress',
-        messageId: 'messageId',
-        contractAddress: Address.fromBech32('erd1qqqqqqqqqqqqqpgqzqvm5ywqqf524efwrhr039tjs29w0qltkklsa05pk7'),
-        payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
+        sourceAddress: '000E91D671C29c2DBBc81D16adA4a8bDd6fE518F',
+        messageId: 'fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
+        contractAddress: 'SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV',
+        payloadHash: '0xebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
       });
     });
 
     it('Should throw error while decoding', () => {
-      event.topics = [];
+      mockScEvent.contract_log.value.hex = '';
 
-      expect(() => contract.decodeMessageApprovedEvent(event)).toThrow();
+      expect(() => contract.decodeMessageApprovedEvent(mockScEvent)).toThrow();
     });
   });
 
   describe('decodeSignersRotatedEvent', () => {
-    const rawEvent: NotifierEvent = {
-      txHash: 'txHash',
-      address: 'mockGatewayAddress',
-      identifier: 'rotateSigners',
-      data: Buffer.from(
-        '000000030139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e100000001018049d639e5a6980d1cd2392abcce41029cda74a1563523a202f09641cc2618f80000000101b2a11555ce521e4944e09ab17549d85b487dcd26c84b5017a39e31a3670889ba00000001010000000103290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563',
-        'hex',
-      ).toString('base64'),
-      topics: [
-        BinaryUtils.base64Encode(Events.SIGNERS_ROTATED_EVENT),
-        BinaryUtils.hexToBase64('01'),
-        Buffer.from('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da', 'hex').toString('base64'),
-      ],
-    };
-    const event = TransactionEvent.fromHttpResponse(rawEvent);
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          signers: tupleCV({
+            signers: listCV([
+              tupleCV({
+                signer: principalCV('SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV'),
+                weight: uintCV(1),
+              }),
+              tupleCV({
+                signer: principalCV('SP1H6WMP29RXTQQCB3QSA146P6SR7G59BVHTTKWCC'),
+                weight: uintCV(2),
+              }),
+              tupleCV({
+                signer: principalCV('SP1N6CA5FQPE8PH1MK074YA8XQJZYPS8D56GKS9W6'),
+                weight: uintCV(2),
+              }),
+            ]),
+            threshold: uintCV(3),
+            nonce: bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
+          }),
+          type: stringAsciiCV('signers-rotated'),
+          epoch: uintCV(1),
+          'signers-hash': bufferFromHex('11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669'),
+        }),
+      ),
+    );
+
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
-      const result = contract.decodeSignersRotatedEvent(event);
+      const result = contract.decodeSignersRotatedEvent(mockScEvent);
 
       expect(result.signers).toEqual([
-        { signer: '0139472eff6886771a982f3083da5d421f24c29181e63888228dc81ca60d69e1', weight: new BigNumber('1') },
-        { signer: '8049d639e5a6980d1cd2392abcce41029cda74a1563523a202f09641cc2618f8', weight: new BigNumber('1') },
-        { signer: 'b2a11555ce521e4944e09ab17549d85b487dcd26c84b5017a39e31a3670889ba', weight: new BigNumber('1') },
+        { signer: 'SP31SWB58Q599WE8YP6BEJP3XD3QMBJJ7534HSCZV', weight: new BigNumber('1') },
+        { signer: 'SP1H6WMP29RXTQQCB3QSA146P6SR7G59BVHTTKWCC', weight: new BigNumber('2') },
+        { signer: 'SP1N6CA5FQPE8PH1MK074YA8XQJZYPS8D56GKS9W6', weight: new BigNumber('2') },
       ]);
       expect(result.threshold).toEqual(new BigNumber('3'));
-      expect(result.nonce).toEqual('290decd9548b62a8d60345a988386fc84ba6bc95484008f6362f93160ef3e563');
+      expect(result.nonce).toEqual('0x11228e4ef3805b921c2a5062537ebcb8bff5635c72f5ec6950c8c37c0cad8669');
     });
 
     it('Should throw error while decoding', () => {
-      event.dataPayload = new TransactionEventData(Buffer.from(''));
+      mockScEvent.contract_log.value.hex = '';
 
-      expect(() => contract.decodeSignersRotatedEvent(event)).toThrow();
+      expect(() => contract.decodeSignersRotatedEvent(mockScEvent)).toThrow();
     });
   });
 
   describe('decodeMessageExecutedEvent', () => {
-    const rawEvent: NotifierEvent = {
-      txHash: 'txHash',
-      address: 'mockGatewayAddress',
-      identifier: 'validateMessage',
-      data: '',
-      topics: [
-        BinaryUtils.base64Encode(Events.MESSAGE_EXECUTED_EVENT),
-        Buffer.from('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da', 'hex').toString('base64'),
-        BinaryUtils.base64Encode('ethereum'),
-        BinaryUtils.base64Encode('messageId'),
-      ],
-    };
-    const event = TransactionEvent.fromHttpResponse(rawEvent);
+    const message = bufferCV(
+      serializeCV(
+        tupleCV({
+          'command-id': bufferFromHex('0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da'),
+          'source-chain': stringAsciiCV('ethereum'),
+          'message-id': stringAsciiCV('fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451'),
+          type: stringAsciiCV('message-executed'),
+        }),
+      ),
+    );
+
+    const mockScEvent = getMockScEvent(message);
 
     it('Should decode event', () => {
-      const result = contract.decodeMessageExecutedEvent(event);
+      const result = contract.decodeMessageExecutedEvent(mockScEvent);
 
       expect(result).toEqual({
-        commandId: '0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
+        commandId: '0x0c38359b7a35c755573659d797afec315bb0e51374a056745abd9764715a15da',
         sourceChain: 'ethereum',
-        messageId: 'messageId',
+        messageId: 'fe0d2393e76ea487217b1606aff64535f8526a00e007704f8391fa41c78fb451',
       });
     });
 
     it('Should throw error while decoding', () => {
-      event.topics = [];
+      mockScEvent.contract_log.value.hex = '';
 
-      expect(() => contract.decodeMessageExecutedEvent(event)).toThrow();
+      expect(() => contract.decodeMessageExecutedEvent(mockScEvent)).toThrow();
     });
   });
 });

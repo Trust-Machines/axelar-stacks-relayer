@@ -1,25 +1,19 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { MessageApprovedRepository } from '@mvx-monorepo/common/database/repository/message-approved.repository';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
-import { UserSigner } from '@multiversx/sdk-wallet/out';
-import {
-  Address,
-  BytesValue,
-  ContractFunction,
-  Interaction,
-  SmartContract,
-  StringValue,
-  Transaction,
-} from '@multiversx/sdk-core/out';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
-import { TransactionsHelper } from '@mvx-monorepo/common/contracts/transactions.helper';
-import { ApiConfigService, AxelarGmpApi } from '@mvx-monorepo/common';
-import { ItsContract } from '@mvx-monorepo/common/contracts/its.contract';
-import { Locker } from '@multiversx/sdk-nestjs-common';
-import { GasError } from '@mvx-monorepo/common/contracts/entities/gas.error';
-import { CannotExecuteMessageEvent, Event } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
+import { ApiConfigService, AxelarGmpApi, GatewayContract, Locker } from '@stacks-monorepo/common';
+import { CannotExecuteMessageEventV2, Event } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { GasError } from '@stacks-monorepo/common/contracts/entities/gas.error';
+import { TooLowAvailableBalanceError } from '@stacks-monorepo/common/contracts/entities/too-low-available-balance.error';
+import { ItsContract, MessageApprovedData } from '@stacks-monorepo/common/contracts/ITS/its.contract';
+import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
+import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
+import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
+import { StacksNetwork } from '@stacks/network';
+import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { AxiosError } from 'axios';
+import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
 const MAX_NUMBER_OF_RETRIES: number = 3;
@@ -28,44 +22,39 @@ const MAX_NUMBER_OF_RETRIES: number = 3;
 export class MessageApprovedProcessorService {
   private readonly logger: Logger;
 
-  private readonly chainId: string;
   private readonly contractItsAddress: string;
 
   constructor(
     private readonly messageApprovedRepository: MessageApprovedRepository,
-    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: UserSigner,
+    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: string,
     private readonly transactionsHelper: TransactionsHelper,
     private readonly itsContract: ItsContract,
     private readonly axelarGmpApi: AxelarGmpApi,
     apiConfigService: ApiConfigService,
+    @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
+    private readonly gatewayContract: GatewayContract,
   ) {
     this.logger = new Logger(MessageApprovedProcessorService.name);
-    this.chainId = apiConfigService.getChainId();
-    this.contractItsAddress = apiConfigService.getContractIts();
+    this.contractItsAddress = apiConfigService.getContractItsProxy();
   }
 
-  @Cron('10/15 * * * * *')
+  // Runs after Axelar EventProcessor newTasks cron has run
+  @Cron('7/15 * * * * *')
   async processPendingMessageApproved() {
     await Locker.lock('processPendingMessageApproved', async () => {
       this.logger.debug('Running processPendingMessageApproved cron');
 
-      let accountNonce = null;
-
       // Always start processing from beginning (page 0) since the query will skip recently updated entries
       let entries;
       while ((entries = await this.messageApprovedRepository.findPending(0))?.length) {
-        if (accountNonce === null) {
-          accountNonce = await this.transactionsHelper.getAccountNonce(this.walletSigner.getAddress());
-        }
-
         this.logger.log(`Found ${entries.length} CallContractApproved transactions to execute`);
 
-        const transactionsToSend: Transaction[] = [];
+        const transactionsToSend: StacksTransaction[] = [];
         const entriesToUpdate: MessageApproved[] = [];
         const entriesWithTransactions: MessageApproved[] = [];
         for (const messageApproved of entries) {
           if (messageApproved.retry === MAX_NUMBER_OF_RETRIES) {
-            await this.handleMessageApprovedFailed(messageApproved);
+            await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
 
             entriesToUpdate.push(messageApproved);
 
@@ -89,14 +78,24 @@ export class MessageApprovedProcessorService {
           }
 
           try {
-            const transaction = await this.buildAndSignExecuteTransaction(messageApproved, accountNonce);
+            const { transaction, incrementRetry, extraData } = await this.buildExecuteTransaction(messageApproved);
 
-            accountNonce++;
+            messageApproved.extraData = extraData;
+
+            if (incrementRetry) {
+              messageApproved.retry += 1;
+              messageApproved.executeTxHash = null;
+            }
+
+            if (!transaction) {
+              entriesToUpdate.push(messageApproved);
+
+              continue;
+            }
 
             transactionsToSend.push(transaction);
 
-            messageApproved.executeTxHash = transaction.getHash().toString();
-            messageApproved.retry += 1;
+            messageApproved.executeTxHash = transaction.txid();
 
             entriesWithTransactions.push(messageApproved);
           } catch (e) {
@@ -105,8 +104,14 @@ export class MessageApprovedProcessorService {
               e,
             );
 
-            if (e instanceof GasError) {
+            await this.transactionsHelper.deleteNonce();
+
+            if (e instanceof GasError || e instanceof ItsError) {
               messageApproved.retry += 1;
+
+              entriesToUpdate.push(messageApproved);
+            } else if (e instanceof TooLowAvailableBalanceError) {
+              await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
 
               entriesToUpdate.push(messageApproved);
             } else {
@@ -118,21 +123,19 @@ export class MessageApprovedProcessorService {
         const hashes = await this.transactionsHelper.sendTransactions(transactionsToSend);
 
         if (hashes) {
-          entriesWithTransactions.forEach((entry) => {
+          for (const entry of entriesWithTransactions) {
             const sent = hashes.includes(entry.executeTxHash as string);
 
+            entriesToUpdate.push(entry);
+
             // If not sent revert fields but still save to database so it is retried later and does
-            // not block the processing
+            // not block the processing. Break is used to not update the next transactions so that
+            // they can be executed again in the next iteration
             if (!sent) {
               entry.executeTxHash = null;
-              entry.retry = entry.retry === 1 ? 1 : entry.retry - 1; // retry should be 1 or more to not be processed immediately
+              break;
             }
-
-            entriesToUpdate.push(entry);
-          });
-        } else {
-          // re-retrieve account nonce in case sendTransactions failed because of nonce error
-          accountNonce = null;
+          }
         }
 
         if (entriesToUpdate.length) {
@@ -142,77 +145,76 @@ export class MessageApprovedProcessorService {
     });
   }
 
-  private async buildAndSignExecuteTransaction(
-    messageApproved: MessageApproved,
-    accountNonce: number,
-  ): Promise<Transaction> {
-    const interaction = await this.buildExecuteInteraction(messageApproved);
+  private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<MessageApprovedData> {
+    const contractId = messageApproved.contractAddress;
+    const contractSplit = contractId.split('.');
+    const [contractAddress, contractName] = [contractSplit[0], contractSplit[1]];
 
-    const transaction = interaction
-      .withSender(this.walletSigner.getAddress())
-      .withNonce(accountNonce)
-      .withChainID(this.chainId)
-      .buildTransaction();
-
-    const gas = await this.transactionsHelper.getTransactionGas(transaction, messageApproved.retry);
-    transaction.setGasLimit(gas);
-
-    const signature = await this.walletSigner.sign(transaction.serializeForSigning());
-    transaction.applySignature(signature);
-
-    return transaction;
-  }
-
-  private async buildExecuteInteraction(messageApproved: MessageApproved) {
-    if (messageApproved.contractAddress !== this.contractItsAddress) {
-      const contract = new SmartContract({ address: new Address(messageApproved.contractAddress) });
-
-      const args = [
-        new StringValue(messageApproved.sourceChain),
-        new StringValue(messageApproved.messageId),
-        new StringValue(messageApproved.sourceAddress),
-        new BytesValue(messageApproved.payload),
-      ];
-
-      return new Interaction(contract, new ContractFunction('execute'), args);
+    if (contractId === this.contractItsAddress) {
+      return await this.itsContract.execute(
+        this.walletSigner,
+        messageApproved.sourceChain,
+        messageApproved.messageId,
+        messageApproved.sourceAddress,
+        messageApproved.contractAddress,
+        messageApproved.payload.toString('hex'),
+        messageApproved.availableGasBalance,
+        messageApproved.executeTxHash,
+        // @ts-ignore
+        messageApproved.extraData,
+      );
     }
 
-    // In case first transaction exists for ITS, wait for it to complete and mark it as successful if necessary
-    if (messageApproved.executeTxHash && !messageApproved.successTimes) {
-      const success = await this.transactionsHelper.awaitSuccess(messageApproved.executeTxHash);
+    const gatewayImpl = await this.gatewayContract.getGatewayImpl();
 
-      if (success) {
-        messageApproved.successTimes = 1;
-      }
-    }
+    const transaction = await this.transactionsHelper.makeContractCall({
+      contractAddress: contractAddress,
+      contractName: contractName,
+      functionName: 'execute',
+      functionArgs: [
+        stringAsciiCV(messageApproved.sourceChain),
+        stringAsciiCV(messageApproved.messageId),
+        stringAsciiCV(messageApproved.sourceAddress),
+        bufferCV(messageApproved.payload),
+        principalCV(gatewayImpl),
+      ],
+      senderKey: this.walletSigner,
+      network: this.network,
+      anchorMode: AnchorMode.Any,
+    });
 
-    return this.itsContract.execute(
-      messageApproved.sourceChain,
+    await this.transactionsHelper.checkAvailableGasBalance(
       messageApproved.messageId,
-      messageApproved.sourceAddress,
-      messageApproved.payload,
-      messageApproved.successTimes || 0,
+      messageApproved.availableGasBalance,
+      [{ transaction }],
     );
+
+    return { transaction, incrementRetry: true, extraData: null };
   }
 
-  private async handleMessageApprovedFailed(messageApproved: MessageApproved) {
+  async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
     this.logger.error(
       `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
     );
 
     messageApproved.status = MessageApprovedStatus.FAILED;
 
-    const cannotExecuteEvent: CannotExecuteMessageEvent = {
+    const cannotExecuteEvent: CannotExecuteMessageEventV2 = {
       eventID: messageApproved.messageId,
-      taskItemID: messageApproved.taskItemId || '',
-      reason: 'ERROR',
-      details: '',
+      messageID: messageApproved.messageId,
+      sourceChain: CONSTANTS.SOURCE_CHAIN_NAME,
+      reason,
+      details: `retried ${messageApproved.retry} times`,
+      meta: {
+        txID: messageApproved.executeTxHash,
+        taskItemID: messageApproved.taskItemId || '',
+      },
     };
 
     try {
       const eventsToSend: Event[] = [
         {
-          type: 'CANNOT_EXECUTE_MESSAGE',
+          type: 'CANNOT_EXECUTE_MESSAGE/V2',
           ...cannotExecuteEvent,
         },
       ];
@@ -222,10 +224,8 @@ export class MessageApprovedProcessorService {
       this.logger.error('Could not send all events to GMP API...', e);
 
       if (e instanceof AxiosError) {
-        this.logger.error(e.response);
+        this.logger.error(e.response?.data);
       }
-
-      throw e;
     }
   }
 }

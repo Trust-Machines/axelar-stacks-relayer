@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { ApiConfigService, DatabaseModule } from '@mvx-monorepo/common';
-import { AxelarGmpApi } from '@mvx-monorepo/common/api/axelar.gmp.api';
-import { ProviderKeys } from '@mvx-monorepo/common/utils/provider.enum';
+import { ApiConfigService, DatabaseModule } from '@stacks-monorepo/common';
+import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
+import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import * as https from 'https';
 import { join } from 'path';
-import { Client as AxelarGmpApiClient } from '@mvx-monorepo/common/api/entities/axelar.gmp.api';
+import { Client as AxelarGmpApiClient } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { Document, OpenAPIClientAxios } from 'openapi-client-axios';

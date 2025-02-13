@@ -1,40 +1,44 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@mvx-monorepo/common/database/prisma.service';
+import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
 import { MessageApproved, MessageApprovedStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class MessageApprovedRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: Prisma.MessageApprovedCreateInput): Promise<MessageApproved | null> {
-    try {
-      return await this.prisma.messageApproved.create({
-        data,
-      });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError) {
-        // Unique constraint fails
-        if (e.code === 'P2002') {
-          return null;
-        }
-      }
-
-      throw e;
-    }
+  async createOrUpdate(data: Prisma.MessageApprovedCreateInput) {
+    await this.prisma.messageApproved.upsert({
+      where: {
+        sourceChain_messageId: {
+          sourceChain: data.sourceChain,
+          messageId: data.messageId,
+        },
+      },
+      update: data,
+      create: data,
+      select: null,
+    });
   }
 
   findPending(page: number = 0, take: number = 10): Promise<MessageApproved[] | null> {
-    // Last updated more than one minute ago, if retrying
-    const lastUpdatedAt = new Date(new Date().getTime() - 60_000);
+    // Last updated more than six minutes ago, if retrying
+    const lastUpdatedAtRetry = new Date(new Date().getTime() - 360_000);
+    // Prevent frequent retries of special transactions
+    const lastUpdated = new Date(new Date().getTime() - 15_000);
 
     return this.prisma.messageApproved.findMany({
       where: {
         status: MessageApprovedStatus.PENDING,
         OR: [
-          { retry: 0 },
+          {
+            retry: 0,
+            updatedAt: {
+              lt: lastUpdated,
+            },
+          },
           {
             updatedAt: {
-              lt: lastUpdatedAt,
+              lt: lastUpdatedAtRetry,
             },
           },
         ],
@@ -74,6 +78,8 @@ export class MessageApprovedRepository {
             retry: data.retry,
             executeTxHash: data.executeTxHash,
             successTimes: data.successTimes,
+            // @ts-ignore
+            extraData: data.extraData,
           },
         });
       }),

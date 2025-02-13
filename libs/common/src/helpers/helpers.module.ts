@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
-import { DynamicModuleUtils } from '@mvx-monorepo/common';
-import { RedisHelper } from '@mvx-monorepo/common/helpers/redis.helper';
-import { MetricsModule } from '@multiversx/sdk-nestjs-monitoring';
+import { forwardRef, Module } from '@nestjs/common';
+import { ApiConfigModule, DynamicModuleUtils } from '@stacks-monorepo/common';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { HiroApiHelper } from './hiro.api.helpers';
 
 @Module({
-  imports: [DynamicModuleUtils.getRedisCacheModule(), DynamicModuleUtils.getRedisModule(), MetricsModule],
-  providers: [RedisHelper],
-  exports: [RedisHelper],
+  imports: [forwardRef(() => DynamicModuleUtils.getRedisModule()), ApiConfigModule],
+  providers: [RedisHelper, HiroApiHelper],
+  exports: [RedisHelper, HiroApiHelper],
 })
 export class HelpersModule {}
