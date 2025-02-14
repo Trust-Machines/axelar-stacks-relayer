@@ -9,12 +9,14 @@ import { hex } from '@scure/base';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { ScEvent } from './types';
 import { LastProcessedDataRepository } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 describe('EventProcessorService', () => {
   let redisHelper: DeepMocked<RedisHelper>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let hiroApiHelper: DeepMocked<HiroApiHelper>;
   let lastProcessedDataRepository: DeepMocked<LastProcessedDataRepository>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: EventProcessorService;
 
@@ -23,6 +25,7 @@ describe('EventProcessorService', () => {
     apiConfigService = createMock();
     hiroApiHelper = createMock();
     lastProcessedDataRepository = createMock();
+    slackApi = createMock();
 
     apiConfigService.getContractGatewayStorage.mockReturnValue('mockGatewayAddress.contract_name');
     apiConfigService.getContractGasServiceStorage.mockReturnValue('mockGasAddress.contract_name');
@@ -46,6 +49,10 @@ describe('EventProcessorService', () => {
 
         if (token === LastProcessedDataRepository) {
           return lastProcessedDataRepository;
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;
@@ -91,9 +98,18 @@ describe('EventProcessorService', () => {
       expect(lastProcessedDataRepository.get).toHaveBeenCalledWith('lastProcessedEvent:its');
 
       expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(3);
-      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastProcessedEvent:gateway', 'mockGatewayAddress.contract_name-0');
-      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastProcessedEvent:gas-service', 'mockGasAddress.contract_name-0');
-      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastProcessedEvent:its', 'mockItsAddress.contract_name-0');
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith(
+        'lastProcessedEvent:gateway',
+        'mockGatewayAddress.contract_name-0',
+      );
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith(
+        'lastProcessedEvent:gas-service',
+        'mockGasAddress.contract_name-0',
+      );
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith(
+        'lastProcessedEvent:its',
+        'mockItsAddress.contract_name-0',
+      );
     });
 
     it('Should poll events from existing no new', async () => {

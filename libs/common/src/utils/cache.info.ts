@@ -51,8 +51,4 @@ export class Constants {
   static oneWeek(): number {
     return Constants.oneDay() * 7;
   }
-
-  static oneMonth(): number {
-    return Constants.oneDay() * 30;
-  }
 }

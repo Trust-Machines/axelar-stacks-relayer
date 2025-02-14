@@ -6,6 +6,7 @@ import { ApiConfigService, TransactionsHelper } from '@stacks-monorepo/common';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { estimateContractDeploy, estimateContractFunctionCall } from '@stacks/transactions';
 import { TooLowAvailableBalanceError } from '@stacks-monorepo/common/contracts/entities/too-low-available-balance.error';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 jest.mock('@stacks/transactions', () => {
   const actual = jest.requireActual('@stacks/transactions');
@@ -25,12 +26,14 @@ describe('TransactionHelper', () => {
   let mockRedisHelper: DeepMocked<RedisHelper>;
   let mockNetwork: DeepMocked<StacksNetwork>;
   let mockApiConfigService: DeepMocked<ApiConfigService>;
+  let mockSlackApi: DeepMocked<SlackApi>;
 
   beforeEach(() => {
     mockHiroApiHelper = createMock();
     mockRedisHelper = createMock();
     mockNetwork = createMock();
     mockApiConfigService = createMock();
+    mockSlackApi = createMock();
 
     mockNetwork.isMainnet.mockReturnValueOnce(false);
     mockApiConfigService.getAvailableGasCheckEnabled.mockReturnValueOnce(true);
@@ -38,6 +41,7 @@ describe('TransactionHelper', () => {
     service = new TransactionsHelper(
       mockHiroApiHelper,
       mockRedisHelper,
+      mockSlackApi,
       mockWalletSigner,
       mockNetwork,
       mockApiConfigService,

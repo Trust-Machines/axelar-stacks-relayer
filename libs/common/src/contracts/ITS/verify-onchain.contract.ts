@@ -4,6 +4,7 @@ import { callReadOnlyFunction, Cl, SingleSigSpendingCondition, StringUtf8CV, Tup
 import { intToHex } from '@stacks/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { getBlockHeader, proofPathToCV } from '@stacks-monorepo/common/helpers/block-hash';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class VerifyOnchainContract {
@@ -13,6 +14,7 @@ export class VerifyOnchainContract {
     private readonly verifyOnchainContract: string,
     private readonly network: StacksNetwork,
     private readonly hiroApiHelper: HiroApiHelper,
+    private readonly slackApi: SlackApi,
   ) {}
 
   async buildNativeInterchainTokenVerificationParams(txHash: string): Promise<TupleCV> {
@@ -51,8 +53,8 @@ export class VerifyOnchainContract {
 
       return response.data;
     } catch (e) {
-      this.logger.error('Failed to call get-nit-source');
-      this.logger.error(e);
+      this.logger.error('Failed to call get-nit-source', e);
+      await this.slackApi.sendError('Verify OnChain contract error', 'Failed to call get-nit-source');
 
       throw e;
     }

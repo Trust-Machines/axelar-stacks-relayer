@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ApiConfigService } from '@stacks-monorepo/common/config';
 import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-service.contract';
 import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
@@ -12,9 +12,11 @@ import { NativeInterchainTokenContract } from './ITS/native-interchain-token.con
 import { HiroApiHelper } from '../helpers/hiro.api.helpers';
 import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/token-manager.contract';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
+import { ApiModule } from '@stacks-monorepo/common/api';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Module({
-  imports: [HelpersModule],
+  imports: [HelpersModule, forwardRef(() => ApiModule)],
   providers: [
     {
       provide: ProviderKeys.STACKS_NETWORK,
@@ -61,10 +63,15 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
     },
     {
       provide: VerifyOnchainContract,
-      useFactory: (apiConfigService: ApiConfigService, network: StacksNetwork, hiroApiHelper: HiroApiHelper) => {
-        return new VerifyOnchainContract(apiConfigService.getContractVerifyOnchain(), network, hiroApiHelper);
+      useFactory: (
+        apiConfigService: ApiConfigService,
+        network: StacksNetwork,
+        hiroApiHelper: HiroApiHelper,
+        slackApi: SlackApi,
+      ) => {
+        return new VerifyOnchainContract(apiConfigService.getContractVerifyOnchain(), network, hiroApiHelper, slackApi);
       },
-      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, HiroApiHelper],
+      inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK, HiroApiHelper, SlackApi],
     },
     {
       provide: NativeInterchainTokenContract,
@@ -74,6 +81,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
         network: StacksNetwork,
         transactionsHelper: TransactionsHelper,
         hiroApiHelper: HiroApiHelper,
+        slackApi: SlackApi,
       ) => {
         return new NativeInterchainTokenContract(
           apiConfigService.getContractIdNativeInterchainTokenTemplate(),
@@ -81,9 +89,17 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
           network,
           transactionsHelper,
           hiroApiHelper,
+          slackApi,
         );
       },
-      inject: [ApiConfigService, VerifyOnchainContract, ProviderKeys.STACKS_NETWORK, TransactionsHelper, HiroApiHelper],
+      inject: [
+        ApiConfigService,
+        VerifyOnchainContract,
+        ProviderKeys.STACKS_NETWORK,
+        TransactionsHelper,
+        HiroApiHelper,
+        SlackApi,
+      ],
     },
     {
       provide: ItsContract,
@@ -96,6 +112,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
         gatewayContract: GatewayContract,
         gasServiceContract: GasServiceContract,
         verifyOnchain: VerifyOnchainContract,
+        slackApi: SlackApi,
       ) => {
         return new ItsContract(
           apiConfigService.getContractItsProxy(),
@@ -108,6 +125,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
           gasServiceContract,
           apiConfigService.getAxelarContractIts(),
           verifyOnchain,
+          slackApi,
         );
       },
       inject: [
@@ -119,6 +137,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
         GatewayContract,
         GasServiceContract,
         VerifyOnchainContract,
+        SlackApi,
       ],
     },
     {

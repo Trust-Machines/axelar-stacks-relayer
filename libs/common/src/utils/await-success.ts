@@ -19,8 +19,7 @@ export async function awaitSuccess<T>(
 
     return { success: true, result: result };
   } catch (error) {
-    logger?.error(`Cannot await success for key: ${key}`);
-    logger?.error(error);
+    logger?.error(`Cannot await success for key: ${key}`, error);
 
     if (error instanceof AxiosError) {
       logger?.error(error.response?.data);

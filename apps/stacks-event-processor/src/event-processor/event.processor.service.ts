@@ -9,6 +9,7 @@ import {
   LAST_PROCESSED_DATA_TYPE,
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class EventProcessorService {
@@ -22,6 +23,7 @@ export class EventProcessorService {
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly redisHelper: RedisHelper,
     private readonly lastProcessedDataRepository: LastProcessedDataRepository,
+    private readonly slackApi: SlackApi,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -106,9 +108,13 @@ export class EventProcessorService {
         }
 
         offset += limit;
-      } catch (error) {
-        this.logger.error(`Failed to get events for ${contractId}`);
-        this.logger.error(error);
+      } catch (e) {
+        this.logger.error(`Failed to get events for ${contractId}`, e);
+        await this.slackApi.sendError(
+          'Event processing error',
+          `An unhandled error occurred when consuming events for contract ${contractId}, latest event key ${latestEventKey}`,
+        );
+
         break;
       }
     }
@@ -134,11 +140,11 @@ export class EventProcessorService {
       if (crossChainTransactions.size > 0) {
         await this.redisHelper.sadd(CacheInfo.CrossChainTransactions().key, ...crossChainTransactions);
       }
-    } catch (error) {
-      this.logger.error(`An unhandled error occurred when consuming events: ${JSON.stringify(events)}`);
-      this.logger.error(error);
+    } catch (e) {
+      this.logger.error(`An unhandled error occurred when consuming events: ${JSON.stringify(events)}`, e);
+      await this.slackApi.sendError('Event processing error', `An unhandled error occurred when consuming events...`);
 
-      throw error;
+      throw e;
     }
   }
 

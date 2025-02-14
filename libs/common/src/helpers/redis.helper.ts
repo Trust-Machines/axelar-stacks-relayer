@@ -1,12 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT_TOKEN } from '../utils';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class RedisHelper {
   private readonly logger: Logger;
 
-  constructor(@Inject(REDIS_CLIENT_TOKEN) private readonly redis: Redis) {
+  constructor(
+    @Inject(REDIS_CLIENT_TOKEN) private readonly redis: Redis,
+    private readonly slackApi: SlackApi,
+  ) {
     this.logger = new Logger(RedisHelper.name);
   }
 
@@ -22,6 +26,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error?.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to get from redis cache.');
       }
     }
     return undefined;
@@ -39,6 +44,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error?.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to getdel from redis cache.');
       }
     }
     return undefined;
@@ -66,6 +72,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error?.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to delete from redis cache.');
       }
     }
   }
@@ -95,6 +102,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error?.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to set redis cache.');
       }
     }
   }
@@ -109,6 +117,7 @@ export class RedisHelper {
           key,
           ...values,
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to sadd redis cache.');
       }
       throw error;
     }
@@ -123,6 +132,7 @@ export class RedisHelper {
           exception: error?.toString(),
           key,
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to smembers redis cache.');
       }
       throw error;
     }
@@ -140,6 +150,7 @@ export class RedisHelper {
             key,
           }),
         );
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to srem redis cache.');
       }
       throw error;
     }
@@ -154,6 +165,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error?.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to incrby redis cache.');
       }
       throw error;
     }
@@ -168,6 +180,7 @@ export class RedisHelper {
           cacheKey: key,
           error: error.toString(),
         });
+        await this.slackApi.sendError('Redis error', 'An error occurred while trying to decrby redis cache.');
       }
       throw error;
     }

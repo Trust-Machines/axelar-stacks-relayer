@@ -12,6 +12,7 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { MessageApprovedProcessorService } from './message-approved.processor.service';
 import { StacksTransaction } from '@stacks/transactions';
 import { StacksNetwork } from '@stacks/network';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -27,6 +28,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
   let apiConfigService: DeepMocked<ApiConfigService>;
   let walletSigner: string;
   let mockNetwork: DeepMocked<StacksNetwork>;
+  let slackApi: DeepMocked<SlackApi>;
 
   beforeEach(async () => {
     messageApprovedRepository = createMock();
@@ -36,6 +38,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
     axelarGmpApi = createMock();
     apiConfigService = createMock();
     walletSigner = 'mock-wallet-signer';
+    slackApi = createMock();
 
     apiConfigService.getContractItsProxy.mockReturnValue(mockItsContractId);
 
@@ -59,6 +62,7 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
         if (token === ItsContract) return itsContract;
         if (token === AxelarGmpApi) return axelarGmpApi;
         if (token === ApiConfigService) return apiConfigService;
+        if (token === SlackApi) return slackApi;
         return null;
       })
       .compile();

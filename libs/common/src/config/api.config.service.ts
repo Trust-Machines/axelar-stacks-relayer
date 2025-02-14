@@ -182,4 +182,10 @@ export class ApiConfigService {
     const value = this.configService.get<string>('AVAILABLE_GAS_CHECK_ENABLED');
     return value === 'true';
   }
+
+  getSlackWebhookUrl(): string {
+    const slackWebhookUrl = this.configService.get<string>('SLACK_WEBHOOK_URL');
+
+    return slackWebhookUrl ?? '';
+  }
 }

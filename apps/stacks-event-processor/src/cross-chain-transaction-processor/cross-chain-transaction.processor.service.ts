@@ -8,6 +8,7 @@ import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/comm
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { AxiosError } from 'axios';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
@@ -23,6 +24,7 @@ export class CrossChainTransactionProcessorService {
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly redisHelper: RedisHelper,
     private readonly hiroApiHelper: HiroApiHelper,
+    private readonly slackApi: SlackApi,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -56,6 +58,10 @@ export class CrossChainTransactionProcessorService {
         await this.redisHelper.srem(CacheInfo.CrossChainTransactions().key, txHash);
       } catch (e) {
         this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
+        await this.slackApi.sendWarn(
+          `Cross chain transaction processing error`,
+          'An error occurred while processing cross chain transaction ${txHash}. Will be retried',
+        );
       }
     }
   }
@@ -136,6 +142,10 @@ export class CrossChainTransactionProcessorService {
       await this.axelarGmpApi.postEvents(eventsToSend, transaction.tx_id);
     } catch (e) {
       this.logger.error('Could not send all events to GMP API...', e);
+      await this.slackApi.sendError(
+        'Axelar GMP API error',
+        'Could not send all events to GMP API from CrossChainTransactionProcessor...',
+      );
 
       if (e instanceof AxiosError) {
         this.logger.error(e.response?.data);

@@ -52,7 +52,10 @@ describe('awaitSuccess', () => {
     expect(result.success).toBe(false);
     expect(result.result).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(Math.ceil(timeoutMillis / intervalMillis));
-    expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('Cannot await success for key'));
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Cannot await success for key'),
+      expect.anything(),
+    );
   });
 
   it('should handle errors in fetch function', async () => {

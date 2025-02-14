@@ -17,6 +17,7 @@ import BigNumber from 'bignumber.js';
 import { ScEvent } from '../../event-processor/types';
 import { GasServiceProcessor } from './gas-service.processor';
 import GasCreditEvent = Components.Schemas.GasCreditEvent;
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockGasContractId = 'mockGasAddress.contract_name';
 const mockGatewayContractId = 'mockGatewayAddress.contract_name';
@@ -25,6 +26,7 @@ describe('GasServiceProcessor', () => {
   let gasServiceContract: DeepMocked<GasServiceContract>;
   let gatewayContract: DeepMocked<GatewayContract>;
   let apiConfigService: DeepMocked<ApiConfigService>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: GasServiceProcessor;
 
@@ -32,6 +34,7 @@ describe('GasServiceProcessor', () => {
     gasServiceContract = createMock();
     gatewayContract = createMock();
     apiConfigService = createMock();
+    slackApi = createMock();
 
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
 
@@ -49,6 +52,10 @@ describe('GasServiceProcessor', () => {
 
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;

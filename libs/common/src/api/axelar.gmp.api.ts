@@ -10,12 +10,16 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
 import PublishEventErrorResult = Components.Schemas.PublishEventErrorResult;
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class AxelarGmpApi {
   private readonly logger: Logger;
 
-  constructor(@Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient) {
+  constructor(
+    @Inject(ProviderKeys.AXELAR_GMP_API_CLIENT) private readonly apiClient: AxelarGmpApiClient,
+    private readonly slackApi: SlackApi,
+  ) {
     this.logger = new Logger(AxelarGmpApi.name);
   }
 
@@ -44,6 +48,10 @@ export class AxelarGmpApi {
           `Failed sending event ${event.type} to GMP API for transaction ${txHash}. Can NOT be retried, error: ${errorResult.error}`,
           result,
         );
+        await this.slackApi.sendError(
+          `Axelar GMP API NON-retriable error`,
+          `Failed sending event ${event.type} to GMP API for transaction ${txHash}. Can NOT be retried, error: ${errorResult.error}`,
+        );
 
         continue;
       }
@@ -51,6 +59,10 @@ export class AxelarGmpApi {
       this.logger.warn(
         `Failed sending event ${event.type} to GMP API for transaction ${txHash}. Will be retried, error: ${errorResult.error}`,
         result,
+      );
+      await this.slackApi.sendWarn(
+        `Axelar GMP API retriable error`,
+        `Failed sending event ${event.type} to GMP API for transaction ${txHash}. Will be retried, error: ${errorResult.error}`,
       );
 
       throw new Error(`Received retriable event error`);

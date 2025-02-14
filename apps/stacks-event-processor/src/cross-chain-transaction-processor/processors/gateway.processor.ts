@@ -17,6 +17,7 @@ import SignersRotatedEvent = Components.Schemas.SignersRotatedEvent;
 import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
 import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
 import { ethers } from 'ethers';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class GatewayProcessor {
@@ -26,6 +27,7 @@ export class GatewayProcessor {
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly apiConfigService: ApiConfigService,
+    private readonly slackApi: SlackApi,
   ) {
     this.logger = new Logger(GatewayProcessor.name);
   }
@@ -40,7 +42,7 @@ export class GatewayProcessor {
     const eventName = getEventType(rawEvent);
 
     if (eventName === Events.CONTRACT_CALL_EVENT) {
-      return this.handleContractCallEvent(
+      return await this.handleContractCallEvent(
         rawEvent,
         transaction.tx_id,
         transaction.block_time_iso,
@@ -84,16 +86,16 @@ export class GatewayProcessor {
     return undefined;
   }
 
-  private handleContractCallEvent(
+  private async handleContractCallEvent(
     rawEvent: ScEvent,
     txHash: string,
     timestamp: string,
     senderAddress: string,
     index: number,
-  ): Event | undefined {
+  ): Promise<Event | undefined> {
     const contractCallEvent = this.gatewayContract.decodeContractCallEvent(rawEvent);
 
-    const payloadResult = this.getContractCallPayload(contractCallEvent);
+    const payloadResult = await this.getContractCallPayload(contractCallEvent);
     if (!payloadResult) {
       return undefined;
     }
@@ -130,9 +132,9 @@ export class GatewayProcessor {
     };
   }
 
-  private getContractCallPayload(
+  private async getContractCallPayload(
     contractCallEvent: ContractCallEvent,
-  ): { payload: string; payloadHash: string } | null {
+  ): Promise<{ payload: string; payloadHash: string } | null> {
     // Handle STACKS -> ITS Hub case
     if (
       contractCallEvent.sender === this.apiConfigService.getContractItsProxy() &&
@@ -143,6 +145,11 @@ export class GatewayProcessor {
         this.logger.warn(
           `Couldn't send call event because payload cannot be abi encoded ${contractCallEvent.payload.toString('hex')}`,
         );
+        await this.slackApi.sendWarn(
+          'Gateway processor error',
+          `Couldn't send call event because payload cannot be abi encoded ${contractCallEvent.payload.toString('hex')}`,
+        );
+
         return null;
       }
       const payload = BinaryUtils.hexToBase64(abiEncodedPayload);
@@ -220,6 +227,10 @@ export class GatewayProcessor {
       await this.messageApprovedRepository.updateStatusAndSuccessTimes(messageApproved);
     } else {
       this.logger.warn(
+        `Could not find corresponding message approved for message executed event in database from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
+      );
+      await this.slackApi.sendWarn(
+        'Message approved error',
         `Could not find corresponding message approved for message executed event in database from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
       );
     }
