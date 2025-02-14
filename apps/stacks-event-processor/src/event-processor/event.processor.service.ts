@@ -5,6 +5,10 @@ import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers'
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { getEventType, ScEvent } from './types';
+import {
+  LAST_PROCESSED_DATA_TYPE,
+  LastProcessedDataRepository,
+} from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 
 @Injectable()
 export class EventProcessorService {
@@ -12,24 +16,17 @@ export class EventProcessorService {
   private readonly contractGasServiceStorage: string;
   private readonly contractItsStorage: string;
 
-  private contractGatewayEventsKey: string;
-  private contractGasServiceEventsKey: string;
-  private contractItsEventsKey: string;
-
   private readonly logger: Logger;
 
   constructor(
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly redisHelper: RedisHelper,
+    private readonly lastProcessedDataRepository: LastProcessedDataRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.contractGasServiceStorage = apiConfigService.getContractGasServiceStorage();
     this.contractItsStorage = apiConfigService.getContractItsStorage();
-
-    this.contractGatewayEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGatewayStorage).key;
-    this.contractGasServiceEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractGasServiceStorage).key;
-    this.contractItsEventsKey = CacheInfo.ContractLastProcessedEvent(this.contractItsStorage).key;
 
     this.logger = new Logger(EventProcessorService.name);
   }
@@ -37,27 +34,35 @@ export class EventProcessorService {
   @Cron(CronExpression.EVERY_10_SECONDS)
   async pollEvents() {
     await Locker.lock('eventsPolling', async () => {
-      const [gatewayLastProcessedEvent, gasLastProcessedEvent, itsLastProcessedEvent] = await Promise.all([
-        this.redisHelper.get<string>(this.contractGatewayEventsKey),
-        this.redisHelper.get<string>(this.contractGasServiceEventsKey),
-        this.redisHelper.get<string>(this.contractItsEventsKey),
-      ]);
-
-      await this.getContractEvents(
-        this.contractGatewayStorage,
-        this.contractGatewayEventsKey,
-        gatewayLastProcessedEvent,
-      );
-      await this.getContractEvents(
-        this.contractGasServiceStorage,
-        this.contractGasServiceEventsKey,
-        gasLastProcessedEvent,
-      );
-      await this.getContractEvents(this.contractItsStorage, this.contractItsEventsKey, itsLastProcessedEvent);
+      await this.pollEventsRaw();
     });
   }
 
-  private async getContractEvents(contractId: string, redisKey: string, lastProcessedEventKey: string | undefined) {
+  async pollEventsRaw() {
+    const [gatewayLastProcessedEvent, gasLastProcessedEvent, itsLastProcessedEvent] = await Promise.all([
+      this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY),
+      this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE),
+      this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS),
+    ]);
+
+    await this.getContractEvents(
+      this.contractGatewayStorage,
+      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY,
+      gatewayLastProcessedEvent,
+    );
+    await this.getContractEvents(
+      this.contractGasServiceStorage,
+      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE,
+      gasLastProcessedEvent,
+    );
+    await this.getContractEvents(
+      this.contractItsStorage,
+      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS,
+      itsLastProcessedEvent,
+    );
+  }
+
+  private async getContractEvents(contractId: string, type: string, lastProcessedEventKey: string | undefined) {
     let offset = 0;
     const limit = 20;
     let latestEventKey: string | null = null;
@@ -92,7 +97,7 @@ export class EventProcessorService {
         }
 
         if (eventsToProcess.length > 0) {
-          await this.consumeEvents(eventsToProcess);
+          // await this.consumeEvents(eventsToProcess);
         }
 
         // If we found the last processed event on this page, don't go to the next one
@@ -110,12 +115,8 @@ export class EventProcessorService {
 
     if (latestEventKey) {
       this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
-      await this.updateLastProcessedEventKey(redisKey, latestEventKey);
+      await this.lastProcessedDataRepository.update(type, latestEventKey);
     }
-  }
-
-  private async updateLastProcessedEventKey(redisKey: string, lastProcessedEventKey: string) {
-    await this.redisHelper.set(redisKey, lastProcessedEventKey);
   }
 
   async consumeEvents(events: ScEvent[]) {

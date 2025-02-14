@@ -17,12 +17,16 @@ import BigNumber from 'bignumber.js';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import { PendingTransaction } from './entities/pending-transaction';
 import { CosmwasmService } from './cosmwasm.service';
+import { AxiosError } from 'axios';
+import {
+  LAST_PROCESSED_DATA_TYPE,
+  LastProcessedDataRepository,
+} from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
-import { AxiosError } from 'axios';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -37,6 +41,7 @@ export class ApprovalsProcessorService {
     private readonly transactionsHelper: TransactionsHelper,
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
+    private readonly lastProcessedDataRepository: LastProcessedDataRepository,
     private readonly gasServiceContract: GasServiceContract,
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly cosmWasmService: CosmwasmService,
@@ -61,7 +66,7 @@ export class ApprovalsProcessorService {
   }
 
   async handleNewTasksRaw() {
-    let lastTaskUUID = (await this.redisHelper.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
+    let lastTaskUUID = await this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID);
 
     this.logger.debug(`Trying to process tasks for stacks starting from id: ${lastTaskUUID}`);
 
@@ -85,7 +90,7 @@ export class ApprovalsProcessorService {
 
             lastTaskUUID = task.id;
 
-            await this.redisHelper.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
+            await this.lastProcessedDataRepository.update(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID, lastTaskUUID);
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
 
