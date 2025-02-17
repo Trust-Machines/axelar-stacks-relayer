@@ -8,6 +8,7 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { ScEvent } from '../event-processor/types';
 import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockTransactionResponse = {
   tx_id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
@@ -31,6 +32,7 @@ describe('CrossChainTransactionProcessor', () => {
   let redisHelper: DeepMocked<RedisHelper>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let hiroApi: DeepMocked<HiroApiHelper>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: CrossChainTransactionProcessorService;
 
@@ -42,6 +44,7 @@ describe('CrossChainTransactionProcessor', () => {
     redisHelper = createMock();
     apiConfigService = createMock();
     hiroApi = createMock();
+    slackApi = createMock();
 
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
     apiConfigService.getContractGasServiceStorage.mockReturnValue(mockGasContractId);
@@ -77,6 +80,10 @@ describe('CrossChainTransactionProcessor', () => {
 
         if (token === HiroApiHelper) {
           return hiroApi;
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;

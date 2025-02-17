@@ -14,6 +14,7 @@ import { StacksNetwork } from '@stacks/network';
 import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } from '@stacks/transactions';
 import { AxiosError } from 'axios';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
 const MAX_NUMBER_OF_RETRIES: number = 3;
@@ -33,6 +34,7 @@ export class MessageApprovedProcessorService {
     apiConfigService: ApiConfigService,
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly gatewayContract: GatewayContract,
+    private readonly slackApi: SlackApi,
   ) {
     this.logger = new Logger(MessageApprovedProcessorService.name);
     this.contractItsAddress = apiConfigService.getContractItsProxy();
@@ -69,6 +71,10 @@ export class MessageApprovedProcessorService {
             this.logger.error(
               `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
             );
+            await this.slackApi.sendError(
+              'Message approved payload error',
+              `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
+            );
 
             messageApproved.status = MessageApprovedStatus.FAILED;
 
@@ -102,6 +108,10 @@ export class MessageApprovedProcessorService {
             this.logger.error(
               `Could not build and sign execute transaction for ${messageApproved.sourceChain} ${messageApproved.messageId}`,
               e,
+            );
+            await this.slackApi.sendError(
+              'Message approved error',
+              `Could not build and sign execute transaction for ${messageApproved.sourceChain} ${messageApproved.messageId}`,
             );
 
             await this.transactionsHelper.deleteNonce();
@@ -193,7 +203,11 @@ export class MessageApprovedProcessorService {
   }
 
   async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
-    this.logger.error(
+    this.logger.warn(
+      `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
+    );
+    await this.slackApi.sendWarn(
+      `Message approved failed`,
       `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
     );
 
@@ -222,6 +236,10 @@ export class MessageApprovedProcessorService {
       await this.axelarGmpApi.postEvents(eventsToSend, messageApproved.executeTxHash || '');
     } catch (e) {
       this.logger.error('Could not send all events to GMP API...', e);
+      await this.slackApi.sendError(
+        'Axelar GMP API error',
+        'Could not send all events to GMP API from MessageApprovedProcessor...',
+      );
 
       if (e instanceof AxiosError) {
         this.logger.error(e.response?.data);

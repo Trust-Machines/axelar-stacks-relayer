@@ -5,6 +5,7 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { TokenInfo } from '@stacks-monorepo/common/contracts/ITS/types/token.info';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class TokenManagerContract {
@@ -13,6 +14,7 @@ export class TokenManagerContract {
   constructor(
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly hiroApiHelper: HiroApiHelper,
+    private readonly slackApi: SlackApi,
   ) {}
 
   async getTokenAddress(tokenInfo: TokenInfo) {
@@ -30,8 +32,11 @@ export class TokenManagerContract {
       // Get fungible tokens from ABI since there is no other way to get this using the api
       return contractInfo?.abi?.fungible_tokens || null;
     } catch (e) {
-      this.logger.error(`Failed to get token symbol for token ${tokenAddress}`);
-      this.logger.error(e);
+      this.logger.warn(`Failed to get token symbol for token ${tokenAddress}`, e);
+      await this.slackApi.sendWarn(
+        'Token Manager contract error',
+        `Failed to get token symbol for token ${tokenAddress}`,
+      );
 
       return null;
     }
@@ -53,8 +58,11 @@ export class TokenManagerContract {
 
       return `${addressToString(response.value.address)}.${response.value.contractName.content}`;
     } catch (e) {
-      this.logger.error(`Failed to call get-token-address on token manager contract ${tokenManagerContract}`);
-      this.logger.error(e);
+      this.logger.warn(`Failed to call get-token-address on token manager contract ${tokenManagerContract}`, e);
+      await this.slackApi.sendWarn(
+        'Token Manager contract error',
+        `Failed to call get-token-address on token manager contract ${tokenManagerContract}`,
+      );
 
       return null;
     }

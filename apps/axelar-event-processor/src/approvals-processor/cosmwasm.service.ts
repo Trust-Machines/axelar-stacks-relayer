@@ -11,6 +11,7 @@ import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import VerifyTask = Components.Schemas.VerifyTask;
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 20_000;
 const COSM_WASM_TRANSACTION_POLL_INTERVAL = 6_000;
@@ -27,6 +28,7 @@ export class CosmwasmService {
     private readonly redisHelper: RedisHelper,
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly apiConfigService: ApiConfigService,
+    private readonly slackApi: SlackApi,
   ) {
     this.axelarContractIts = apiConfigService.getAxelarContractIts();
     this.stacksContractItsProxy = apiConfigService.getContractItsProxy();
@@ -136,6 +138,12 @@ export class CosmwasmService {
           cosmWasmTransaction.broadcastID
         }. Will be retried`,
       );
+      await this.slackApi.sendWarn(
+        'CosmWasm transaction error',
+        `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+          cosmWasmTransaction.broadcastID
+        }. Will be retried`,
+      );
 
       await this.updateRetry(key, {
         ...cosmWasmTransaction,
@@ -147,6 +155,10 @@ export class CosmwasmService {
   async broadcastCosmWasmTransaction(key: string, cosmWasmTransaction: PendingCosmWasmTransaction) {
     if (cosmWasmTransaction.retry >= MAX_NUMBER_OF_RETRIES) {
       this.logger.error(
+        `Max retries reached for ${cosmWasmTransaction.type}: ${JSON.stringify(cosmWasmTransaction.request)}`,
+      );
+      await this.slackApi.sendError(
+        'CosmWasm transaction error',
         `Max retries reached for ${cosmWasmTransaction.type}: ${JSON.stringify(cosmWasmTransaction.request)}`,
       );
       await this.redisHelper.delete(key);
@@ -170,9 +182,12 @@ export class CosmwasmService {
       );
       await this.storeCosmWasmTransaction(key, { ...cosmWasmTransaction, broadcastID });
       this.logger.debug(`${cosmWasmTransaction.type} broadcast successful, ID: ${broadcastID}`);
-    } catch (error) {
-      this.logger.error(`Error broadcasting ${cosmWasmTransaction.type}`);
-      this.logger.error(error);
+    } catch (e) {
+      this.logger.warn(`Error broadcasting ${cosmWasmTransaction.type}`, e);
+      await this.slackApi.sendWarn(
+        'CosmWasm transaction error',
+        `Error broadcasting ${cosmWasmTransaction.type}. Will be retried`,
+      );
       await this.updateRetry(key, cosmWasmTransaction);
     }
   }

@@ -7,16 +7,19 @@ import { Client as AxelarGmpApiClient, Components } from '@stacks-monorepo/commo
 import { AxiosResponse } from 'axios';
 import Event = Components.Schemas.Event;
 import PublishEventsResult = Components.Schemas.PublishEventsResult;
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 describe('ContractCallProcessor', () => {
   let apiClient: DeepMocked<AxelarGmpApiClient>;
   let apiConfigService: DeepMocked<ApiConfigService>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: AxelarGmpApi;
 
   beforeEach(async () => {
     apiClient = createMock();
     apiConfigService = createMock();
+    slackApi = createMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [AxelarGmpApi],
@@ -28,6 +31,10 @@ describe('ContractCallProcessor', () => {
 
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;

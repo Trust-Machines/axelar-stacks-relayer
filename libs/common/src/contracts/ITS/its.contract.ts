@@ -49,6 +49,7 @@ import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/ver
 import { BinaryUtils } from '@stacks-monorepo/common';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 export interface ItsExtraData {
   step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
@@ -84,6 +85,7 @@ export class ItsContract implements OnModuleInit {
     private readonly gasServiceContract: GasServiceContract,
     private readonly axelarContractIts: string,
     private readonly verifyOnchain: VerifyOnchainContract,
+    private readonly slackApi: SlackApi,
   ) {
     [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
     [this.storageContractAddress, this.storageContractName] = splitContractId(storageContract);
@@ -125,6 +127,10 @@ export class ItsContract implements OnModuleInit {
   ): Promise<MessageApprovedData> {
     if (sourceChain !== CONSTANTS.AXELAR_CHAIN || sourceAddress !== this.axelarContractIts) {
       this.logger.warn(
+        `Received message for Stacks ITS from non ITS Hub contract, NOT handling it. Message ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
+      );
+      await this.slackApi.sendWarn(
+        'ITS contract error',
         `Received message for Stacks ITS from non ITS Hub contract, NOT handling it. Message ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
       );
 
@@ -170,6 +176,7 @@ export class ItsContract implements OnModuleInit {
         );
       default:
         this.logger.error(`Unknown message type: ${message?.messageType}`);
+        await this.slackApi.sendError('ITS contract error', `Unknown message type: ${message?.messageType}`);
 
         return {
           transaction: null,
@@ -478,8 +485,8 @@ export class ItsContract implements OnModuleInit {
         tokenType: parsedResponse.value.value['token-type'].value,
       };
     } catch (e) {
-      this.logger.error(`Failed to call get-token-info for ${tokenId}`);
-      this.logger.error(e);
+      this.logger.error(`Failed to call get-token-info for ${tokenId}`, e);
+      await this.slackApi.sendError('ITS contract error', `Failed to call get-token-info for ${tokenId}`);
 
       throw e;
     }
@@ -586,6 +593,10 @@ export class ItsContract implements OnModuleInit {
 
     if (!success) {
       this.logger.error(`Could not deploy native interchain token, txId: ${executeTxHash}`);
+      await this.slackApi.sendError(
+        'ITS contract error',
+        `Could not deploy native interchain token, txId: ${executeTxHash}`,
+      );
 
       return {
         transaction: null,

@@ -19,6 +19,8 @@ import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
 import RefundTask = Components.Schemas.RefundTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
+import { LastProcessedDataRepository } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockExternalData = Buffer.from(
   '0c00000003046461746102000001210b000000010c0000000510636f6e74726163742d61646472657373061a2ffa5b05761d84adca1ad9215e7a7efdeddb10fe0b68656c6c6f2d776f726c640a6d6573736167652d69640d000000443078363432383430626531303961386530326564316637663635626137633165643539396133383137393666386233343032313164363435313161663761386131372d300c7061796c6f61642d686173680200000020af6b8f9d6a366d59d2851d7fd30a10c430dc949470ad50a13f5655b945f9c8830e736f757263652d616464726573730d0000002a3078634534313033383637434334426662323338324536443042374638386536453346384435363344360c736f757263652d636861696e0d0000000e6176616c616e6368652d66756a690866756e6374696f6e0d00000010617070726f76652d6d657373616765730570726f6f6602000001df0c000000020a7369676e6174757265730b0000000202000000419f1be5d20bb51f35a9b78e0c33673e2f7137b1227ff03f469adc3e4169f5be020d3d437d5188642086ff6ac44ff6fdcfdb293dc43f30cf13b94cd0b1fe5dcd9b010200000041cbc6f69b0d7a14e026ebfe6d7e97870ff1ff1adb961161492d7d60843ea32ae3576626ef6062c9e1779f95dbf956ece0793b35270545a35a4fea5fe24f60a4fe01077369676e6572730c00000003056e6f6e63650200000020000000000000000000000000000000000000000000000000000000000038d32c077369676e6572730b000000030c00000002067369676e65720200000021026e4a6fc3a6988c4cd7d3bc02e07bac8b72a9f5342d92f42161e7b6e57dd47e180677656967687401000000000000000000000000000000010c00000002067369676e6572020000002102d19c406d763c98d98554c980ae03543b936aad0c3f1289a367a0c2aafb71e8c10677656967687401000000000000000000000000000000010c00000002067369676e6572020000002103ea531f69879b3b15b6e3fe262250d5ceca6217e03e4def6919d4bdce3a7ec389067765696768740100000000000000000000000000000001097468726573686f6c640100000000000000000000000000000002==',
@@ -45,10 +47,12 @@ describe('ApprovalsProcessorService', () => {
   let transactionsHelper: DeepMocked<TransactionsHelper>;
   let gatewayContract: DeepMocked<GatewayContract>;
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
+  let lastProcessedDataRepository: DeepMocked<LastProcessedDataRepository>;
   let gasServiceContract: DeepMocked<GasServiceContract>;
   let hiroApiHelper: DeepMocked<HiroApiHelper>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let mockNetwork: DeepMocked<StacksNetwork>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: ApprovalsProcessorService;
 
@@ -58,10 +62,12 @@ describe('ApprovalsProcessorService', () => {
     transactionsHelper = createMock();
     gatewayContract = createMock();
     messageApprovedRepository = createMock();
+    lastProcessedDataRepository = createMock();
     gasServiceContract = createMock();
     hiroApiHelper = createMock();
     walletSigner = 'mocked-wallet-signer';
     apiConfigService = createMock();
+    slackApi = createMock();
 
     apiConfigService.getContractItsProxy.mockReturnValue(STACKS_ITS_CONTRACT);
     apiConfigService.getAxelarContractIts.mockReturnValue(AXELAR_ITS_CONTRACT);
@@ -102,6 +108,10 @@ describe('ApprovalsProcessorService', () => {
           return messageApprovedRepository;
         }
 
+        if (token === LastProcessedDataRepository) {
+          return lastProcessedDataRepository;
+        }
+
         if (token === GasServiceContract) {
           return gasServiceContract;
         }
@@ -115,14 +125,18 @@ describe('ApprovalsProcessorService', () => {
         }
 
         if (token === CosmwasmService) {
-          return new CosmwasmService(redisHelper, axelarGmpApi, apiConfigService);
+          return new CosmwasmService(redisHelper, axelarGmpApi, apiConfigService, slackApi);
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;
       })
       .compile();
 
-    redisHelper.get.mockImplementation(() => {
+    lastProcessedDataRepository.get.mockImplementation(() => {
       return Promise.resolve(undefined);
     });
 
@@ -183,11 +197,7 @@ describe('ApprovalsProcessorService', () => {
       await service.handleNewTasksRaw();
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.LastTaskUUID().key,
-        'lastUUID1',
-        CacheInfo.LastTaskUUID().ttl,
-      );
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastTaskUUID', 'lastUUID1');
     });
     it('Should handle gateway tx task', async () => {
       axelarGmpApi.getTasks
@@ -221,7 +231,7 @@ describe('ApprovalsProcessorService', () => {
       transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
       transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve(100_000_000n));
       await service.handleNewTasksRaw();
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.get).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
@@ -231,7 +241,8 @@ describe('ApprovalsProcessorService', () => {
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0, mockNetwork);
       expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransaction).toHaveBeenCalled();
-      expect(redisHelper.set).toHaveBeenCalledTimes(2);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
       expect(redisHelper.set).toHaveBeenCalledWith(
         CacheInfo.PendingTransaction('txHash').key,
         {
@@ -241,7 +252,7 @@ describe('ApprovalsProcessorService', () => {
         },
         CacheInfo.PendingTransaction('txHash').ttl,
       );
-      expect(redisHelper.set).toHaveBeenCalledWith(CacheInfo.LastTaskUUID().key, 'UUID', CacheInfo.LastTaskUUID().ttl);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastTaskUUID', 'UUID');
     });
 
     it('Should handle execute task', async () => {
@@ -295,7 +306,7 @@ describe('ApprovalsProcessorService', () => {
         taskItemId: 'UUID',
         availableGasBalance: '0',
       });
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
     });
 
     it('Should handle execute task invalid gas token', async () => {
@@ -352,7 +363,7 @@ describe('ApprovalsProcessorService', () => {
         taskItemId: 'UUID',
         availableGasBalance: '0',
       });
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
     });
 
     it('Should not save last task uuid if error', async () => {
@@ -388,14 +399,14 @@ describe('ApprovalsProcessorService', () => {
       await service.handleNewTasksRaw();
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0, mockNetwork);
-      expect(redisHelper.set).not.toHaveBeenCalled();
+      expect(lastProcessedDataRepository.update).not.toHaveBeenCalledTimes(1);
       // Mock lastUUID
-      redisHelper.get.mockImplementation(() => {
+      lastProcessedDataRepository.get.mockImplementation(() => {
         return Promise.resolve('lastUUID1');
       });
       // Will start processing tasks from lastUUID1
       await service.handleNewTasksRaw();
-      expect(redisHelper.get).toHaveBeenCalledTimes(2);
+      expect(lastProcessedDataRepository.get).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'lastUUID1');
     });
@@ -544,7 +555,7 @@ describe('ApprovalsProcessorService', () => {
 
   describe('processRefundTask', () => {
     function assertRefundSuccess(senderKey: string, transaction: StacksTransaction) {
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
@@ -733,7 +744,7 @@ describe('ApprovalsProcessorService', () => {
 
       expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
 
       expect(gasServiceContract.refund).not.toHaveBeenCalled();
@@ -798,7 +809,7 @@ describe('ApprovalsProcessorService', () => {
 
       expect(hiroApiHelper.getAccountBalance).toHaveBeenCalledTimes(1);
 
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
 
       expect(gasServiceContract.refund).not.toHaveBeenCalled();

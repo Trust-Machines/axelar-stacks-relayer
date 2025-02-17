@@ -17,12 +17,17 @@ import BigNumber from 'bignumber.js';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import { PendingTransaction } from './entities/pending-transaction';
 import { CosmwasmService } from './cosmwasm.service';
+import { AxiosError } from 'axios';
+import {
+  LAST_PROCESSED_DATA_TYPE,
+  LastProcessedDataRepository,
+} from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
-import { AxiosError } from 'axios';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -37,10 +42,12 @@ export class ApprovalsProcessorService {
     private readonly transactionsHelper: TransactionsHelper,
     private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
+    private readonly lastProcessedDataRepository: LastProcessedDataRepository,
     private readonly gasServiceContract: GasServiceContract,
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly cosmWasmService: CosmwasmService,
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
+    private readonly slackApi: SlackApi,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
@@ -61,7 +68,7 @@ export class ApprovalsProcessorService {
   }
 
   async handleNewTasksRaw() {
-    let lastTaskUUID = (await this.redisHelper.get<string>(CacheInfo.LastTaskUUID().key)) || undefined;
+    let lastTaskUUID = await this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID);
 
     this.logger.debug(`Trying to process tasks for stacks starting from id: ${lastTaskUUID}`);
 
@@ -85,9 +92,10 @@ export class ApprovalsProcessorService {
 
             lastTaskUUID = task.id;
 
-            await this.redisHelper.set(CacheInfo.LastTaskUUID().key, lastTaskUUID, CacheInfo.LastTaskUUID().ttl);
+            await this.lastProcessedDataRepository.update(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID, lastTaskUUID);
           } catch (e) {
             this.logger.error(`Could not process task ${task.id}`, task, e);
+            await this.slackApi.sendError('Task processing error', `Could not process task ${task.id}`);
 
             // Stop processing in case of an error and retry from the same task
             return;
@@ -97,6 +105,10 @@ export class ApprovalsProcessorService {
         this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
         this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
+        await this.slackApi.sendError(
+          'Task processing error',
+          `Error retrieving tasks... Last task UUID retrieved: ${lastTaskUUID}`,
+        );
 
         if (e instanceof AxiosError) {
           this.logger.error(e.response?.data);
@@ -129,6 +141,10 @@ export class ApprovalsProcessorService {
 
       if (retry === MAX_NUMBER_OF_RETRIES) {
         this.logger.error(`Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`);
+        await this.slackApi.sendError(
+          `Gateway transaction error`,
+          `Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`,
+        );
 
         continue;
       }
@@ -136,8 +152,11 @@ export class ApprovalsProcessorService {
       try {
         await this.processGatewayTxTask(externalData, retry);
       } catch (e) {
-        this.logger.error('Error while trying to retry transaction...');
-        this.logger.error(e);
+        this.logger.error('Error while trying to retry Gateway transaction...', e);
+        await this.slackApi.sendError(
+          `Gateway transaction retry error`,
+          'Error while trying to retry transaction... Transaction could not be sent to chain. Will be retried',
+        );
 
         // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
         await this.redisHelper.set<PendingTransaction>(
@@ -280,6 +299,11 @@ export class ApprovalsProcessorService {
         `Could not process refund for ${response.message.messageID}, for account ${response.refundRecipientAddress},` +
           ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
         e,
+      );
+      await this.slackApi.sendError(
+        `Refund task error`,
+        `Could not process refund for ${response.message.messageID} for account ${response.refundRecipientAddress},` +
+        ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
       );
 
       return;

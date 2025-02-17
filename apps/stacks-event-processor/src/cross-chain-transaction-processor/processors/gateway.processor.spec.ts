@@ -22,6 +22,7 @@ import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
 import { ApiConfigService, BinaryUtils } from '@stacks-monorepo/common';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';
 
@@ -29,6 +30,7 @@ describe('GatewayProcessor', () => {
   let gatewayContract: DeepMocked<GatewayContract>;
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
   let apiConfigService: DeepMocked<ApiConfigService>;
+  let slackApi: DeepMocked<SlackApi>;
 
   let service: GatewayProcessor;
 
@@ -69,6 +71,7 @@ describe('GatewayProcessor', () => {
     gatewayContract = createMock();
     messageApprovedRepository = createMock();
     apiConfigService = createMock();
+    slackApi = createMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [GatewayProcessor],
@@ -84,6 +87,10 @@ describe('GatewayProcessor', () => {
 
         if (token === ApiConfigService) {
           return apiConfigService;
+        }
+
+        if (token === SlackApi) {
+          return slackApi;
         }
 
         return null;
