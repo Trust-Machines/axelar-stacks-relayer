@@ -2,13 +2,6 @@ export class CacheInfo {
   key: string = '';
   ttl: number = Constants.oneSecond() * 6;
 
-  static LastTaskUUID(): CacheInfo {
-    return {
-      key: `lastTaskUUID`,
-      ttl: Constants.oneWeek(),
-    };
-  }
-
   static PendingTransaction(hash: string): CacheInfo {
     return {
       key: `pendingTransaction:${hash}`,
@@ -27,13 +20,6 @@ export class CacheInfo {
     return {
       key: `crossChainTransactions`,
       ttl: Constants.oneWeek(),
-    };
-  }
-
-  static ContractLastProcessedEvent(contractId: string): CacheInfo {
-    return {
-      key: `contractLastProcessedEvent:${contractId}`,
-      ttl: Constants.oneMonth(),
     };
   }
 
@@ -64,9 +50,5 @@ export class Constants {
 
   static oneWeek(): number {
     return Constants.oneDay() * 7;
-  }
-
-  static oneMonth(): number {
-    return Constants.oneDay() * 30;
   }
 }

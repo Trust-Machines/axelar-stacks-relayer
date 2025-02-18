@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ApiConfigModule, DatabaseModule } from '@stacks-monorepo/common';
 import { ApiModule } from '@stacks-monorepo/common/api/api.module';
@@ -8,7 +8,14 @@ import { ApprovalsProcessorService } from './approvals.processor.service';
 import { CosmwasmService } from './cosmwasm.service';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), ApiConfigModule, HelpersModule, ApiModule, ContractsModule, DatabaseModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    ApiConfigModule,
+    HelpersModule,
+    forwardRef(() => ApiModule),
+    ContractsModule,
+    DatabaseModule,
+  ],
   providers: [ApprovalsProcessorService, CosmwasmService],
 })
 export class ApprovalsProcessorModule {}

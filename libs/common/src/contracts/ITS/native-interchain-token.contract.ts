@@ -21,6 +21,7 @@ import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class NativeInterchainTokenContract implements OnModuleInit {
@@ -35,6 +36,7 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly transactionsHelper: TransactionsHelper,
     private readonly hiroApiHelper: HiroApiHelper,
+    private readonly slackApi: SlackApi,
   ) {}
 
   async onModuleInit() {
@@ -113,9 +115,10 @@ export class NativeInterchainTokenContract implements OnModuleInit {
       this.logger.log('Successfully fetched template source code');
 
       return this.sourceCode;
-    } catch (error) {
-      this.logger.error('Failed to get source code:');
-      this.logger.error(error);
+    } catch (e) {
+      this.logger.error('Failed to get source code:', e);
+      await this.slackApi.sendError('NIT contract error', 'Failed to get template source code');
+
       return null;
     }
   }
@@ -134,11 +137,11 @@ export class NativeInterchainTokenContract implements OnModuleInit {
       this.logger.log('Successfully fetched NIT template verification params');
 
       return this.templateDeployVerificationParams;
-    } catch (error) {
-      this.logger.error('Failed to get NIT template verification params:');
-      this.logger.error(error);
+    } catch (e) {
+      this.logger.error('Failed to get NIT template verification params:', e);
+      await this.slackApi.sendError('NIT contract error', 'Failed to get NIT template verification params');
 
-      throw error;
+      throw e;
     }
   }
 

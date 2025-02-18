@@ -18,8 +18,7 @@ export class Locker {
 
       return LockResult.SUCCESS;
     } catch (error) {
-      logger.error(`Error running ${key}`);
-      logger.error(error);
+      logger.error(`Error running ${key}`, error);
 
       return LockResult.ERROR;
     } finally {

@@ -31,6 +31,7 @@ import {
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { getMockScEvent } from '@stacks-monorepo/common/contracts/gas-service.contract.spec';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 jest.mock('@stacks/transactions', () => {
   const actual = jest.requireActual('@stacks/transactions');
@@ -54,16 +55,18 @@ describe('ItsContract', () => {
   let mockTokenManagerContract: DeepMocked<TokenManagerContract>;
   let mockNativeInterchainTokenContract: DeepMocked<NativeInterchainTokenContract>;
   let mockVerifyOnchain: DeepMocked<VerifyOnchainContract>;
+  let mockSlackApi: DeepMocked<SlackApi>;
 
   beforeEach(async () => {
-    mockNetwork = createMock<StacksNetwork>();
-    mockApiConfigService = createMock<ApiConfigService>();
-    mockTransactionsHelper = createMock<TransactionsHelper>();
-    mockTokenManagerContract = createMock<TokenManagerContract>();
-    mockNativeInterchainTokenContract = createMock<NativeInterchainTokenContract>();
-    mockGatewayContract = createMock<GatewayContract>();
-    mockGasServiceContract = createMock<GasServiceContract>();
-    mockVerifyOnchain = createMock<VerifyOnchainContract>();
+    mockNetwork = createMock();
+    mockApiConfigService = createMock();
+    mockTransactionsHelper = createMock();
+    mockTokenManagerContract = createMock();
+    mockNativeInterchainTokenContract = createMock();
+    mockGatewayContract = createMock();
+    mockGasServiceContract = createMock();
+    mockVerifyOnchain = createMock();
+    mockSlackApi = createMock();
 
     mockApiConfigService.getContractItsProxy.mockReturnValue(proxyContract);
     mockApiConfigService.getContractItsStorage.mockReturnValue('mockContractAddress.mockContractName-storage');
@@ -85,6 +88,7 @@ describe('ItsContract', () => {
               mockGasServiceContract,
               apiConfigService.getAxelarContractIts(),
               mockVerifyOnchain,
+              mockSlackApi,
             );
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],

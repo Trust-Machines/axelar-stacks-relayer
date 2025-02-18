@@ -5,6 +5,7 @@ import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers'
 import { cvToJSON, SingleSigSpendingCondition, StacksMessageType, StacksTransaction } from '@stacks/transactions';
 import { hexToBytes } from '@stacks/common';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const nitMockParams = {
   nonce: 1,
@@ -30,12 +31,14 @@ describe('VerifyOnchain', () => {
 
   let mockNetwork: DeepMocked<StacksNetwork>;
   let mockHiroApiHelper: DeepMocked<HiroApiHelper>;
+  let mockSlackApi: DeepMocked<SlackApi>;
 
   beforeEach(() => {
-    mockNetwork = createMock<StacksNetwork>();
-    mockHiroApiHelper = createMock<HiroApiHelper>();
+    mockNetwork = createMock();
+    mockHiroApiHelper = createMock();
+    mockSlackApi = createMock();
 
-    service = new VerifyOnchainContract(mockContract, mockNetwork, mockHiroApiHelper);
+    service = new VerifyOnchainContract(mockContract, mockNetwork, mockHiroApiHelper, mockSlackApi);
   });
 
   describe('buildNativeInterchainTokenVerificationParams', () => {

@@ -22,6 +22,7 @@ import { awaitSuccess, delay } from '../utils/await-success';
 import { TooLowAvailableBalanceError } from './entities/too-low-available-balance.error';
 import { ApiConfigService } from '../config';
 import { GasCheckerPayload } from './entities/gas-checker-payload';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const TX_TIMEOUT_MILLIS = 600_000;
 const TX_POLL_INTERVAL = 6000;
@@ -35,6 +36,7 @@ export class TransactionsHelper {
   constructor(
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly redisHelper: RedisHelper,
+    private readonly slackApi: SlackApi,
     @Inject(ProviderKeys.WALLET_SIGNER) walletSigner: string,
     @Inject(ProviderKeys.STACKS_NETWORK) network: StacksNetwork,
     apiConfigService: ApiConfigService,
@@ -73,8 +75,8 @@ export class TransactionsHelper {
     } catch (e) {
       await this.deleteNonce();
 
-      this.logger.error('Could not send transaction');
-      this.logger.error(e);
+      this.logger.error('Could not send transaction', e);
+      await this.slackApi.sendError('Send transaction error', `Could not send transaction... ${transaction.txid()}`);
 
       throw e;
     }
@@ -93,8 +95,8 @@ export class TransactionsHelper {
     } catch (e) {
       await this.deleteNonce();
 
-      this.logger.error('Could not call makeContractCall');
-      this.logger.error(e);
+      this.logger.error('Could not call makeContractCall', e);
+      await this.slackApi.sendError('Contract call error', `Could not call makeContractCall`);
 
       throw e;
     }
@@ -113,8 +115,8 @@ export class TransactionsHelper {
     } catch (e) {
       await this.deleteNonce();
 
-      this.logger.error('Could not call makeContractDeploy');
-      this.logger.error(e);
+      this.logger.error('Could not call makeContractDeploy', e);
+      await this.slackApi.sendError('Contract deploy error', `Could not call makeContractDeploy`);
 
       throw e;
     }
@@ -132,10 +134,11 @@ export class TransactionsHelper {
         const hash = await this.sendTransaction(tx);
         hashes.push(hash);
         this.logger.log(`Transaction ${tx.txid()} sent successfully`);
-      } catch (error) {
-        this.logger.error(`Transaction ${tx.txid()} could not be sent`);
-        this.logger.error(error);
-        break; // If one tx can't be sent, dont send the next transactions, beacuse there will be a nonce gap
+      } catch (e) {
+        this.logger.error(`Transaction ${tx.txid()} could not be sent`, e);
+        await this.slackApi.sendError('Send transactions error', `Transaction ${tx.txid()} could not be sent`);
+
+        break; // If one tx can't be sent, don't send the next transactions, beacause there will be a nonce gap
       }
     }
 
@@ -268,7 +271,7 @@ export class TransactionsHelper {
         return true;
       }
 
-      this.logger.error(
+      this.logger.warn(
         `[messageId: ${messageId}] Not enough gas paid: availableGasBalance: ${availableBalance}, totalEstimatedFees: ${totalEstimatedFees}. `,
       );
       throw new TooLowAvailableBalanceError();
