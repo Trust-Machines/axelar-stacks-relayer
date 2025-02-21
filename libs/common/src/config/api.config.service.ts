@@ -14,6 +14,15 @@ export class ApiConfigService {
     return hiroUrl;
   }
 
+  getHiroApiKey(): string {
+    const hiroApiKey = this.configService.get<string>('HIRO_API_KEY');
+    if (!hiroApiKey) {
+      throw new Error('No HIRO API key present');
+    }
+
+    return hiroApiKey;
+  }
+
   getRedisUrl(): string {
     const redisUrl = this.configService.get<string>('REDIS_URL');
     if (!redisUrl) {
