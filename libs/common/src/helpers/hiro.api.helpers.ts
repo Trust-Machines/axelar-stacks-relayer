@@ -28,6 +28,10 @@ export class HiroApiHelper {
     this.client = axios.create({
       baseURL: apiConfigService.getHiroApiUrl(),
       timeout: API_TIMEOUT,
+      headers: {
+        Accept: 'application/json',
+        'X-API-Key': apiConfigService.getHiroApiKey(),
+      },
     });
   }
 
