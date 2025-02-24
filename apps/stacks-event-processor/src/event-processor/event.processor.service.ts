@@ -10,6 +10,7 @@ import {
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { AxiosError } from 'axios';
 
 @Injectable()
 export class EventProcessorService {
@@ -99,7 +100,7 @@ export class EventProcessorService {
         }
 
         if (eventsToProcess.length > 0) {
-          // await this.consumeEvents(eventsToProcess);
+          await this.consumeEvents(eventsToProcess);
         }
 
         // If we found the last processed event on this page, don't go to the next one
@@ -110,10 +111,15 @@ export class EventProcessorService {
         offset += limit;
       } catch (e) {
         this.logger.error(`Failed to get events for ${contractId}`, e);
-        await this.slackApi.sendError(
-          'Event processing error',
-          `An unhandled error occurred when consuming events for contract ${contractId}, latest event key ${latestEventKey}`,
-        );
+
+        // Only send Slack notification if not axios error since it pollutes the channel.
+        // This can happen only in the case Hiro API is down, and for that there is separate monitoring from infra
+        if (!(e instanceof AxiosError)) {
+          await this.slackApi.sendError(
+            'Event processing error',
+            `An unhandled error occurred when consuming events for contract ${contractId}, latest event key ${latestEventKey}`,
+          );
+        }
 
         break;
       }
