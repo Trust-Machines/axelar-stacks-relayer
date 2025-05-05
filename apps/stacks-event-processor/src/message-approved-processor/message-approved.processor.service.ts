@@ -182,11 +182,11 @@ export class MessageApprovedProcessorService {
       contractName: contractName,
       functionName: 'execute',
       functionArgs: [
+        principalCV(gatewayImpl),
         stringAsciiCV(messageApproved.sourceChain),
         stringAsciiCV(messageApproved.messageId),
         stringAsciiCV(messageApproved.sourceAddress),
         bufferCV(messageApproved.payload),
-        principalCV(gatewayImpl),
       ],
       senderKey: this.walletSigner,
       network: this.network,
