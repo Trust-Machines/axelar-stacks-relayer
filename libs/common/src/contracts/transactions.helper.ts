@@ -137,7 +137,7 @@ export class TransactionsHelper {
         this.logger.error(`Transaction ${tx.txid()} could not be sent`, e);
         await this.slackApi.sendError('Send transactions error', `Transaction ${tx.txid()} could not be sent. Will be retried`);
 
-        break; // If one tx can't be sent, don't send the next transactions, beacause there will be a nonce gap
+        break; // If one tx can't be sent, don't send the next transactions, because there will be a nonce gap
       }
     }
 

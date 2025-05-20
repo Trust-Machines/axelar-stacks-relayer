@@ -41,7 +41,7 @@ export class MessageApprovedProcessorService {
   }
 
   // Runs after Axelar EventProcessor newTasks cron has run
-  @Cron('7/15 * * * * *')
+  @Cron('7/10 * * * * *')
   async processPendingMessageApproved() {
     await Locker.lock('processPendingMessageApproved', async () => {
       this.logger.debug('Running processPendingMessageApproved cron');

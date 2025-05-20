@@ -53,17 +53,17 @@ export class ApprovalsProcessorService {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
 
-  @Cron('0/15 * * * * *')
+  @Cron('2/10 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
 
-  @Cron('2/6 * * * * *')
+  @Cron('4/10 * * * * *')
   async handlePendingTransactions() {
     await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
-  @Cron('4/6 * * * * *')
+  @Cron('6/10 * * * * *')
   async handlePendingCosmWasmTransaction() {
     await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
   }
