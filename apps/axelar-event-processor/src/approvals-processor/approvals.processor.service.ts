@@ -28,6 +28,7 @@ import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { delay } from '@stacks-monorepo/common/utils/await-success';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -94,8 +95,8 @@ export class ApprovalsProcessorService {
 
             await this.lastProcessedDataRepository.update(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID, lastTaskUUID);
           } catch (e) {
-            this.logger.error(`Could not process task ${task.id}`, task, e);
-            await this.slackApi.sendError('Task processing error', `Could not process task ${task.id}`);
+            this.logger.error(`Could not process task ${task.id} ${task.type}. Will be retried`, task, e);
+            await this.slackApi.sendError('Task processing error', `Could not process task ${task.id}, ${task.type}. Will be retried`);
 
             // Stop processing in case of an error and retry from the same task
             return;
@@ -121,6 +122,9 @@ export class ApprovalsProcessorService {
 
   async handlePendingTransactionsRaw() {
     const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
+
+    await delay(500); // If we try to get the txStatus immediately after broadcasting the tx, we might get 404
+
     for (const key of keys) {
       const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
 

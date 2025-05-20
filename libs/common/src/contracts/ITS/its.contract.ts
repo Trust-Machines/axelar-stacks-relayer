@@ -249,7 +249,7 @@ export class ItsContract implements OnModuleInit {
     if (executeTxHash) {
       const result = await this.checkPendingTransactionSuccess(executeTxHash, extraData);
 
-      // If transaction is still pending or it has not succeded, we will exit here
+      // If transaction is still pending or it has not succeeded, we will exit here
       if (result) {
         return result;
       }

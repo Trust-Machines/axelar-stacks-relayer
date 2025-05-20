@@ -60,7 +60,7 @@ export class CrossChainTransactionProcessorService {
         this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
         await this.slackApi.sendWarn(
           `Cross chain transaction processing error`,
-          'An error occurred while processing cross chain transaction ${txHash}. Will be retried',
+          `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
         );
       }
     }

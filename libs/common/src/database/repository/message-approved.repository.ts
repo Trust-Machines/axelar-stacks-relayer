@@ -21,8 +21,8 @@ export class MessageApprovedRepository {
   }
 
   findPending(page: number = 0, take: number = 10): Promise<MessageApproved[] | null> {
-    // Last updated more than six minutes ago, if retrying
-    const lastUpdatedAtRetry = new Date(new Date().getTime() - 360_000);
+    // Last updated more than four minutes ago, if retrying
+    const lastUpdatedAtRetry = new Date(new Date().getTime() - 240_000);
     // Prevent frequent retries of special transactions
     const lastUpdated = new Date(new Date().getTime() - 15_000);
 

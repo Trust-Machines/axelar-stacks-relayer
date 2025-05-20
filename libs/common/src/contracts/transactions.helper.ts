@@ -18,7 +18,7 @@ import { RedisHelper } from '../helpers/redis.helper';
 import { CacheInfo } from '../utils';
 import { ProviderKeys } from '../utils/provider.enum';
 import { GasError } from './entities/gas.error';
-import { awaitSuccess, delay } from '../utils/await-success';
+import { awaitSuccess } from '../utils/await-success';
 import { TooLowAvailableBalanceError } from './entities/too-low-available-balance.error';
 import { ApiConfigService } from '../config';
 import { GasCheckerPayload } from './entities/gas-checker-payload';
@@ -75,8 +75,7 @@ export class TransactionsHelper {
     } catch (e) {
       await this.deleteNonce();
 
-      this.logger.error('Could not send transaction', e);
-      await this.slackApi.sendError('Send transaction error', `Could not send transaction... ${transaction.txid()}`);
+      this.logger.warn('Could not send transaction', e);
 
       throw e;
     }
@@ -136,7 +135,7 @@ export class TransactionsHelper {
         this.logger.log(`Transaction ${tx.txid()} sent successfully`);
       } catch (e) {
         this.logger.error(`Transaction ${tx.txid()} could not be sent`, e);
-        await this.slackApi.sendError('Send transactions error', `Transaction ${tx.txid()} could not be sent`);
+        await this.slackApi.sendError('Send transactions error', `Transaction ${tx.txid()} could not be sent. Will be retried`);
 
         break; // If one tx can't be sent, don't send the next transactions, beacause there will be a nonce gap
       }
@@ -147,7 +146,6 @@ export class TransactionsHelper {
   }
 
   async awaitSuccess(txHash: string): Promise<{ success: boolean; transaction: Transaction | null }> {
-    await delay(300); // If we try to get the txStatus immediately after broadcasting the tx, we might get 404
     const { result } = await awaitSuccess<Transaction>(
       txHash,
       TX_TIMEOUT_MILLIS,
