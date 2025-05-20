@@ -462,6 +462,7 @@ export class ItsContract implements OnModuleInit {
     return DecodingUtils.decodeEvent<InterchainTransferEvent>(event, interchainTransferEventDecoder);
   }
 
+  // TODO: Add cache for this and other calls
   async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
     try {
       const response = await callReadOnlyFunction({

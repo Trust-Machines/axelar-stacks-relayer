@@ -188,6 +188,7 @@ export class TransactionsHelper {
     return { isFinished: !isPending, success };
   }
 
+  // TODO: If succesfull, make nonce not expire
   private async getSignerNonce(): Promise<number> {
     const value = await this.getCachedNonce();
     this.logger.debug(`Cached last used nonce: ${value}`);
