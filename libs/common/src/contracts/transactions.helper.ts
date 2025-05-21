@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { StacksNetwork } from '@stacks/network';
 import {
   broadcastTransaction,
@@ -18,14 +17,12 @@ import { RedisHelper } from '../helpers/redis.helper';
 import { CacheInfo } from '../utils';
 import { ProviderKeys } from '../utils/provider.enum';
 import { GasError } from './entities/gas.error';
-import { awaitSuccess } from '../utils/await-success';
 import { TooLowAvailableBalanceError } from './entities/too-low-available-balance.error';
 import { ApiConfigService } from '../config';
 import { GasCheckerPayload } from './entities/gas-checker-payload';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
-const TX_TIMEOUT_MILLIS = 600_000;
-const TX_POLL_INTERVAL = 6000;
+const TX_TIMEOUT_MILLIS = 240_000;
 
 @Injectable()
 export class TransactionsHelper {
@@ -48,10 +45,12 @@ export class TransactionsHelper {
       network.isMainnet() ? TransactionVersion.Mainnet : TransactionVersion.Testnet,
     );
 
+    this.logger.log(`Initializing TransactionsHelper with Stacks Wallet: ${this.walletSignerAddress}`);
+
     this.availableGasCheckEnabled = apiConfigService.getAvailableGasCheckEnabled();
   }
 
-  async getTransactionGas(transaction: StacksTransaction, retry: number, network: StacksNetwork): Promise<bigint> {
+  async getTransactionGas(transaction: StacksTransaction, retry: number, network: StacksNetwork): Promise<string> {
     const result = await estimateContractFunctionCall(transaction, network);
 
     if (!result) {
@@ -62,7 +61,7 @@ export class TransactionsHelper {
     const extraGasPercent = 10 + retry * 2;
     const extraGas = (result * BigInt(extraGasPercent)) / BigInt(100);
 
-    return result + extraGas;
+    return String(result + extraGas);
   }
 
   async sendTransaction(transaction: StacksTransaction): Promise<string> {
@@ -135,7 +134,10 @@ export class TransactionsHelper {
         this.logger.log(`Transaction ${tx.txid()} sent successfully`);
       } catch (e) {
         this.logger.error(`Transaction ${tx.txid()} could not be sent`, e);
-        await this.slackApi.sendError('Send transactions error', `Transaction ${tx.txid()} could not be sent. Will be retried`);
+        await this.slackApi.sendError(
+          'Send transactions error',
+          `Transaction ${tx.txid()} could not be sent. Will be retried`,
+        );
 
         break; // If one tx can't be sent, don't send the next transactions, because there will be a nonce gap
       }
@@ -145,25 +147,6 @@ export class TransactionsHelper {
     return hashes;
   }
 
-  async awaitSuccess(txHash: string): Promise<{ success: boolean; transaction: Transaction | null }> {
-    const { result } = await awaitSuccess<Transaction>(
-      txHash,
-      TX_TIMEOUT_MILLIS,
-      TX_POLL_INTERVAL,
-      `TRANSACTION_STATUS:${txHash}`,
-      async (hash) => await this.hiroApiHelper.getTransaction(hash),
-      (tx: Transaction) => (tx.tx_status as any) !== 'pending',
-      this.logger,
-    );
-
-    const successful = result?.tx_status === 'success';
-    if (!successful) {
-      return { success: false, transaction: null };
-    }
-
-    return { success: true, transaction: result };
-  }
-
   async isTransactionSuccessfulWithTimeout(
     txHash: string,
     timestampMillis: number,
@@ -171,9 +154,14 @@ export class TransactionsHelper {
     isFinished: boolean;
     success: boolean;
   }> {
-    const transaction = await this.hiroApiHelper.getTransaction(txHash);
+    let transaction = null;
+    try {
+      transaction = await this.hiroApiHelper.getTransaction(txHash);
+    } catch (e) {
+      this.logger.debug(`Failed to get Stacks transaction ${txHash} from chain at this time`);
+    }
 
-    const isPending = (transaction.tx_status as any) === 'pending';
+    const isPending = !transaction || (transaction.tx_status as any) === 'pending';
 
     // Exit early if the transaction is still pending after timeout
     if (isPending && Date.now() - timestampMillis > TX_TIMEOUT_MILLIS) {
@@ -183,12 +171,11 @@ export class TransactionsHelper {
       };
     }
 
-    const success = transaction.tx_status === 'success';
+    const success = !!transaction && transaction.tx_status === 'success';
 
     return { isFinished: !isPending, success };
   }
 
-  // TODO: If succesfull, make nonce not expire
   private async getSignerNonce(): Promise<number> {
     const value = await this.getCachedNonce();
     this.logger.debug(`Cached last used nonce: ${value}`);

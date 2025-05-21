@@ -5,4 +5,5 @@ export interface PendingCosmWasmTransaction {
   retry: number;
   broadcastID?: string;
   type: 'CONSTRUCT_PROOF' | 'VERIFY';
+  timestamp: number;
 }

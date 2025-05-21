@@ -8,7 +8,6 @@ import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contr
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
-import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { StacksTransaction } from '@stacks/transactions';
@@ -979,6 +978,7 @@ describe('ApprovalsProcessorService', () => {
         retry: 0,
         broadcastID: 'broadcastID1',
         type: 'CONSTRUCT_PROOF',
+        timestamp: Date.now(),
       };
 
       jest.mocked(awaitSuccess).mockResolvedValue({ success: true, result: 'SUCCESS' });
@@ -1000,6 +1000,7 @@ describe('ApprovalsProcessorService', () => {
         retry: 0,
         broadcastID: 'broadcastID2',
         type: 'CONSTRUCT_PROOF',
+        timestamp: Date.now(),
       };
 
       jest.mocked(awaitSuccess).mockResolvedValue({ success: false, result: 'RECEIVED' });
@@ -1028,6 +1029,7 @@ describe('ApprovalsProcessorService', () => {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg3' }] },
         retry: 0,
         type: 'CONSTRUCT_PROOF',
+        timestamp: Date.now(),
       };
 
       redisHelper.scan.mockResolvedValue([key]);
@@ -1055,6 +1057,7 @@ describe('ApprovalsProcessorService', () => {
         request: { verify_messages: [{ source_chain: 'axelar', message_id: 'msg3' }] },
         retry: 0,
         type: 'VERIFY',
+        timestamp: Date.now(),
       };
 
       redisHelper.scan.mockResolvedValue([key]);
@@ -1082,6 +1085,7 @@ describe('ApprovalsProcessorService', () => {
         request: { construct_proof: [{ source_chain: 'axelar', message_id: 'msg4' }] },
         retry: 3,
         type: 'CONSTRUCT_PROOF',
+        timestamp: Date.now(),
       };
 
       redisHelper.scan.mockResolvedValue([key]);

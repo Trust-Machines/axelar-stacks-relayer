@@ -14,6 +14,7 @@ import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/toke
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 import { ApiModule } from '@stacks-monorepo/common/api';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 
 @Module({
   imports: [HelpersModule, forwardRef(() => ApiModule)],
@@ -21,11 +22,28 @@ import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
     {
       provide: ProviderKeys.STACKS_NETWORK,
       useFactory: (apiConfigService: ApiConfigService) => {
-        if (apiConfigService.getStacksNetwork() === CONSTANTS.NETWORK_MAINNET) {
-          return new StacksMainnet();
+        function hiroFetch(url: string, options?: RequestInit): Promise<Response> {
+          const apiHeaders: { 'x-api-key'?: string } = {};
+          apiHeaders['x-api-key'] = apiConfigService.getHiroApiKey();
+
+          return fetch(url, {
+            ...options,
+            headers: { ...options?.headers, ...apiHeaders },
+            cache: 'no-store',
+          });
         }
 
-        return new StacksTestnet();
+        if (apiConfigService.getStacksNetwork() === CONSTANTS.NETWORK_MAINNET) {
+          return new StacksMainnet({
+            url: apiConfigService.getHiroApiUrl(),
+            fetchFn: hiroFetch,
+          });
+        }
+
+        return new StacksTestnet({
+          url: apiConfigService.getHiroApiUrl(),
+          fetchFn: hiroFetch,
+        });
       },
       inject: [ApiConfigService],
     },
@@ -113,6 +131,7 @@ import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
         gasServiceContract: GasServiceContract,
         verifyOnchain: VerifyOnchainContract,
         slackApi: SlackApi,
+        redisHelper: RedisHelper,
       ) => {
         return new ItsContract(
           apiConfigService.getContractItsProxy(),
@@ -126,6 +145,7 @@ import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
           apiConfigService.getAxelarContractIts(),
           verifyOnchain,
           slackApi,
+          redisHelper,
         );
       },
       inject: [
@@ -138,6 +158,7 @@ import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
         GasServiceContract,
         VerifyOnchainContract,
         SlackApi,
+        RedisHelper,
       ],
     },
     {

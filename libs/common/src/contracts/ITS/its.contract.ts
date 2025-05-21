@@ -46,10 +46,11 @@ import {
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
-import { BinaryUtils } from '@stacks-monorepo/common';
+import { BinaryUtils, CacheInfo } from '@stacks-monorepo/common';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 
 export interface ItsExtraData {
   step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
@@ -86,6 +87,7 @@ export class ItsContract implements OnModuleInit {
     private readonly axelarContractIts: string,
     private readonly verifyOnchain: VerifyOnchainContract,
     private readonly slackApi: SlackApi,
+    private readonly redisHelper: RedisHelper,
   ) {
     [this.proxyContractAddress, this.proxyContractName] = splitContractId(proxyContract);
     [this.storageContractAddress, this.storageContractName] = splitContractId(storageContract);
@@ -462,35 +464,42 @@ export class ItsContract implements OnModuleInit {
     return DecodingUtils.decodeEvent<InterchainTransferEvent>(event, interchainTransferEventDecoder);
   }
 
-  // TODO: Add cache for this and other calls
   async getTokenInfo(tokenId: string): Promise<TokenInfo | null> {
-    try {
-      const response = await callReadOnlyFunction({
-        contractAddress: this.storageContractAddress,
-        contractName: this.storageContractName,
-        functionName: 'get-token-info',
-        functionArgs: [bufferCV(BinaryUtils.hexToBuffer(tokenId))],
-        network: this.network,
-        senderAddress: this.storageContractAddress,
-      });
+    let tokenInfo = await this.redisHelper.get<TokenInfo>(CacheInfo.TokenInfo(tokenId).key);
 
-      const parsedResponse = cvToJSON(response);
+    if (!tokenInfo) {
+      try {
+        const response = await callReadOnlyFunction({
+          contractAddress: this.storageContractAddress,
+          contractName: this.storageContractName,
+          functionName: 'get-token-info',
+          functionArgs: [bufferCV(BinaryUtils.hexToBuffer(tokenId))],
+          network: this.network,
+          senderAddress: this.storageContractAddress,
+        });
 
-      // Token not yet registered with Stacks ITS contract
-      if (parsedResponse.value === null) {
-        return null;
+        const parsedResponse = cvToJSON(response);
+
+        // Token not yet registered with Stacks ITS contract
+        if (parsedResponse.value === null) {
+          return null;
+        }
+
+        tokenInfo = {
+          managerAddress: parsedResponse.value.value['manager-address'].value,
+          tokenType: parsedResponse.value.value['token-type'].value,
+        };
+
+        await this.redisHelper.set(CacheInfo.TokenInfo(tokenId).key, tokenInfo, CacheInfo.TokenInfo(tokenId).ttl);
+      } catch (e) {
+        this.logger.error(`Failed to call get-token-info for ${tokenId}`, e);
+        await this.slackApi.sendError('ITS contract error', `Failed to call get-token-info for ${tokenId}`);
+
+        throw e;
       }
-
-      return {
-        managerAddress: parsedResponse.value.value['manager-address'].value,
-        tokenType: parsedResponse.value.value['token-type'].value,
-      };
-    } catch (e) {
-      this.logger.error(`Failed to call get-token-info for ${tokenId}`, e);
-      await this.slackApi.sendError('ITS contract error', `Failed to call get-token-info for ${tokenId}`);
-
-      throw e;
     }
+
+    return tokenInfo;
   }
 
   private async getExecuteReceivePostConditions(

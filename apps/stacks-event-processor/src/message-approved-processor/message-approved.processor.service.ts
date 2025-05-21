@@ -55,7 +55,7 @@ export class MessageApprovedProcessorService {
         const entriesToUpdate: MessageApproved[] = [];
         const entriesWithTransactions: MessageApproved[] = [];
         for (const messageApproved of entries) {
-          if (messageApproved.retry === MAX_NUMBER_OF_RETRIES) {
+          if (messageApproved.retry >= MAX_NUMBER_OF_RETRIES) {
             await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
 
             entriesToUpdate.push(messageApproved);

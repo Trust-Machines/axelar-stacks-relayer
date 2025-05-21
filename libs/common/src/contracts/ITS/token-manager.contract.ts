@@ -6,6 +6,8 @@ import { TokenInfo } from '@stacks-monorepo/common/contracts/ITS/types/token.inf
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { CacheInfo } from '@stacks-monorepo/common';
 
 @Injectable()
 export class TokenManagerContract {
@@ -15,6 +17,7 @@ export class TokenManagerContract {
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly slackApi: SlackApi,
+    private readonly redisHelper: RedisHelper,
   ) {}
 
   async getTokenAddress(tokenInfo: TokenInfo) {
@@ -26,45 +29,69 @@ export class TokenManagerContract {
   }
 
   async getTokenContractFungibleTokens(tokenAddress: string): Promise<{ name: string }[] | null> {
-    try {
-      const contractInfo = await this.hiroApiHelper.getContractInfo(tokenAddress);
+    let fungibleTokens = await this.redisHelper.get<{ name: string }[]>(CacheInfo.FungibleTokens(tokenAddress).key);
 
-      // Get fungible tokens from ABI since there is no other way to get this using the api
-      return contractInfo?.abi?.fungible_tokens || null;
-    } catch (e) {
-      this.logger.warn(`Failed to get token symbol for token ${tokenAddress}`, e);
-      await this.slackApi.sendWarn(
-        'Token Manager contract error',
-        `Failed to get token symbol for token ${tokenAddress}`,
-      );
+    if (!fungibleTokens) {
+      try {
+        const contractInfo = await this.hiroApiHelper.getContractInfo(tokenAddress);
 
-      return null;
+        // Get fungible tokens from ABI since there is no other way to get this using the api
+        fungibleTokens = contractInfo?.abi?.fungible_tokens || null;
+
+        await this.redisHelper.set(
+          CacheInfo.FungibleTokens(tokenAddress).key,
+          fungibleTokens,
+          CacheInfo.FungibleTokens(tokenAddress).ttl,
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to get token symbol for token ${tokenAddress}`, e);
+        await this.slackApi.sendWarn(
+          'Token Manager contract error',
+          `Failed to get token symbol for token ${tokenAddress}`,
+        );
+
+        return null;
+      }
     }
+
+    return fungibleTokens as { name: string }[] | null;
   }
 
   private async getTokenAddressRaw(tokenManagerContract: string) {
-    try {
-      const contractSplit = tokenManagerContract.split('.');
-      const clarityValue = await callReadOnlyFunction({
-        contractAddress: contractSplit[0],
-        contractName: contractSplit[1],
-        functionName: 'get-token-address',
-        functionArgs: [],
-        network: this.network,
-        senderAddress: contractSplit[0],
-      });
+    let tokenAddressRaw = await this.redisHelper.get<string>(CacheInfo.TokenAddressRaw(tokenManagerContract).key);
 
-      const response = clarityValue as ResponseOkCV<ContractPrincipalCV>;
+    if (!tokenAddressRaw) {
+      try {
+        const contractSplit = tokenManagerContract.split('.');
+        const clarityValue = await callReadOnlyFunction({
+          contractAddress: contractSplit[0],
+          contractName: contractSplit[1],
+          functionName: 'get-token-address',
+          functionArgs: [],
+          network: this.network,
+          senderAddress: contractSplit[0],
+        });
 
-      return `${addressToString(response.value.address)}.${response.value.contractName.content}`;
-    } catch (e) {
-      this.logger.warn(`Failed to call get-token-address on token manager contract ${tokenManagerContract}`, e);
-      await this.slackApi.sendWarn(
-        'Token Manager contract error',
-        `Failed to call get-token-address on token manager contract ${tokenManagerContract}`,
-      );
+        const response = clarityValue as ResponseOkCV<ContractPrincipalCV>;
 
-      return null;
+        tokenAddressRaw = `${addressToString(response.value.address)}.${response.value.contractName.content}`;
+
+        await this.redisHelper.set<string>(
+          CacheInfo.TokenAddressRaw(tokenManagerContract).key,
+          tokenAddressRaw,
+          CacheInfo.TokenAddressRaw(tokenManagerContract).ttl,
+        );
+      } catch (e) {
+        this.logger.warn(`Failed to call get-token-address on token manager contract ${tokenManagerContract}`, e);
+        await this.slackApi.sendWarn(
+          'Token Manager contract error',
+          `Failed to call get-token-address on token manager contract ${tokenManagerContract}`,
+        );
+
+        return null;
+      }
     }
+
+    return tokenAddressRaw;
   }
 }

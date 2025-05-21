@@ -69,7 +69,7 @@ export class AxelarGmpApi {
     }
   }
 
-  async getTasks(chain: string, lastUUID?: string | undefined, limit: number = 25) {
+  async getTasks(chain: string, lastUUID?: string | undefined, limit: number = 10) {
     return await this.apiClient.getTasks({
       chain,
       after: lastUUID,

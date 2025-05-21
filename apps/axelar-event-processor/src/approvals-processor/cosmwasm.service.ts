@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  BroadcastID,
   BroadcastRequest,
   BroadcastStatus,
   Components,
@@ -7,14 +8,12 @@ import {
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { ApiConfigService, AxelarGmpApi, Constants } from '@stacks-monorepo/common';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
-import { awaitSuccess } from '@stacks-monorepo/common/utils/await-success';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import VerifyTask = Components.Schemas.VerifyTask;
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
-const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 20_000;
-const COSM_WASM_TRANSACTION_POLL_INTERVAL = 6_000;
+const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 30_000;
 const MAX_NUMBER_OF_RETRIES = 3;
 
 @Injectable()
@@ -114,14 +113,10 @@ export class CosmwasmService {
         ? this.apiConfigService.getMultisigProverContract()
         : this.apiConfigService.getAxelarGatewayContract();
 
-    const { success } = await awaitSuccess(
+    const { isFinished, success } = await this.isTransactionSuccessfulWithTimeout(
       cosmWasmTransaction.broadcastID,
-      COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS,
-      COSM_WASM_TRANSACTION_POLL_INTERVAL,
-      `${cosmWasmTransaction.type}:${cosmWasmTransaction.broadcastID}`,
-      async (id) => await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id, wasmContractAddress),
-      (status: BroadcastStatus) => status === 'SUCCESS',
-      this.logger,
+      wasmContractAddress,
+      cosmWasmTransaction.timestamp,
     );
 
     if (success) {
@@ -132,24 +127,30 @@ export class CosmwasmService {
       );
 
       await this.redisHelper.delete(key);
-    } else {
-      this.logger.warn(
-        `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
-          cosmWasmTransaction.broadcastID
-        }. Will be retried`,
-      );
-      await this.slackApi.sendWarn(
-        'CosmWasm transaction error',
-        `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
-          cosmWasmTransaction.broadcastID
-        }. Will be retried`,
-      );
 
-      await this.updateRetry(key, {
-        ...cosmWasmTransaction,
-        broadcastID: undefined,
-      });
+      return;
     }
+
+    if (!isFinished) {
+      return;
+    }
+
+    this.logger.warn(
+      `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+        cosmWasmTransaction.broadcastID
+      }. Will be retried`,
+    );
+    await this.slackApi.sendWarn(
+      'CosmWasm transaction error',
+      `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
+        cosmWasmTransaction.broadcastID
+      }. Will be retried`,
+    );
+
+    await this.updateRetry(key, {
+      ...cosmWasmTransaction,
+      broadcastID: undefined,
+    });
   }
 
   async broadcastCosmWasmTransaction(key: string, cosmWasmTransaction: PendingCosmWasmTransaction) {
@@ -180,7 +181,7 @@ export class CosmwasmService {
         cosmWasmTransaction.request,
         wasmContractAddress,
       );
-      await this.storeCosmWasmTransaction(key, { ...cosmWasmTransaction, broadcastID });
+      await this.storeCosmWasmTransaction(key, { ...cosmWasmTransaction, broadcastID, timestamp: Date.now() });
       this.logger.debug(`${cosmWasmTransaction.type} broadcast successful, ID: ${broadcastID}`);
     } catch (e) {
       this.logger.warn(`Error broadcasting ${cosmWasmTransaction.type}`, e);
@@ -196,7 +197,38 @@ export class CosmwasmService {
     const updatedProof: PendingCosmWasmTransaction = {
       ...cosmWasmTransaction,
       retry: cosmWasmTransaction.retry + 1,
+      timestamp: Date.now(),
     };
     await this.storeCosmWasmTransaction(key, updatedProof);
+  }
+
+  private async isTransactionSuccessfulWithTimeout(
+    id: BroadcastID,
+    wasmContractAddress: string,
+    timestampMillis: number,
+  ): Promise<{
+    isFinished: boolean;
+    success: boolean;
+  }> {
+    let status: BroadcastStatus | null = null;
+    try {
+      status = await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id, wasmContractAddress);
+    } catch (e) {
+      this.logger.debug(`Failed to get CosmWasm transaction ${id} from ${wasmContractAddress} at this time`);
+    }
+
+    const isPending = !status || status === 'RECEIVED';
+
+    // Exit early if the transaction is still pending after timeout
+    if (isPending && Date.now() - timestampMillis > COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS) {
+      return {
+        isFinished: true,
+        success: false,
+      };
+    }
+
+    const success = !!status && status === 'SUCCESS';
+
+    return { isFinished: !isPending, success };
   }
 }
