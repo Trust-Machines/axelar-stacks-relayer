@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
