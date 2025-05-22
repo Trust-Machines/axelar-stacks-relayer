@@ -13,7 +13,7 @@ import VerifyTask = Components.Schemas.VerifyTask;
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
-const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 30_000;
+const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 120_000;
 const MAX_NUMBER_OF_RETRIES = 3;
 
 @Injectable()
@@ -120,7 +120,7 @@ export class CosmwasmService {
     );
 
     if (success) {
-      this.logger.debug(
+      this.logger.log(
         `Successfully sent CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
           cosmWasmTransaction.broadcastID
         }`,
@@ -138,13 +138,7 @@ export class CosmwasmService {
     this.logger.warn(
       `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
         cosmWasmTransaction.broadcastID
-      }. Will be retried`,
-    );
-    await this.slackApi.sendWarn(
-      'CosmWasm transaction error',
-      `There was an error sending CosmWasm transaction for ${cosmWasmTransaction.type} broadcast id: ${
-        cosmWasmTransaction.broadcastID
-      }. Will be retried`,
+      }. Will be retried. Status: ${success}`,
     );
 
     await this.updateRetry(key, {
@@ -182,7 +176,7 @@ export class CosmwasmService {
         wasmContractAddress,
       );
       await this.storeCosmWasmTransaction(key, { ...cosmWasmTransaction, broadcastID, timestamp: Date.now() });
-      this.logger.debug(`${cosmWasmTransaction.type} broadcast successful, ID: ${broadcastID}`);
+      this.logger.log(`${cosmWasmTransaction.type} broadcast successful, ID: ${broadcastID}`);
     } catch (e) {
       this.logger.warn(`Error broadcasting ${cosmWasmTransaction.type}`, e);
       await this.slackApi.sendWarn(
@@ -214,7 +208,7 @@ export class CosmwasmService {
     try {
       status = await this.axelarGmpApi.getMsgExecuteContractBroadcastStatus(id, wasmContractAddress);
     } catch (e) {
-      this.logger.debug(`Failed to get CosmWasm transaction ${id} from ${wasmContractAddress} at this time`);
+      this.logger.debug(`Failed to get CosmWasm transaction ${id} from ${wasmContractAddress} at this time`, e);
     }
 
     const isPending = !status || status === 'RECEIVED';

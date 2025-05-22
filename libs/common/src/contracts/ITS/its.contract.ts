@@ -283,7 +283,7 @@ export class ItsContract implements OnModuleInit {
         }
 
         // Success of transaction is checked above before the switch
-        this.logger.debug(`Successfully deployed native interchain contract, txId: ${executeTxHash}`);
+        this.logger.log(`Successfully deployed native interchain contract, txId: ${executeTxHash}`);
 
         executeTxHash = null;
         // No break here is intentional
@@ -318,7 +318,7 @@ export class ItsContract implements OnModuleInit {
         }
 
         // Success of transaction is checked above before the switch
-        this.logger.debug(`Successfully deployed native interchain contract, txId: ${executeTxHash}`);
+        this.logger.log(`Successfully deployed native interchain contract, txId: ${executeTxHash}`);
 
         executeTxHash = null;
         // No break here is intentional

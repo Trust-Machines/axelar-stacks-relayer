@@ -121,7 +121,7 @@ export class GatewayProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled contract call event from transaction ${txHash}, log index ${index}`,
       callEvent,
     );
@@ -193,7 +193,7 @@ export class GatewayProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled message approved event from transaction ${txHash}, log index ${index}`,
       messageApproved,
     );
@@ -251,7 +251,7 @@ export class GatewayProcessor {
       status: 'SUCCESSFUL',
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully executed message from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
       messageExecuted,
     );
@@ -284,7 +284,7 @@ export class GatewayProcessor {
       messageID: DecodingUtils.getEventId(txHash, index),
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled signers rotated event from transaction ${txHash}, log index ${index}`,
       signersRotatedEvent,
     );

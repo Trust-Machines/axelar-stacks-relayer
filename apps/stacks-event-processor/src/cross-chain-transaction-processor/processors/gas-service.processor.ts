@@ -112,7 +112,7 @@ export class GasServiceProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled gas paid event from transaction ${txHash}, log index ${index}`,
       gasCreditEvent,
     );
@@ -146,7 +146,7 @@ export class GasServiceProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled gas added event from transaction ${txHash}, log index ${index}`,
       gasCreditEvent,
     );
@@ -184,7 +184,7 @@ export class GasServiceProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled gas refunded event from transaction ${txHash}, log index ${index}`,
       gasRefundedEvent,
     );

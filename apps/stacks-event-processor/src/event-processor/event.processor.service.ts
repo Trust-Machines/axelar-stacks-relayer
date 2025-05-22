@@ -34,7 +34,8 @@ export class EventProcessorService {
     this.logger = new Logger(EventProcessorService.name);
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  // Runs between Axelar EventProcessor crons
+  @Cron('3/10 * * * * *')
   async pollEvents() {
     await Locker.lock('eventsPolling', async () => {
       await this.pollEventsRaw();

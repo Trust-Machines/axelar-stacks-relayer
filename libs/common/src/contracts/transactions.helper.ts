@@ -158,7 +158,7 @@ export class TransactionsHelper {
     try {
       transaction = await this.hiroApiHelper.getTransaction(txHash);
     } catch (e) {
-      this.logger.debug(`Failed to get Stacks transaction ${txHash} from chain at this time`);
+      this.logger.debug(`Failed to get Stacks transaction ${txHash} from chain at this time`, e);
     }
 
     const isPending = !transaction || (transaction.tx_status as any) === 'pending';

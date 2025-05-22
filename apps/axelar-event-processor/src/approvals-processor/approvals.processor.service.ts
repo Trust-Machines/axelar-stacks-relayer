@@ -52,17 +52,17 @@ export class ApprovalsProcessorService {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
 
-  @Cron('2/10 * * * * *')
+  @Cron('0/10 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
 
-  @Cron('4/10 * * * * *')
+  @Cron('2/6 * * * * *')
   async handlePendingTransactions() {
     await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
-  @Cron('6/10 * * * * *')
+  @Cron('2/6 * * * * *')
   async handlePendingCosmWasmTransaction() {
     await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
   }
@@ -105,7 +105,7 @@ export class ApprovalsProcessorService {
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
+        this.logger.log(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
         this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
         await this.slackApi.sendError(
@@ -125,6 +125,12 @@ export class ApprovalsProcessorService {
   async handlePendingTransactionsRaw() {
     const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
 
+    if (keys.length === 0) {
+      return;
+    }
+
+    this.logger.debug(`Handling ${keys.length} pending gateway transactions`);
+
     for (const key of keys) {
       const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
 
@@ -141,7 +147,7 @@ export class ApprovalsProcessorService {
 
       // Nothing to do on success
       if (success) {
-        this.logger.debug(`Transaction with hash ${txHash} was successfully executed!`);
+        this.logger.log(`Transaction with hash ${txHash} was successfully executed!`);
 
         continue;
       }
@@ -332,20 +338,20 @@ export class ApprovalsProcessorService {
       if (tokenBalance.lt(response.remainingGasBalance.amount)) {
         throw new Error(
           `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
-          ` in gas service impl contract ${gasImpl}. Needed ${response.remainingGasBalance.amount},` +
-          ` but balance is ${tokenBalance.toFixed()}`,
+            ` in gas service impl contract ${gasImpl}. Needed ${response.remainingGasBalance.amount},` +
+            ` but balance is ${tokenBalance.toFixed()}`,
         );
       }
     } catch (e) {
       this.logger.error(
         `Could not process refund for ${response.message.messageID}, for account ${response.refundRecipientAddress},` +
-        ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
+          ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
         e,
       );
       await this.slackApi.sendError(
         `Refund task error`,
         `Could not process refund for ${response.message.messageID} for account ${response.refundRecipientAddress},` +
-        ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
+          ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
       );
 
       return;
@@ -413,6 +419,8 @@ export class ApprovalsProcessorService {
     if (keys.length === 0) {
       return;
     }
+
+    this.logger.debug(`Handling ${keys.length} pending CosmWasm transactions`);
 
     for (const key of keys) {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
