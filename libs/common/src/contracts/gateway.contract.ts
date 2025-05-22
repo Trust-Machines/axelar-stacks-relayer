@@ -20,7 +20,6 @@ import {
   cvToString,
   principalCV,
   SignedContractCallOptions,
-  StacksTransaction,
 } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
@@ -72,7 +71,7 @@ export class GatewayContract implements OnModuleInit {
     externalData: GatewayExternalData,
     senderKey: string,
     fee?: bigint,
-  ): Promise<StacksTransaction | null> {
+  ) {
     const gatewayImpl = await this.getGatewayImpl();
 
     const opts: SignedContractCallOptions = {

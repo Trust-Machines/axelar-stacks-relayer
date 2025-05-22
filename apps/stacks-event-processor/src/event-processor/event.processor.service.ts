@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
@@ -34,7 +34,8 @@ export class EventProcessorService {
     this.logger = new Logger(EventProcessorService.name);
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  // Runs between Axelar EventProcessor crons
+  @Cron('3/10 * * * * *')
   async pollEvents() {
     await Locker.lock('eventsPolling', async () => {
       await this.pollEventsRaw();

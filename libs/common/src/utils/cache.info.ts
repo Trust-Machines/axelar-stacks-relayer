@@ -26,7 +26,35 @@ export class CacheInfo {
   static WalletNonce(address: string): CacheInfo {
     return {
       key: `nonce:${address}`,
-      ttl: Constants.oneMinute() * 2,
+      ttl: Constants.oneMinute() * 10,
+    };
+  }
+
+  static GatewayTxFee(retry: number): CacheInfo {
+    return {
+      key: `gatewayTxFee:${retry}`,
+      ttl: Constants.oneMinute() * 10,
+    };
+  }
+
+  static TokenInfo(tokenId: string): CacheInfo {
+    return {
+      key: `tokenInfo:${tokenId}`,
+      ttl: Constants.oneDay(),
+    };
+  }
+
+  static FungibleTokens(tokenAddress: string): CacheInfo {
+    return {
+      key: `fungibleTokens:${tokenAddress}`,
+      ttl: Constants.oneDay(),
+    };
+  }
+
+  static TokenAddressRaw(tokenManagerContract: string): CacheInfo {
+    return {
+      key: `tokenAddressRaw:${tokenManagerContract}`,
+      ttl: Constants.oneDay(),
     };
   }
 }

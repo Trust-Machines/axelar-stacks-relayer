@@ -63,13 +63,13 @@ export class RedisHelper {
     return found;
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(...keys: string[]): Promise<void> {
     try {
-      await this.redis.del(key);
+      await this.redis.del(keys);
     } catch (error) {
       if (error instanceof Error) {
         this.logger.error('RedisCache - An error occurred while trying to delete from redis cache.', {
-          cacheKey: key,
+          cacheKey: keys.join(','),
           error: error?.toString(),
         });
         await this.slackApi.sendError('Redis error', 'An error occurred while trying to delete from redis cache.');

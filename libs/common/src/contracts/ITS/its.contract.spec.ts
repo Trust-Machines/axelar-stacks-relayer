@@ -32,6 +32,7 @@ import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-typ
 import { getMockScEvent } from '@stacks-monorepo/common/contracts/gas-service.contract.spec';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 
 jest.mock('@stacks/transactions', () => {
   const actual = jest.requireActual('@stacks/transactions');
@@ -56,6 +57,7 @@ describe('ItsContract', () => {
   let mockNativeInterchainTokenContract: DeepMocked<NativeInterchainTokenContract>;
   let mockVerifyOnchain: DeepMocked<VerifyOnchainContract>;
   let mockSlackApi: DeepMocked<SlackApi>;
+  let mockRedisHelper: DeepMocked<RedisHelper>;
 
   beforeEach(async () => {
     mockNetwork = createMock();
@@ -67,6 +69,7 @@ describe('ItsContract', () => {
     mockGasServiceContract = createMock();
     mockVerifyOnchain = createMock();
     mockSlackApi = createMock();
+    mockRedisHelper = createMock();
 
     mockApiConfigService.getContractItsProxy.mockReturnValue(proxyContract);
     mockApiConfigService.getContractItsStorage.mockReturnValue('mockContractAddress.mockContractName-storage');
@@ -89,6 +92,7 @@ describe('ItsContract', () => {
               apiConfigService.getAxelarContractIts(),
               mockVerifyOnchain,
               mockSlackApi,
+              mockRedisHelper,
             );
           },
           inject: [ApiConfigService, ProviderKeys.STACKS_NETWORK],

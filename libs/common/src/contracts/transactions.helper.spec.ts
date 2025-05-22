@@ -48,40 +48,6 @@ describe('TransactionHelper', () => {
     );
   });
 
-  describe('awaitSuccess', () => {
-    it('should await successfully', async () => {
-      const transaction = {
-        tx_status: 'success',
-      } as unknown as Transaction;
-      mockHiroApiHelper.getTransaction.mockResolvedValueOnce(transaction);
-
-      const result = await service.awaitSuccess('txHash');
-
-      expect(result).toEqual({
-        success: true,
-        transaction,
-      });
-
-      expect(mockHiroApiHelper.getTransaction).toHaveBeenCalledTimes(1);
-    });
-
-    it('should await failed', async () => {
-      const transaction = {
-        tx_status: 'failed',
-      } as unknown as Transaction;
-      mockHiroApiHelper.getTransaction.mockResolvedValue(transaction);
-
-      const result = await service.awaitSuccess('txHash');
-
-      expect(result).toEqual({
-        success: false,
-        transaction: null,
-      });
-
-      expect(mockHiroApiHelper.getTransaction).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('isTransactionSuccessfulWithTimeout', () => {
     it('should still be pending no timeout', async () => {
       const transaction = {

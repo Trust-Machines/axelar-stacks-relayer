@@ -72,7 +72,7 @@ export class ItsProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled interchain token deployment started event from transaction ${txHash}, log index ${index}`,
       event,
     );
@@ -111,7 +111,7 @@ export class ItsProcessor {
       },
     };
 
-    this.logger.debug(
+    this.logger.log(
       `Successfully handled interchain transfer event from transaction ${txHash}, log index ${index}`,
       event,
     );

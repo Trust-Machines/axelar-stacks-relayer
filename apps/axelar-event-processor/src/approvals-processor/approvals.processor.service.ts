@@ -22,12 +22,12 @@ import {
   LAST_PROCESSED_DATA_TYPE,
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
-import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -52,7 +52,7 @@ export class ApprovalsProcessorService {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
 
-  @Cron('0/15 * * * * *')
+  @Cron('0/10 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
@@ -62,7 +62,7 @@ export class ApprovalsProcessorService {
     await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
-  @Cron('4/6 * * * * *')
+  @Cron('2/6 * * * * *')
   async handlePendingCosmWasmTransaction() {
     await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
   }
@@ -94,15 +94,18 @@ export class ApprovalsProcessorService {
 
             await this.lastProcessedDataRepository.update(LAST_PROCESSED_DATA_TYPE.LAST_TASK_ID, lastTaskUUID);
           } catch (e) {
-            this.logger.error(`Could not process task ${task.id}`, task, e);
-            await this.slackApi.sendError('Task processing error', `Could not process task ${task.id}`);
+            this.logger.error(`Could not process task ${task.id} ${task.type}. Will be retried`, task, e);
+            await this.slackApi.sendError(
+              'Task processing error',
+              `Could not process task ${task.id}, ${task.type}. Will be retried`,
+            );
 
             // Stop processing in case of an error and retry from the same task
             return;
           }
         }
 
-        this.logger.debug(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
+        this.logger.log(`Successfully processed ${tasks.length} task, last task UUID ${lastTaskUUID}`);
       } catch (e) {
         this.logger.error(`Error retrieving tasks... Last task UUID ${lastTaskUUID}`, e);
         await this.slackApi.sendError(
@@ -121,6 +124,13 @@ export class ApprovalsProcessorService {
 
   async handlePendingTransactionsRaw() {
     const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
+
+    if (keys.length === 0) {
+      return;
+    }
+
+    this.logger.debug(`Handling ${keys.length} pending gateway transactions`);
+
     for (const key of keys) {
       const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
 
@@ -128,18 +138,37 @@ export class ApprovalsProcessorService {
         continue;
       }
 
-      const { txHash, externalData, retry } = cachedValue;
+      const { txHash, externalData, retry, timestamp } = cachedValue;
 
-      const { success } = await this.transactionsHelper.awaitSuccess(txHash);
+      const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
+        txHash,
+        timestamp,
+      );
 
       // Nothing to do on success
       if (success) {
-        this.logger.debug(`Transaction with hash ${txHash} was successfully executed!`);
+        this.logger.log(`Transaction with hash ${txHash} was successfully executed!`);
 
         continue;
       }
 
-      if (retry === MAX_NUMBER_OF_RETRIES) {
+      if (!isFinished) {
+        // Set value back in cache to be checked again and not block processing of other transactions
+        await this.redisHelper.set<PendingTransaction>(
+          CacheInfo.PendingTransaction(txHash).key,
+          {
+            txHash,
+            externalData,
+            retry,
+            timestamp,
+          },
+          CacheInfo.PendingTransaction(txHash).ttl,
+        );
+
+        continue;
+      }
+
+      if (retry >= MAX_NUMBER_OF_RETRIES) {
         this.logger.error(`Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`);
         await this.slackApi.sendError(
           `Gateway transaction error`,
@@ -152,8 +181,8 @@ export class ApprovalsProcessorService {
       try {
         await this.processGatewayTxTask(externalData, retry);
       } catch (e) {
-        this.logger.error('Error while trying to retry Gateway transaction...', e);
-        await this.slackApi.sendError(
+        this.logger.warn('Error while trying to retry Gateway transaction...', e);
+        await this.slackApi.sendWarn(
           `Gateway transaction retry error`,
           'Error while trying to retry transaction... Transaction could not be sent to chain. Will be retried',
         );
@@ -165,6 +194,7 @@ export class ApprovalsProcessorService {
             txHash,
             externalData,
             retry,
+            timestamp: Date.now(),
           },
           CacheInfo.PendingTransaction(txHash).ttl,
         );
@@ -218,36 +248,54 @@ export class ApprovalsProcessorService {
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
-    const data = gatewayTxDataDecoder(DecodingUtils.deserialize(BinaryUtils.base64ToHex(externalData)));
+    try {
+      const data = gatewayTxDataDecoder(DecodingUtils.deserialize(BinaryUtils.base64ToHex(externalData)));
 
-    this.logger.log(`Trying to execute Gateway transaction with externalData:`);
-    this.logger.log(data);
+      this.logger.log(`Trying to execute Gateway transaction with externalData:`);
+      this.logger.log(data);
 
-    const initialTx = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
-    if (!initialTx) {
-      this.logger.log('Could not build gateway tx');
-      return;
+      let fee = await this.redisHelper.get<string>(CacheInfo.GatewayTxFee(retry).key);
+
+      if (!fee) {
+        const initialTx = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
+
+        fee = await this.transactionsHelper.getTransactionGas(initialTx, retry, this.network);
+
+        await this.redisHelper.set(CacheInfo.GatewayTxFee(retry).key, fee, CacheInfo.GatewayTxFee(retry).ttl);
+      }
+
+      // After estimating the gas, we need to build the tx again
+      const transaction = await this.gatewayContract.buildTransactionExternalFunction(
+        data,
+        this.walletSigner,
+        BigInt(fee),
+      );
+
+      const txHash = await this.transactionsHelper.sendTransaction(transaction);
+
+      await this.redisHelper.set<PendingTransaction>(
+        CacheInfo.PendingTransaction(txHash).key,
+        {
+          txHash,
+          externalData,
+          retry: retry + 1,
+          timestamp: Date.now(),
+        },
+        CacheInfo.PendingTransaction(txHash).ttl,
+      );
+    } catch (e) {
+      await this.deleteGatewayTxFeeCache();
+
+      throw e;
     }
+  }
 
-    const fee = await this.transactionsHelper.getTransactionGas(initialTx, retry, this.network);
-
-    // After estimating the gas, we need to build the tx again
-    const transaction = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner, fee);
-    if (!transaction) {
-      this.logger.log('Could not build gateway tx');
-      return;
-    }
-
-    const txHash = await this.transactionsHelper.sendTransaction(transaction);
-
-    await this.redisHelper.set<PendingTransaction>(
-      CacheInfo.PendingTransaction(txHash).key,
-      {
-        txHash,
-        externalData,
-        retry: retry + 1,
-      },
-      CacheInfo.PendingTransaction(txHash).ttl,
+  private async deleteGatewayTxFeeCache() {
+    await this.redisHelper.delete(
+      CacheInfo.GatewayTxFee(0).key,
+      CacheInfo.GatewayTxFee(1).key,
+      CacheInfo.GatewayTxFee(2).key,
+      CacheInfo.GatewayTxFee(3).key,
     );
   }
 
@@ -303,7 +351,7 @@ export class ApprovalsProcessorService {
       await this.slackApi.sendError(
         `Refund task error`,
         `Could not process refund for ${response.message.messageID} for account ${response.refundRecipientAddress},` +
-        ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
+          ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
       );
 
       return;
@@ -333,6 +381,7 @@ export class ApprovalsProcessorService {
       request,
       retry: 0,
       type: 'CONSTRUCT_PROOF',
+      timestamp: Date.now(),
     };
     await this.cosmWasmService.storeCosmWasmTransaction(
       CacheInfo.PendingCosmWasmTransaction(id).key,
@@ -352,6 +401,7 @@ export class ApprovalsProcessorService {
       request,
       retry: 0,
       type: 'VERIFY',
+      timestamp: Date.now(),
     };
     await this.cosmWasmService.storeCosmWasmTransaction(
       CacheInfo.PendingCosmWasmTransaction(id).key,
@@ -369,6 +419,8 @@ export class ApprovalsProcessorService {
     if (keys.length === 0) {
       return;
     }
+
+    this.logger.debug(`Handling ${keys.length} pending CosmWasm transactions`);
 
     for (const key of keys) {
       const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);

@@ -33,7 +33,7 @@ export class CrossChainTransactionProcessorService {
     this.logger = new Logger(CrossChainTransactionProcessorService.name);
   }
 
-  // Runs after EventProcessor cron has run
+  // Runs after EventProcessor pollEvents cron has run
   @Cron('5/10 * * * * *')
   async processCrossChainTransactions() {
     await Locker.lock('processCrossChainTransactions', this.processCrossChainTransactionsRaw.bind(this));
@@ -60,7 +60,7 @@ export class CrossChainTransactionProcessorService {
         this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
         await this.slackApi.sendWarn(
           `Cross chain transaction processing error`,
-          'An error occurred while processing cross chain transaction ${txHash}. Will be retried',
+          `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
         );
       }
     }

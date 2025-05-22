@@ -41,7 +41,7 @@ export class MessageApprovedProcessorService {
   }
 
   // Runs after Axelar EventProcessor newTasks cron has run
-  @Cron('7/15 * * * * *')
+  @Cron('7/10 * * * * *')
   async processPendingMessageApproved() {
     await Locker.lock('processPendingMessageApproved', async () => {
       this.logger.debug('Running processPendingMessageApproved cron');
@@ -55,7 +55,7 @@ export class MessageApprovedProcessorService {
         const entriesToUpdate: MessageApproved[] = [];
         const entriesWithTransactions: MessageApproved[] = [];
         for (const messageApproved of entries) {
-          if (messageApproved.retry === MAX_NUMBER_OF_RETRIES) {
+          if (messageApproved.retry >= MAX_NUMBER_OF_RETRIES) {
             await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
 
             entriesToUpdate.push(messageApproved);
@@ -105,13 +105,13 @@ export class MessageApprovedProcessorService {
 
             entriesWithTransactions.push(messageApproved);
           } catch (e) {
-            this.logger.error(
-              `Could not build and sign execute transaction for ${messageApproved.sourceChain} ${messageApproved.messageId}`,
+            this.logger.warn(
+              `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
               e,
             );
-            await this.slackApi.sendError(
+            await this.slackApi.sendWarn(
               'Message approved error',
-              `Could not build and sign execute transaction for ${messageApproved.sourceChain} ${messageApproved.messageId}`,
+              `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
             );
 
             await this.transactionsHelper.deleteNonce();
@@ -203,13 +203,23 @@ export class MessageApprovedProcessorService {
   }
 
   async handleMessageApprovedFailed(messageApproved: MessageApproved, reason: 'INSUFFICIENT_GAS' | 'ERROR') {
-    this.logger.warn(
-      `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
-    );
-    await this.slackApi.sendWarn(
-      `Message approved failed`,
-      `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries`,
-    );
+    if (reason === 'INSUFFICIENT_GAS') {
+      this.logger.warn(
+        `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries, INSUFFICIENT_GAS`,
+      );
+      await this.slackApi.sendWarn(
+        `Message approved failed`,
+        `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries, INSUFFICIENT_GAS`,
+      );
+    } else {
+      this.logger.error(
+        `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries, ERROR`,
+      );
+      await this.slackApi.sendError(
+        `Message approved failed`,
+        `Could not execute MessageApproved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId} after ${messageApproved.retry} retries, ERROR`,
+      );
+    }
 
     messageApproved.status = MessageApprovedStatus.FAILED;
 
