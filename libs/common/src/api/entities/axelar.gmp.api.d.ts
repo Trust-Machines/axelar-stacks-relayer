@@ -66,9 +66,6 @@ declare namespace Components {
         }
         export type BigInt = string; // ^(0|[1-9]\d*)$
         export type BroadcastID = string;
-        export interface BroadcastRequest {
-            [name: string]: any;
-        }
         export interface BroadcastResponse {
             broadcastID: BroadcastID;
         }
@@ -163,15 +160,20 @@ declare namespace Components {
             message: Message;
             payload: string; // byte
         }
-        export interface ContractQuery {
-            [name: string]: any;
-        }
         export interface ContractQueryResponse {
             [name: string]: any;
         }
         export interface CrossChainID {
             sourceChain: string;
             messageID: string;
+        }
+        /**
+         * Metadata attached to GATEWAY_TX and REACT_TO_EXPIRED_SIGNING_SESSION tasks.
+         * The property `scopedMessages` can be omitted if the task isn't associated with any message (e.g. when executing `rotateSigners` https://github.com/axelarnetwork/axelar-gmp-sdk-solidity/blob/432449d7b330ec6edf5a8e0746644a253486ca87/contracts/gateway/AxelarAmplifierGateway.sol#L103C14-L103C27).
+         *
+         */
+        export interface DestinationChainTaskMetadata {
+            scopedMessages?: CrossChainID[];
         }
         export interface ErrorResponse {
             error: string;
@@ -183,7 +185,7 @@ declare namespace Components {
          * Event emitted when a message cannot be routed. Source chain of the message is implied to be the chain from which the event is emitted.
          *
          */
-        CannotRouteMessageEvent | SignersRotatedEvent | ITSInterchainTokenDeploymentStartedEvent | ITSInterchainTransferEvent | AppInterchainTransferSentEvent | AppInterchainTransferReceivedEvent);
+        CannotRouteMessageEvent | SignersRotatedEvent | ITSLinkTokenStartedEvent | ITSTokenMetadataRegisteredEvent | ITSInterchainTokenDeploymentStartedEvent | ITSInterchainTransferEvent | AppInterchainTransferSentEvent | AppInterchainTransferReceivedEvent);
         export interface EventBase {
             eventID: string;
             meta?: {
@@ -199,7 +201,7 @@ declare namespace Components {
             fromAddress?: string | null;
             finalized?: boolean | null;
         }
-        export type EventType = "GAS_CREDIT" | "GAS_REFUNDED" | "CALL" | "MESSAGE_APPROVED" | "MESSAGE_EXECUTED" | "CANNOT_EXECUTE_MESSAGE" | "CANNOT_EXECUTE_MESSAGE/V2" | "CANNOT_ROUTE_MESSAGE" | "SIGNERS_ROTATED" | "ITS/INTERCHAIN_TOKEN_DEPLOYMENT_STARTED" | "ITS/INTERCHAIN_TRANSFER" | "APP/INTERCHAIN_TRANSFER_SENT" | "APP/INTERCHAIN_TRANSFER_RECEIVED";
+        export type EventType = "GAS_CREDIT" | "GAS_REFUNDED" | "CALL" | "MESSAGE_APPROVED" | "MESSAGE_EXECUTED" | "CANNOT_EXECUTE_MESSAGE" | "CANNOT_EXECUTE_MESSAGE/V2" | "CANNOT_ROUTE_MESSAGE" | "SIGNERS_ROTATED" | "ITS/LINK_TOKEN_STARTED" | "ITS/TOKEN_METADATA_REGISTERED" | "ITS/INTERCHAIN_TOKEN_DEPLOYMENT_STARTED" | "ITS/INTERCHAIN_TRANSFER" | "APP/INTERCHAIN_TRANSFER_SENT" | "APP/INTERCHAIN_TRANSFER_RECEIVED";
         export interface ExecuteTask {
             message: Message;
             payload: string; // byte
@@ -233,14 +235,6 @@ declare namespace Components {
         export interface GatewayTransactionTask {
             executeData: string; // byte
         }
-        /**
-         * Metadata attached to the GATEWAY_TX task.
-         * The property `scopedMessages` can be omitted if the task isn't associated with any message (e.g. when executing `rotateSigners` https://github.com/axelarnetwork/axelar-gmp-sdk-solidity/blob/432449d7b330ec6edf5a8e0746644a253486ca87/contracts/gateway/AxelarAmplifierGateway.sol#L103C14-L103C27).
-         *
-         */
-        export interface GatewayTransactionTaskMetadata {
-            scopedMessages?: CrossChainID[];
-        }
         export interface GetTasksResult {
             tasks: TaskItem[];
         }
@@ -270,6 +264,33 @@ declare namespace Components {
             sourceAddress: Address;
             destinationAddress: string; // byte
             dataHash: string; // byte
+        }
+        export interface ITSLinkTokenStartedEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+            } | null;
+            messageID: string;
+            tokenID: string;
+            destinationChain: string;
+            sourceTokenAddress: string; // byte
+            destinationTokenAddress: string; // byte
+            tokenManagerType: TokenManagerType;
+        }
+        export interface ITSTokenMetadataRegisteredEvent {
+            eventID: string;
+            meta?: {
+                txID?: string | null;
+                timestamp?: string; // date-time
+                fromAddress?: string | null;
+                finalized?: boolean | null;
+            } | null;
+            messageID: string;
+            address: Address;
+            decimals: number; // uint8
         }
         export interface InterchainTokenDefinition {
             id: string;
@@ -460,6 +481,23 @@ declare namespace Components {
         export interface PublishEventsResult {
             results: PublishEventResultItem[];
         }
+        export interface QuorumReachedEvent {
+            status: VerificationStatus;
+            content: any;
+        }
+        export interface ReactToExpiredSigningSessionTask {
+            sessionID: number; // uint64
+            broadcastID: BroadcastID;
+            invokedContractAddress: Address;
+            requestPayload: WasmRequest;
+        }
+        export interface ReactToRetriablePollTask {
+            pollID: number; // uint64
+            broadcastID: BroadcastID;
+            invokedContractAddress: Address;
+            requestPayload: WasmRequest;
+            quorumReachedEvents: QuorumReachedEvent[];
+        }
         export interface ReactToWasmEventTask {
             height: number; // int64
             event: WasmEvent;
@@ -499,7 +537,7 @@ declare namespace Components {
         export interface StorePayloadResult {
             keccak256: Keccak256Hash /* ^0x[0-9a-f]{64}$ */;
         }
-        export type Task = ConstructProofTask | ExecuteTask | GatewayTransactionTask | ReactToWasmEventTask | RefundTask | VerifyTask;
+        export type Task = ConstructProofTask | ExecuteTask | GatewayTransactionTask | ReactToWasmEventTask | RefundTask | ReactToExpiredSigningSessionTask | ReactToRetriablePollTask | VerifyTask;
         export interface TaskItem {
             id: string;
             chain: string;
@@ -521,11 +559,13 @@ declare namespace Components {
             scopedMessages?: CrossChainID[];
             sourceContext?: MessageContext;
         }
-        export type TaskType = "CONSTRUCT_PROOF" | "EXECUTE" | "GATEWAY_TX" | "REACT_TO_WASM_EVENT" | "REFUND" | "VERIFY";
+        export type TaskType = "CONSTRUCT_PROOF" | "EXECUTE" | "GATEWAY_TX" | "REACT_TO_WASM_EVENT" | "REFUND" | "VERIFY" | "REACT_TO_EXPIRED_SIGNING_SESSION" | "REACT_TO_RETRIABLE_POLL";
         export interface Token {
             tokenID?: string | null;
             amount: BigInt /* ^(0|[1-9]\d*)$ */;
         }
+        export type TokenManagerType = "NATIVE_INTERCHAIN_TOKEN" | "MINT_BURN_FROM" | "LOCK_UNLOCK" | "LOCK_UNLOCK_FEE" | "MINT_BURN";
+        export type VerificationStatus = "SUCCEEDED_ON_SOURCE_CHAIN" | "FAILED_ON_SOURCE_CHAIN" | "NOT_FOUND_ON_SOURCE_CHAIN" | "FAILED_TO_VERIFY" | "IN_PROGRESS" | "UNKNOWN";
         export interface VerifyTask {
             message: Message;
             destinationChain: string;
@@ -539,6 +579,11 @@ declare namespace Components {
             key: string;
             value: string;
         }
+        export type WasmRequest = WasmRequestWithObjectBody | WasmRequestWithStringBody;
+        export interface WasmRequestWithObjectBody {
+            [name: string]: any;
+        }
+        export type WasmRequestWithStringBody = string;
     }
 }
 declare namespace Paths {
@@ -549,7 +594,7 @@ declare namespace Paths {
         export interface PathParameters {
             wasmContractAddress: Parameters.WasmContractAddress /* ^axelar1[acdefghjklmnpqrstuvwxyz023456789]{58}$ */;
         }
-        export type RequestBody = Components.Schemas.BroadcastRequest;
+        export type RequestBody = Components.Schemas.WasmRequest;
         namespace Responses {
             export type $200 = Components.Schemas.BroadcastResponse;
             export type $400 = Components.Schemas.ErrorResponse;
@@ -631,7 +676,7 @@ declare namespace Paths {
         export interface PathParameters {
             wasmContractAddress: Parameters.WasmContractAddress /* ^axelar1[acdefghjklmnpqrstuvwxyz023456789]{58}$ */;
         }
-        export type RequestBody = Components.Schemas.ContractQuery;
+        export type RequestBody = Components.Schemas.WasmRequest;
         namespace Responses {
             export type $200 = Components.Schemas.ContractQueryResponse;
             export type $400 = Components.Schemas.ErrorResponse;
@@ -648,6 +693,7 @@ declare namespace Paths {
         }
     }
 }
+
 
 export interface OperationMethods {
   /**
@@ -801,13 +847,13 @@ export interface PathsDictionary {
 
 export type Client = OpenAPIClient<OperationMethods, PathsDictionary>
 
+
 export type Address = Components.Schemas.Address;
 export type AppEventMetadata = Components.Schemas.AppEventMetadata;
 export type AppInterchainTransferReceivedEvent = Components.Schemas.AppInterchainTransferReceivedEvent;
 export type AppInterchainTransferSentEvent = Components.Schemas.AppInterchainTransferSentEvent;
 export type BigInt = Components.Schemas.BigInt;
 export type BroadcastID = Components.Schemas.BroadcastID;
-export type BroadcastRequest = Components.Schemas.BroadcastRequest;
 export type BroadcastResponse = Components.Schemas.BroadcastResponse;
 export type BroadcastStatus = Components.Schemas.BroadcastStatus;
 export type BroadcastStatusResponse = Components.Schemas.BroadcastStatusResponse;
@@ -821,9 +867,9 @@ export type CannotExecuteMessageReason = Components.Schemas.CannotExecuteMessage
 export type CannotRouteMessageEvent = Components.Schemas.CannotRouteMessageEvent;
 export type CannotRouteMessageReason = Components.Schemas.CannotRouteMessageReason;
 export type ConstructProofTask = Components.Schemas.ConstructProofTask;
-export type ContractQuery = Components.Schemas.ContractQuery;
 export type ContractQueryResponse = Components.Schemas.ContractQueryResponse;
 export type CrossChainID = Components.Schemas.CrossChainID;
+export type DestinationChainTaskMetadata = Components.Schemas.DestinationChainTaskMetadata;
 export type ErrorResponse = Components.Schemas.ErrorResponse;
 export type Event = Components.Schemas.Event;
 export type EventBase = Components.Schemas.EventBase;
@@ -833,10 +879,11 @@ export type ExecuteTask = Components.Schemas.ExecuteTask;
 export type GasCreditEvent = Components.Schemas.GasCreditEvent;
 export type GasRefundedEvent = Components.Schemas.GasRefundedEvent;
 export type GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
-export type GatewayTransactionTaskMetadata = Components.Schemas.GatewayTransactionTaskMetadata;
 export type GetTasksResult = Components.Schemas.GetTasksResult;
 export type ITSInterchainTokenDeploymentStartedEvent = Components.Schemas.ITSInterchainTokenDeploymentStartedEvent;
 export type ITSInterchainTransferEvent = Components.Schemas.ITSInterchainTransferEvent;
+export type ITSLinkTokenStartedEvent = Components.Schemas.ITSLinkTokenStartedEvent;
+export type ITSTokenMetadataRegisteredEvent = Components.Schemas.ITSTokenMetadataRegisteredEvent;
 export type InterchainTokenDefinition = Components.Schemas.InterchainTokenDefinition;
 export type InterchainTransferToken = Components.Schemas.InterchainTransferToken;
 export type Keccak256Hash = Components.Schemas.Keccak256Hash;
@@ -854,6 +901,9 @@ export type PublishEventResultItemBase = Components.Schemas.PublishEventResultIt
 export type PublishEventStatus = Components.Schemas.PublishEventStatus;
 export type PublishEventsRequest = Components.Schemas.PublishEventsRequest;
 export type PublishEventsResult = Components.Schemas.PublishEventsResult;
+export type QuorumReachedEvent = Components.Schemas.QuorumReachedEvent;
+export type ReactToExpiredSigningSessionTask = Components.Schemas.ReactToExpiredSigningSessionTask;
+export type ReactToRetriablePollTask = Components.Schemas.ReactToRetriablePollTask;
 export type ReactToWasmEventTask = Components.Schemas.ReactToWasmEventTask;
 export type RefundTask = Components.Schemas.RefundTask;
 export type SignersRotatedEvent = Components.Schemas.SignersRotatedEvent;
@@ -866,6 +916,11 @@ export type TaskItemID = Components.Schemas.TaskItemID;
 export type TaskMetadata = Components.Schemas.TaskMetadata;
 export type TaskType = Components.Schemas.TaskType;
 export type Token = Components.Schemas.Token;
+export type TokenManagerType = Components.Schemas.TokenManagerType;
+export type VerificationStatus = Components.Schemas.VerificationStatus;
 export type VerifyTask = Components.Schemas.VerifyTask;
 export type WasmEvent = Components.Schemas.WasmEvent;
 export type WasmEventAttribute = Components.Schemas.WasmEventAttribute;
+export type WasmRequest = Components.Schemas.WasmRequest;
+export type WasmRequestWithObjectBody = Components.Schemas.WasmRequestWithObjectBody;
+export type WasmRequestWithStringBody = Components.Schemas.WasmRequestWithStringBody;

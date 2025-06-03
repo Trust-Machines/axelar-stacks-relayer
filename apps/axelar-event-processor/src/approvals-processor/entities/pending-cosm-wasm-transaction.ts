@@ -1,7 +1,7 @@
-import { BroadcastRequest } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { WasmRequest } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 
 export interface PendingCosmWasmTransaction {
-  request: BroadcastRequest;
+  request: WasmRequest;
   retry: number;
   broadcastID?: string;
   type: 'CONSTRUCT_PROOF' | 'VERIFY';
