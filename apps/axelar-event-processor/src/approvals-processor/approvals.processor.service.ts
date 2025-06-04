@@ -248,7 +248,6 @@ export class ApprovalsProcessorService {
       return;
     }
 
-    // TODO: Test
     if (task.type === 'REACT_TO_EXPIRED_SIGNING_SESSION') {
       const response = task.task as ReactToExpiredSigningSessionTask;
 
@@ -257,7 +256,6 @@ export class ApprovalsProcessorService {
       return;
     }
 
-    // TODO: Test
     if (task.type === 'REACT_TO_RETRIABLE_POLL') {
       const response = task.task as ReactToRetriablePollTask;
 
@@ -447,7 +445,7 @@ export class ApprovalsProcessorService {
     );
 
     this.logger.debug(
-      `Processed REACT_TO_EXPIRED_SIGNING_SESSION task, session id ${response.sessionID}, broadcast id ${response.broadcastID}`,
+      `Processed REACT_TO_EXPIRED_SIGNING_SESSION task, session id ${response.sessionID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
     );
   }
 
@@ -465,7 +463,7 @@ export class ApprovalsProcessorService {
     );
 
     this.logger.debug(
-      `Processed REACT_TO_RETRIABLE_POLL task, pool id ${response.pollID}, broadcast id ${response.broadcastID}`,
+      `Processed REACT_TO_RETRIABLE_POLL task, pool id ${response.pollID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
     );
   }
 
