@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   BroadcastID,
-  BroadcastRequest,
+  WasmRequest,
   BroadcastStatus,
   Components,
   ConstructProofTask,
@@ -35,7 +35,7 @@ export class CosmwasmService {
     this.logger = new Logger(CosmwasmService.name);
   }
 
-  buildConstructProofRequest(task: ConstructProofTask): BroadcastRequest {
+  buildConstructProofRequest(task: ConstructProofTask): WasmRequest {
     // Handle ITS Hub -> Stacks ITS case
     if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === CONSTANTS.AXELAR_CHAIN) {
       return {
@@ -56,7 +56,7 @@ export class CosmwasmService {
     };
   }
 
-  buildVerifyRequest(task: VerifyTask): BroadcastRequest {
+  buildVerifyRequest(task: VerifyTask): WasmRequest {
     const payloadHash = Buffer.from(task.message.payloadHash, 'base64').toString('hex');
 
     // Handle Stacks ITS -> ITS Hub case

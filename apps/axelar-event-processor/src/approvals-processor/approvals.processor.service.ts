@@ -28,6 +28,8 @@ import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
 import VerifyTask = Components.Schemas.VerifyTask;
+import ReactToRetriablePollTask = Components.Schemas.ReactToRetriablePollTask;
+import ReactToExpiredSigningSessionTask = Components.Schemas.ReactToExpiredSigningSessionTask;
 
 const MAX_NUMBER_OF_RETRIES = 3;
 
@@ -245,6 +247,22 @@ export class ApprovalsProcessorService {
 
       return;
     }
+
+    if (task.type === 'REACT_TO_EXPIRED_SIGNING_SESSION') {
+      const response = task.task as ReactToExpiredSigningSessionTask;
+
+      await this.processReactToExpiredSigningSession(response);
+
+      return;
+    }
+
+    if (task.type === 'REACT_TO_RETRIABLE_POLL') {
+      const response = task.task as ReactToRetriablePollTask;
+
+      await this.processReactToRetriablePoll(response);
+
+      return;
+    }
   }
 
   private async processGatewayTxTask(externalData: string, retry: number = 0) {
@@ -376,7 +394,7 @@ export class ApprovalsProcessorService {
   async processConstructProofTask(response: ConstructProofTask) {
     const request = this.cosmWasmService.buildConstructProofRequest(response);
 
-    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const id = `proof_${response.message.sourceChain}_${response.message.messageID}`;
     const constructProofTransaction: PendingCosmWasmTransaction = {
       request,
       retry: 0,
@@ -396,7 +414,7 @@ export class ApprovalsProcessorService {
   async processVerifyTask(response: VerifyTask) {
     const request = this.cosmWasmService.buildVerifyRequest(response);
 
-    const id = `${response.message.sourceChain}_${response.message.messageID}`;
+    const id = `verify_${response.message.sourceChain}_${response.message.messageID}`;
     const verifyTransaction: PendingCosmWasmTransaction = {
       request,
       retry: 0,
@@ -410,6 +428,42 @@ export class ApprovalsProcessorService {
 
     this.logger.debug(
       `Processed VERIFY task, message to ${response.destinationChain} with messageId ${response.message.messageID}`,
+    );
+  }
+
+  async processReactToExpiredSigningSession(response: ReactToExpiredSigningSessionTask) {
+    const id = `retry_proof_${response.invokedContractAddress}_${response.sessionID}`;
+    const constructProofTransaction: PendingCosmWasmTransaction = {
+      request: response.requestPayload,
+      retry: 0,
+      type: 'CONSTRUCT_PROOF',
+      timestamp: Date.now(),
+    };
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      constructProofTransaction,
+    );
+
+    this.logger.debug(
+      `Processed REACT_TO_EXPIRED_SIGNING_SESSION task, session id ${response.sessionID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
+    );
+  }
+
+  async processReactToRetriablePoll(response: ReactToRetriablePollTask) {
+    const id = `retry_verify_${response.invokedContractAddress}_${response.pollID}`;
+    const verifyTransaction: PendingCosmWasmTransaction = {
+      request: response.requestPayload,
+      retry: 0,
+      type: 'VERIFY',
+      timestamp: Date.now(),
+    };
+    await this.cosmWasmService.storeCosmWasmTransaction(
+      CacheInfo.PendingCosmWasmTransaction(id).key,
+      verifyTransaction,
+    );
+
+    this.logger.debug(
+      `Processed REACT_TO_RETRIABLE_POLL task, pool id ${response.pollID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
     );
   }
 
