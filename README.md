@@ -41,10 +41,51 @@ AXELAR_MNEMONIC=
 AXELAR_RPC_URL=
 AXELAR_GAS_PRICE=
 AXELAR_VOTING_VERIFIER_CONTRACT=
+AXELAR_CHAIN_GATEWAY_CONTRACT=
+
+AVAILABLE_GAS_CHECK_ENABLED=false # make sure this is set to false to ignore cross chain gas fess when manually relaying
 ```
 
-### Verifying Messages
+Note: Commands may hang at the end, it is safe to close them after getting the success or error message.
+
+### Stacks -> ITS Hub
+
+#### Verifying Messages
+
+Can be used to verify any message, from Stacks ITS or from other contracts as well.
 
 ```shell
 npm run cli verify-message <stacks tx hash>
+```
+
+#### Executing on ITS Hub
+
+This should only be used for executing messages from the Stacks ITS towards ITS Hub
+
+```shell
+npm run cli its-hub-execute <stacks tx hash>
+```
+
+### ITS Hub -> Stacks
+
+#### Construct Proof
+
+```shell
+npm run cli construct-proof <axelar tx hash>
+```
+
+#### Stacks Execute
+
+- for interchain transfer:
+
+```shell
+npm run cli stacks-execute <axelar tx hash>
+```
+
+- for deploying native interchain token
+
+```shell
+npm run cli stacks-execute <axelar tx hash> -- --step CONTRACT_DEPLOY # 1st step
+npm run cli stacks-execute <axelar tx hash> -- --step CONTRACT_SETUP --contract-id <previously deployed stacks contract id> # 2nd step
+npm run cli stacks-execute <axelar tx hash> -- --step ITS_EXECUTE --contract-id <previously deployed stacks contract id> --deploy-tx-hash <previously returned tx hash from step 1> # 3rd step
 ```

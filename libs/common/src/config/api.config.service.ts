@@ -124,7 +124,7 @@ export class ApiConfigService {
     return axelarContractIts;
   }
 
-  getMultisigProverContract(): string {
+  getAxelarMultisigProverContract(): string {
     const contract = this.configService.get<string>('AXELAR_MULTISIG_PROVER_CONTRACT');
     if (!contract) {
       throw new Error('No Axelar Multisig Prover present');
@@ -229,6 +229,15 @@ export class ApiConfigService {
     const contract = this.configService.get<string>('AXELAR_VOTING_VERIFIER_CONTRACT');
     if (!contract) {
       throw new Error('No Axelar Voting Verifier present');
+    }
+
+    return contract;
+  }
+
+  getAxelarChainGatewayContract(): string {
+    const contract = this.configService.get<string>('AXELAR_CHAIN_GATEWAY_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Chain Gateway present');
     }
 
     return contract;
