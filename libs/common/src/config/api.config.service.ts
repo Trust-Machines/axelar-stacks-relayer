@@ -197,4 +197,40 @@ export class ApiConfigService {
 
     return slackWebhookUrl ?? '';
   }
+
+  getAxelarMnemonic(): string {
+    const mnemonic = this.configService.get<string>('AXELAR_MNEMONIC');
+    if (!mnemonic) {
+      throw new Error('No Axelar Mnemonic present');
+    }
+
+    return mnemonic;
+  }
+
+  getAxelarRpcUrl(): string {
+    const rpcUrl = this.configService.get<string>('AXELAR_RPC_URL');
+    if (!rpcUrl) {
+      throw new Error('No Axelar RPC Url present');
+    }
+
+    return rpcUrl;
+  }
+
+  getAxelarGasPrice(): string {
+    const gasPrice = this.configService.get<string>('AXELAR_GAS_PRICE');
+    if (!gasPrice) {
+      throw new Error('No Axelar Gas Price present');
+    }
+
+    return gasPrice;
+  }
+
+  getAxelarVotingVerifierContract(): string {
+    const contract = this.configService.get<string>('AXELAR_VOTING_VERIFIER_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Voting Verifier present');
+    }
+
+    return contract;
+  }
 }
