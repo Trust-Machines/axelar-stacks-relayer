@@ -110,7 +110,7 @@ export class CosmwasmService {
 
     const wasmContractAddress =
       cosmWasmTransaction.type === 'CONSTRUCT_PROOF'
-        ? this.apiConfigService.getMultisigProverContract()
+        ? this.apiConfigService.getAxelarMultisigProverContract()
         : this.apiConfigService.getAxelarGatewayContract();
 
     const { isFinished, success } = await this.isTransactionSuccessfulWithTimeout(
@@ -162,7 +162,7 @@ export class CosmwasmService {
 
     const wasmContractAddress =
       cosmWasmTransaction.type === 'CONSTRUCT_PROOF'
-        ? this.apiConfigService.getMultisigProverContract()
+        ? this.apiConfigService.getAxelarMultisigProverContract()
         : this.apiConfigService.getAxelarGatewayContract();
 
     try {

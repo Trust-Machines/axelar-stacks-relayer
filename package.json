@@ -26,9 +26,13 @@
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
     "deploy": "prisma migrate deploy",
-    "test:migrate": "dotenv -e .env.test -- prisma migrate deploy"
+    "test:migrate": "dotenv -e .env.test -- prisma migrate deploy",
+    "cli": "ts-node -r tsconfig-paths/register commands/cli.ts"
   },
   "dependencies": {
+    "@cosmjs/cosmwasm-stargate": "^0.33.1",
+    "@cosmjs/stargate": "^0.33.1",
+    "@cosmjs/proto-signing": "^0.33.1",
     "@nestjs/bull": "^10.1.1",
     "@nestjs/common": "^10.3.9",
     "@nestjs/config": "^3.2.2",
@@ -39,9 +43,9 @@
     "@prisma/client": "^5.15.0",
     "@scure/base": "^1.1.9",
     "@stacks/blockchain-api-client": "^8.0.3",
+    "@stacks/common": "^7.0.2",
     "@stacks/network": "^6.17.0",
     "@stacks/transactions": "^6.17.0",
-    "@stacks/common": "^7.0.2",
     "agentkeepalive": "^4.5.0",
     "axios": "^1.7.5",
     "bignumber.js": "9.0.1",
@@ -52,6 +56,7 @@
     "ioredis": "^5.4.1",
     "js-yaml": "^4.1.0",
     "module-alias": "^2.2.3",
+    "nest-commander": "^3.17.0",
     "nest-winston": "^1.10.0",
     "openapi-client-axios": "^7.5.5",
     "rimraf": "^5.0.7",
