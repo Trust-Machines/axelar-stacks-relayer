@@ -3,7 +3,12 @@ import { Test } from '@nestjs/testing';
 import { MessageApprovedStatus } from '@prisma/client';
 import { ApiConfigService, CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { Components, VerifyTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import {
+  Components,
+  ConstructProofTask,
+  ReactToExpiredSigningSessionTask,
+  VerifyTask,
+} from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
@@ -20,6 +25,7 @@ import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
 import RefundTask = Components.Schemas.RefundTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
+import ReactToRetriablePollTask = Components.Schemas.ReactToRetriablePollTask;
 
 const mockDate = new Date('2023-05-14');
 jest.useFakeTimers().setSystemTime(mockDate);
@@ -879,7 +885,7 @@ describe('ApprovalsProcessorService', () => {
 
   describe('handleConstructProof', () => {
     it('should add a single entry in Redis for construct_proof_with_payload', async () => {
-      const response = {
+      const response: ConstructProofTask = {
         message: {
           sourceChain: 'axelar',
           messageID: 'msg1',
@@ -893,7 +899,7 @@ describe('ApprovalsProcessorService', () => {
       await service.processConstructProofTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        `pendingCosmWasmTransaction:axelar_msg1`,
+        `pendingCosmWasm:proof_axelar_msg1`,
         {
           request: {
             construct_proof_with_payload: {
@@ -928,7 +934,7 @@ describe('ApprovalsProcessorService', () => {
       await service.processConstructProofTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        'pendingCosmWasmTransaction:otherChain_msg2',
+        'pendingCosmWasm:proof_otherChain_msg2',
         {
           request: {
             construct_proof: [
@@ -966,7 +972,7 @@ describe('ApprovalsProcessorService', () => {
       await service.processVerifyTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        `pendingCosmWasmTransaction:stacks_msg1`,
+        `pendingCosmWasm:verify_stacks_msg1`,
         {
           request: {
             verify_message_with_payload: {
@@ -1008,7 +1014,7 @@ describe('ApprovalsProcessorService', () => {
       await service.processVerifyTask(response);
 
       expect(redisHelper.set).toHaveBeenCalledWith(
-        'pendingCosmWasmTransaction:stacks_msg2',
+        'pendingCosmWasm:verify_stacks_msg2',
         {
           request: {
             verify_messages: [
@@ -1031,6 +1037,57 @@ describe('ApprovalsProcessorService', () => {
         600,
       );
 
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('handleReactToExpiredSigningSession', () => {
+    it('should add a single entry in Redis for construct_proof_with_payload', async () => {
+      const response: ReactToExpiredSigningSessionTask = {
+        sessionID: 1,
+        broadcastID: 'broadcastID',
+        invokedContractAddress: 'invokedContractAddress',
+        requestPayload: 'payload',
+      };
+
+      await service.processReactToExpiredSigningSession(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        `pendingCosmWasm:retry_proof_invokedContractAddress_1`,
+        {
+          request: 'payload',
+          retry: 0,
+          type: 'CONSTRUCT_PROOF',
+          timestamp: mockDate.getTime(),
+        },
+        600,
+      );
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('handleReactToRetriablePool', () => {
+    it('should add a single entry in Redis for verify_message_with_payload', async () => {
+      const response: ReactToRetriablePollTask = {
+        pollID: 1,
+        broadcastID: 'broadcastID',
+        invokedContractAddress: 'invokedContractAddress',
+        requestPayload: 'payload',
+        quorumReachedEvents: [],
+      };
+
+      await service.processReactToRetriablePoll(response);
+
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        `pendingCosmWasm:retry_verify_invokedContractAddress_1`,
+        {
+          request: 'payload',
+          retry: 0,
+          type: 'VERIFY',
+          timestamp: mockDate.getTime(),
+        },
+        600,
+      );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
   });

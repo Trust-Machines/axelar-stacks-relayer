@@ -11,7 +11,7 @@ export class CacheInfo {
 
   static PendingCosmWasmTransaction(id: string): CacheInfo {
     return {
-      key: `pendingCosmWasmTransaction:${id}`,
+      key: `pendingCosmWasm:${id}`,
       ttl: Constants.oneMinute() * 10,
     };
   }
