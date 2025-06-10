@@ -71,7 +71,7 @@ describe('ApprovalsProcessorService', () => {
 
     apiConfigService.getContractItsProxy.mockReturnValue(STACKS_ITS_CONTRACT);
     apiConfigService.getAxelarContractIts.mockReturnValue(AXELAR_ITS_CONTRACT);
-    apiConfigService.getMultisigProverContract.mockReturnValue(AXELAR_MULTISIG_PROVER_CONTRACT);
+    apiConfigService.getAxelarMultisigProverContract.mockReturnValue(AXELAR_MULTISIG_PROVER_CONTRACT);
     apiConfigService.getAxelarGatewayContract.mockReturnValue(AXELAR_GATEWAY_CONTRACT);
 
     const moduleRef = await Test.createTestingModule({
