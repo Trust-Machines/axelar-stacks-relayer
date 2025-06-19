@@ -1,17 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   BroadcastID,
-  WasmRequest,
   BroadcastStatus,
   Components,
   ConstructProofTask,
+  WasmRequest,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { ApiConfigService, AxelarGmpApi, Constants } from '@stacks-monorepo/common';
+import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@stacks-monorepo/common';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
-import VerifyTask = Components.Schemas.VerifyTask;
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import VerifyTask = Components.Schemas.VerifyTask;
 
 const COSM_WASM_TRANSACTION_POLL_TIMEOUT_MILLIS = 120_000;
 const MAX_NUMBER_OF_RETRIES = 3;
@@ -35,28 +35,32 @@ export class CosmwasmService {
     this.logger = new Logger(CosmwasmService.name);
   }
 
-  buildConstructProofRequest(task: ConstructProofTask): WasmRequest {
+  buildConstructProofRequest(task: ConstructProofTask): WasmRequest | null {
     // Handle ITS Hub -> Stacks ITS case
     if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === CONSTANTS.AXELAR_CHAIN) {
       return {
-        construct_proof_with_payload: {
-          message_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
-          payload: Buffer.from(task.payload, 'base64').toString('hex'),
-        },
+        construct_proof_with_payload: [
+          {
+            message_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
+            payload: Buffer.from(task.payload, 'base64').toString('hex'),
+          },
+        ],
       };
     }
 
-    return {
-      construct_proof: [
-        {
-          source_chain: task.message.sourceChain,
-          message_id: task.message.messageID,
-        },
-      ],
-    };
+    this.logger.error(
+      `Currently only ITS is supported for Stacks, can not construct proof for message ${task.message.messageID}`,
+      task,
+    );
+    this.slackApi.sendWarn(
+      'Currently only ITS is supported for Stacks',
+      `Can not construct proof for message ${task.message.messageID}`,
+    );
+
+    return null;
   }
 
-  buildVerifyRequest(task: VerifyTask): WasmRequest {
+  buildVerifyRequest(task: VerifyTask): WasmRequest | null {
     const payloadHash = Buffer.from(task.message.payloadHash, 'base64').toString('hex');
 
     // Handle Stacks ITS -> ITS Hub case
@@ -66,37 +70,39 @@ export class CosmwasmService {
       task.destinationChain === CONSTANTS.AXELAR_CHAIN
     ) {
       return {
-        verify_message_with_payload: {
-          message: {
-            cc_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
-            destination_chain: CONSTANTS.AXELAR_CHAIN,
-            destination_address: task.message.destinationAddress,
-            source_address: task.message.sourceAddress,
-            payload_hash: payloadHash,
+        verify_message_with_payload: [
+          {
+            message: {
+              cc_id: { source_chain: task.message.sourceChain, message_id: task.message.messageID },
+              destination_chain: CONSTANTS.AXELAR_CHAIN,
+              destination_address: task.message.destinationAddress,
+              source_address: task.message.sourceAddress,
+              payload_hash: payloadHash,
+            },
+            payload: Buffer.from(task.payload, 'base64').toString('hex'),
           },
-          payload: Buffer.from(task.payload, 'base64').toString('hex'),
-        },
+        ],
       };
     }
 
-    return {
-      verify_messages: [
-        {
-          cc_id: {
-            source_chain: task.message.sourceChain,
-            message_id: task.message.messageID,
-          },
-          destination_chain: task.destinationChain,
-          destination_address: task.message.destinationAddress,
-          source_address: task.message.sourceAddress,
-          payload_hash: payloadHash,
-        },
-      ],
-    };
+    this.logger.error(
+      `Currently only ITS is supported for Stacks, can not verify message ${task.message.messageID}`,
+      task,
+    );
+    this.slackApi.sendWarn(
+      'Currently only ITS is supported for Stacks',
+      `Can not verify message ${task.message.messageID}`,
+    );
+
+    return null;
   }
 
   async storeCosmWasmTransaction(key: string, cosmWasmTransaction: PendingCosmWasmTransaction) {
-    await this.redisHelper.set<PendingCosmWasmTransaction>(key, cosmWasmTransaction, Constants.oneMinute() * 10);
+    await this.redisHelper.set<PendingCosmWasmTransaction>(
+      key,
+      cosmWasmTransaction,
+      CacheInfo.PendingCosmWasmTransaction('').ttl,
+    );
   }
 
   async getCosmWasmTransaction(key: string): Promise<PendingCosmWasmTransaction | undefined> {
