@@ -44,7 +44,7 @@ export class ConstructProofCommand extends CommandRunner {
 
   private async sendCosmWasmRequest(axelarCallEvent: CallEvent) {
     const message = axelarCallEvent.message;
-    const request = this.cosmWasmService.buildConstructProofRequest({
+    const request = await this.cosmWasmService.buildConstructProofRequest({
       message,
       payload: axelarCallEvent.payload,
     });

@@ -46,7 +46,7 @@ export class VerifyMessageCommand extends CommandRunner {
 
   private async sendCosmWasmRequest(callEvent: CallEvent) {
     const message = callEvent.message;
-    const request = this.cosmWasmService.buildVerifyRequest({
+    const request = await this.cosmWasmService.buildVerifyRequest({
       message,
       payload: callEvent.payload,
       destinationChain: callEvent.destinationChain,

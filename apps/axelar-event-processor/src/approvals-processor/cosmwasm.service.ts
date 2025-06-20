@@ -35,7 +35,7 @@ export class CosmwasmService {
     this.logger = new Logger(CosmwasmService.name);
   }
 
-  buildConstructProofRequest(task: ConstructProofTask): WasmRequest | null {
+  async buildConstructProofRequest(task: ConstructProofTask): Promise<WasmRequest | null> {
     // Handle ITS Hub -> Stacks ITS case
     if (task.message.sourceAddress === this.axelarContractIts && task.message.sourceChain === CONSTANTS.AXELAR_CHAIN) {
       return {
@@ -52,7 +52,7 @@ export class CosmwasmService {
       `Currently only ITS is supported for Stacks, can not construct proof for message ${task.message.messageID}`,
       task,
     );
-    this.slackApi.sendWarn(
+    await this.slackApi.sendWarn(
       'Currently only ITS is supported for Stacks',
       `Can not construct proof for message ${task.message.messageID}`,
     );
@@ -60,7 +60,7 @@ export class CosmwasmService {
     return null;
   }
 
-  buildVerifyRequest(task: VerifyTask): WasmRequest | null {
+  async buildVerifyRequest(task: VerifyTask): Promise<Components.Schemas.WasmRequest | null> {
     const payloadHash = Buffer.from(task.message.payloadHash, 'base64').toString('hex');
 
     // Handle Stacks ITS -> ITS Hub case
@@ -89,7 +89,7 @@ export class CosmwasmService {
       `Currently only ITS is supported for Stacks, can not verify message ${task.message.messageID}`,
       task,
     );
-    this.slackApi.sendWarn(
+    await this.slackApi.sendWarn(
       'Currently only ITS is supported for Stacks',
       `Can not verify message ${task.message.messageID}`,
     );

@@ -399,7 +399,7 @@ export class ApprovalsProcessorService {
   }
 
   async processConstructProofTask(response: ConstructProofTask) {
-    const request = this.cosmWasmService.buildConstructProofRequest(response);
+    const request = await this.cosmWasmService.buildConstructProofRequest(response);
 
     if (!request) {
       return;
@@ -423,7 +423,7 @@ export class ApprovalsProcessorService {
   }
 
   async processVerifyTask(response: VerifyTask) {
-    const request = this.cosmWasmService.buildVerifyRequest(response);
+    const request = await this.cosmWasmService.buildVerifyRequest(response);
 
     if (!request) {
       return;
