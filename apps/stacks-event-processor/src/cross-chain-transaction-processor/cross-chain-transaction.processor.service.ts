@@ -36,38 +36,46 @@ export class CrossChainTransactionProcessorService {
   // Runs after EventProcessor pollEvents cron has run
   @Cron('5/10 * * * * *')
   async processCrossChainTransactions() {
-    await Locker.lock('processCrossChainTransactions', this.processCrossChainTransactionsRaw.bind(this));
+    await Locker.lock('processCrossChainTransactions', async () => {
+      this.logger.debug('Running processCrossChainTransactions cron');
+
+      let txHashes;
+      do {
+        txHashes = await this.crossChainTransactionRepository.processPending(
+          this.processCrossChainTransactionsRaw.bind(this),
+        );
+      } while (txHashes.length > 0);
+    });
   }
 
-  async processCrossChainTransactionsRaw() {
-    this.logger.debug('Running processCrossChainTransactions cron');
+  async processCrossChainTransactionsRaw(txHashes: string[]): Promise<string[]> {
+    this.logger.log(`Found ${txHashes.length} CrossChainTransactions to query`);
 
-    let txHashes;
-    while ((txHashes = await this.crossChainTransactionRepository.findPending(0))?.length) {
-      this.logger.log(`Found ${txHashes.length} CrossChainTransactions to query`);
-
-      for (const txHash of txHashes) {
-        try {
-          const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
-          // Wait for transaction to be finished
-          if ((transaction.tx_status as any) === 'pending') {
-            continue;
-          }
-
-          if (transaction.tx_status === 'success') {
-            await this.handleEvents(transaction, fee);
-          }
-
-          await this.crossChainTransactionRepository.markAsSuccess(txHash);
-        } catch (e) {
-          this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
-          await this.slackApi.sendWarn(
-            `Cross chain transaction processing error`,
-            `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
-          );
+    const processedTxs: string[] = [];
+    for (const txHash of txHashes) {
+      try {
+        const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
+        // Wait for transaction to be finished
+        if ((transaction.tx_status as any) === 'pending') {
+          continue;
         }
+
+        if (transaction.tx_status === 'success') {
+          await this.handleEvents(transaction, fee);
+        }
+
+        // Mark transaction as processed, will be deleted from database
+        processedTxs.push(txHash);
+      } catch (e) {
+        this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
+        await this.slackApi.sendWarn(
+          `Cross chain transaction processing error`,
+          `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
+        );
       }
     }
+
+    return processedTxs;
   }
 
   private async handleEvents(transaction: Transaction, fee: string) {

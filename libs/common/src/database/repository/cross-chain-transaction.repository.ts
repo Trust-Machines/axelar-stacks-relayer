@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
-import { CrossChainTransactionStatus } from '@prisma/client';
 
 @Injectable()
 export class CrossChainTransactionRepository {
@@ -10,36 +9,56 @@ export class CrossChainTransactionRepository {
     await this.prisma.crossChainTransaction.createMany({
       data: txHashes.map((txHash) => ({
         txHash,
-        status: CrossChainTransactionStatus.PENDING,
       })),
       skipDuplicates: true,
     });
   }
 
-  async findPending(page: number = 0, take: number = 10): Promise<string[]> {
-    const result = await this.prisma.crossChainTransaction.findMany({
-      where: {
-        status: CrossChainTransactionStatus.PENDING,
-      },
-      orderBy: [{ createdAt: 'asc' }],
-      skip: page * take,
-      take,
-      select: {
-        txHash: true,
-      },
-    });
+  /**
+   * Process up to `${take}` items from the database. Runs logic in a database transaction, commiting everything after
+   * the batch has been processed.
+   * Uses Postgres `FOR UPDATE SKIP LOCKED`, which allows multiple consumers running in parallel without being blocked.
+   * Deletes successfully processed items at the end of the database transaction. Unsuccessful entries can be retried.
+   */
+  processPending(
+    doProcessing: (txHashes: string[]) => Promise<string[]>,
+    take: number = 10,
+    timeout: number = 30_000,
+  ): Promise<string[]> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const result = await tx.$queryRaw<{ txHash: string }[]>`
+          SELECT "txHash"
+          from "CrossChainTransaction"
+          ORDER BY "createdAt" ASC
+            FOR
+              UPDATE SKIP LOCKED LIMIT ${take}
+        `;
 
-    return result.map((data) => data.txHash);
-  }
+        const txHashes = result.map((data) => data.txHash);
 
-  async markAsSuccess(txHash: string) {
-    await this.prisma.crossChainTransaction.update({
-      where: {
-        txHash,
+        if (txHashes.length === 0) {
+          return [];
+        }
+
+        const processedTxs = await doProcessing(txHashes);
+
+        // Only delete txs which have been successfully processed
+        if (processedTxs.length > 0) {
+          await tx.crossChainTransaction.deleteMany({
+            where: {
+              txHash: {
+                in: processedTxs,
+              },
+            },
+          });
+        }
+
+        return processedTxs;
       },
-      data: {
-        status: CrossChainTransactionStatus.SUCCESS,
+      {
+        timeout,
       },
-    });
+    );
   }
 }

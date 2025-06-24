@@ -94,11 +94,6 @@ describe('CrossChainTransactionProcessor', () => {
   });
 
   it('Should not process pending or failed transaction', async () => {
-    crossChainTransactionRepository.findPending.mockReturnValueOnce(
-      Promise.resolve(['txHashNone', 'txHashPending', 'txHashFailed']),
-    );
-    crossChainTransactionRepository.findPending.mockReturnValue(Promise.resolve([]));
-
     hiroApi.getTransactionWithFee.mockImplementation((txHash: string) => {
       if (txHash === 'txHashNone') {
         throw new Error('not found');
@@ -116,10 +111,8 @@ describe('CrossChainTransactionProcessor', () => {
       return Promise.resolve({ transaction, fee: transaction.fee_rate });
     });
 
-    await service.processCrossChainTransactionsRaw();
+    await service.processCrossChainTransactionsRaw(['txHashNone', 'txHashPending', 'txHashFailed']);
 
-    expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledTimes(1);
-    expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledWith('txHashFailed');
     expect(gatewayProcessor.handleGatewayEvent).not.toHaveBeenCalled();
     expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
   });
@@ -190,13 +183,12 @@ describe('CrossChainTransactionProcessor', () => {
     it('Should handle multiple events', async () => {
       transaction.events = [rawGasEvent, rawGatewayEvent, rawItsEvent];
 
-      crossChainTransactionRepository.findPending.mockResolvedValueOnce(['txHash']).mockResolvedValue([]);
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
         transaction: transaction,
         fee: transaction.fee_rate,
       });
 
-      await service.processCrossChainTransactionsRaw();
+      await service.processCrossChainTransactionsRaw(['txHash']);
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledWith(
@@ -221,13 +213,11 @@ describe('CrossChainTransactionProcessor', () => {
 
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.postEvents).toHaveBeenCalledWith(expect.anything(), 'txHash');
-      expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledWith('txHash');
     });
 
     it('Should handle multiple approval events and set cost for each', async () => {
       transaction.events = [rawApprovedEvent, rawApprovedEvent];
 
-      crossChainTransactionRepository.findPending.mockResolvedValueOnce(['txHash']).mockResolvedValue([]);
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
         transaction: transaction,
         fee: transaction.fee_rate,
@@ -250,7 +240,7 @@ describe('CrossChainTransactionProcessor', () => {
         }),
       );
 
-      await service.processCrossChainTransactionsRaw();
+      await service.processCrossChainTransactionsRaw(['txHash']);
 
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledTimes(2);
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledWith(
@@ -270,32 +260,26 @@ describe('CrossChainTransactionProcessor', () => {
       expect(axelarGmpApi.postEvents.mock.lastCall?.[0][0].cost.amount).toBe('90');
       // @ts-ignore
       expect(axelarGmpApi.postEvents.mock.lastCall?.[0][1].cost.amount).toBe('90');
-
-      expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledTimes(1);
-      expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledWith('txHash');
     });
 
     it('Should not postEvents if no events to send', async () => {
       transaction.events = [];
 
-      crossChainTransactionRepository.findPending.mockResolvedValueOnce(['txHash']).mockResolvedValue([]);
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
         transaction: transaction,
         fee: transaction.fee_rate,
       });
 
-      await service.processCrossChainTransactionsRaw();
+      await service.processCrossChainTransactionsRaw(['txHash']);
 
       expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
       expect(gatewayProcessor.handleGatewayEvent).not.toHaveBeenCalled();
       expect(axelarGmpApi.postEvents).not.toHaveBeenCalled();
-      expect(crossChainTransactionRepository.markAsSuccess).toHaveBeenCalledWith('txHash');
     });
 
     it('Should handle postEvents error', async () => {
       transaction.events = [rawGasEvent];
 
-      crossChainTransactionRepository.findPending.mockResolvedValueOnce(['txHash']).mockResolvedValue([]);
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
         transaction: transaction,
         fee: transaction.fee_rate,
@@ -303,11 +287,10 @@ describe('CrossChainTransactionProcessor', () => {
 
       axelarGmpApi.postEvents.mockRejectedValueOnce('Network error');
 
-      await service.processCrossChainTransactionsRaw();
+      await service.processCrossChainTransactionsRaw(['txHash']);
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
-      expect(crossChainTransactionRepository.markAsSuccess).not.toHaveBeenCalled(); // Should not remove the tx in case of an error
     });
   });
 });

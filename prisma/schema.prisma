@@ -42,13 +42,7 @@ model LastProcessedData {
 }
 
 model CrossChainTransaction {
-  txHash    String                      @id @db.VarChar(66)
-  status    CrossChainTransactionStatus
-  createdAt DateTime                    @default(now()) @db.Timestamp(6)
-  updatedAt DateTime                    @default(now()) @updatedAt @db.Timestamp(6)
-}
-
-enum CrossChainTransactionStatus {
-  PENDING
-  SUCCESS
+  txHash    String   @id @db.VarChar(66)
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamp(6)
 }
