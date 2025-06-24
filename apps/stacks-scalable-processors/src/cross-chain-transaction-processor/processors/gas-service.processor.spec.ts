@@ -1,7 +1,7 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { hex } from '@scure/base';
-import { ApiConfigService, GatewayContract } from '@stacks-monorepo/common';
+import { ApiConfigService, GatewayContract, ScEvent } from '@stacks-monorepo/common';
 import { Components, GasRefundedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   GasAddedEvent,
@@ -14,7 +14,6 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
-import { ScEvent } from '../../event-processor/types';
 import { GasServiceProcessor } from './gas-service.processor';
 import GasCreditEvent = Components.Schemas.GasCreditEvent;
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';

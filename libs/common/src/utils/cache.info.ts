@@ -2,6 +2,7 @@ export class CacheInfo {
   key: string = '';
   ttl: number = Constants.oneSecond() * 6;
 
+  // TODO: Move these 3 to PostgreSQL?
   static PendingTransaction(hash: string): CacheInfo {
     return {
       key: `pendingTransaction:${hash}`,
@@ -22,6 +23,8 @@ export class CacheInfo {
       ttl: Constants.oneWeek(),
     };
   }
+
+
 
   static WalletNonce(address: string): CacheInfo {
     return {

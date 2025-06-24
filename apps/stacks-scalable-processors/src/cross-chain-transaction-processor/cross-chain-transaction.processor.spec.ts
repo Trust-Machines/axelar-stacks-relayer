@@ -1,11 +1,10 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { ApiConfigService } from '@stacks-monorepo/common';
+import { ApiConfigService, ScEvent } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { ScEvent } from '../event-processor/types';
 import { CrossChainTransactionProcessorService } from './cross-chain-transaction.processor.service';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';

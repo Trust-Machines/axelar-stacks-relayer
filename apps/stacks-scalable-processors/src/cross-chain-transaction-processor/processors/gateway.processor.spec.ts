@@ -16,12 +16,11 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
-import { ScEvent } from '../../event-processor/types';
 import { GatewayProcessor } from './gateway.processor';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
-import { ApiConfigService, BinaryUtils } from '@stacks-monorepo/common';
+import { ApiConfigService, BinaryUtils, ScEvent } from '@stacks-monorepo/common';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';

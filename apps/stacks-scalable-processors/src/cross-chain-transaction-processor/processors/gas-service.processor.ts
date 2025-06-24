@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ApiConfigService, GatewayContract, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common';
+import {
+  getEventType,
+  mapRawEventsToSmartContractEvents,
+  ScEvent,
+} from '@stacks-monorepo/common/utils';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   GasAddedEvent,
@@ -10,10 +14,10 @@ import { GasServiceContract } from '@stacks-monorepo/common/contracts/gas-servic
 import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
-import { getEventType, ScEvent } from '../../event-processor/types';
 import GasRefundedEvent = Components.Schemas.GasRefundedEvent;
 import Event = Components.Schemas.Event;
 import GasCreditEvent = Components.Schemas.GasCreditEvent;
+import { ApiConfigService, GatewayContract } from '@stacks-monorepo/common';
 
 @Injectable()
 export class GasServiceProcessor {

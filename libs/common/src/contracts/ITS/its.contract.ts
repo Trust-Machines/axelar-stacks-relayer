@@ -35,7 +35,6 @@ import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { GatewayContract } from '../gateway.contract';
 import { GasServiceContract } from '../gas-service.contract';
 import { GasCheckerPayload } from '../entities/gas-checker-payload';
-import { ScEvent } from '../../../../../apps/stacks-event-processor/src/event-processor/types';
 import {
   DecodingUtils,
   interchainTokenDeploymentStartedEventDecoder,
@@ -46,7 +45,7 @@ import {
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
-import { BinaryUtils, CacheInfo } from '@stacks-monorepo/common';
+import { BinaryUtils, CacheInfo, ScEvent } from '@stacks-monorepo/common';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';

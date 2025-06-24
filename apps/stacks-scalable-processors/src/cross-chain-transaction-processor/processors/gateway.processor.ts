@@ -8,7 +8,6 @@ import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import BigNumber from 'bignumber.js';
-import { getEventType, ScEvent } from '../../event-processor/types';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 import Event = Components.Schemas.Event;
@@ -18,6 +17,7 @@ import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.m
 import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
 import { ethers } from 'ethers';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 
 @Injectable()
 export class GatewayProcessor {

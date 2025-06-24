@@ -4,7 +4,7 @@ import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { getEventType, ScEvent } from './types';
+import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 import {
   LAST_PROCESSED_DATA_TYPE,
   LastProcessedDataRepository,
@@ -49,21 +49,23 @@ export class EventProcessorService {
       this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS),
     ]);
 
-    await this.getContractEvents(
-      this.contractGatewayStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY,
-      gatewayLastProcessedEvent,
-    );
-    await this.getContractEvents(
-      this.contractGasServiceStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE,
-      gasLastProcessedEvent,
-    );
-    await this.getContractEvents(
-      this.contractItsStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS,
-      itsLastProcessedEvent,
-    );
+    await Promise.all([
+      this.getContractEvents(
+        this.contractGatewayStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY,
+        gatewayLastProcessedEvent,
+      ),
+      this.getContractEvents(
+        this.contractGasServiceStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE,
+        gasLastProcessedEvent,
+      ),
+      this.getContractEvents(
+        this.contractItsStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS,
+        itsLastProcessedEvent,
+      ),
+    ]);
   }
 
   private async getContractEvents(contractId: string, type: string, lastProcessedEventKey: string | undefined) {
