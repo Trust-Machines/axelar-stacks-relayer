@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
+import { ApiConfigService, Locker } from '@stacks-monorepo/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { getEventType, ScEvent } from './types';
 import {
@@ -11,6 +10,7 @@ import {
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { AxiosError } from 'axios';
+import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
 
 @Injectable()
 export class EventProcessorService {
@@ -22,9 +22,9 @@ export class EventProcessorService {
 
   constructor(
     private readonly hiroApiHelper: HiroApiHelper,
-    private readonly redisHelper: RedisHelper,
     private readonly lastProcessedDataRepository: LastProcessedDataRepository,
     private readonly slackApi: SlackApi,
+    private readonly crossChainTransactionRepository: CrossChainTransactionRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -145,7 +145,7 @@ export class EventProcessorService {
       }
 
       if (crossChainTransactions.size > 0) {
-        await this.redisHelper.sadd(CacheInfo.CrossChainTransactions().key, ...crossChainTransactions);
+        await this.crossChainTransactionRepository.createMany([...crossChainTransactions]);
       }
     } catch (e) {
       this.logger.error(`An unhandled error occurred when consuming events: ${JSON.stringify(events)}`, e);

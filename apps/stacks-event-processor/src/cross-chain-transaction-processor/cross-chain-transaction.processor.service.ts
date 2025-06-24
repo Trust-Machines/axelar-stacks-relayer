@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@stacks-monorepo/common';
+import { ApiConfigService, AxelarGmpApi } from '@stacks-monorepo/common';
 import { MessageApprovedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { AxiosError } from 'axios';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
@@ -22,9 +22,9 @@ export class CrossChainTransactionProcessorService {
     private readonly gasServiceProcessor: GasServiceProcessor,
     private readonly itsProcessor: ItsProcessor,
     private readonly axelarGmpApi: AxelarGmpApi,
-    private readonly redisHelper: RedisHelper,
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly slackApi: SlackApi,
+    private readonly crossChainTransactionRepository: CrossChainTransactionRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -42,26 +42,30 @@ export class CrossChainTransactionProcessorService {
   async processCrossChainTransactionsRaw() {
     this.logger.debug('Running processCrossChainTransactions cron');
 
-    const txHashes = await this.redisHelper.smembers(CacheInfo.CrossChainTransactions().key);
-    for (const txHash of txHashes) {
-      try {
-        const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
-        // Wait for transaction to be finished
-        if ((transaction.tx_status as any) === 'pending') {
-          continue;
-        }
+    let txHashes;
+    while ((txHashes = await this.crossChainTransactionRepository.findPending(0))?.length) {
+      this.logger.log(`Found ${txHashes.length} CrossChainTransactions to query`);
 
-        if (transaction.tx_status === 'success') {
-          await this.handleEvents(transaction, fee);
-        }
+      for (const txHash of txHashes) {
+        try {
+          const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
+          // Wait for transaction to be finished
+          if ((transaction.tx_status as any) === 'pending') {
+            continue;
+          }
 
-        await this.redisHelper.srem(CacheInfo.CrossChainTransactions().key, txHash);
-      } catch (e) {
-        this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
-        await this.slackApi.sendWarn(
-          `Cross chain transaction processing error`,
-          `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
-        );
+          if (transaction.tx_status === 'success') {
+            await this.handleEvents(transaction, fee);
+          }
+
+          await this.crossChainTransactionRepository.markAsSuccess(txHash);
+        } catch (e) {
+          this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
+          await this.slackApi.sendWarn(
+            `Cross chain transaction processing error`,
+            `An error occurred while processing cross chain transaction ${txHash}. Will be retried`,
+          );
+        }
       }
     }
   }
@@ -115,11 +119,7 @@ export class CrossChainTransactionProcessorService {
       }
 
       if (address === this.contractItsStorage) {
-        const event = this.itsProcessor.handleItsEvent(
-          rawEvent,
-          transaction,
-          rawEvent.event_index,
-        );
+        const event = this.itsProcessor.handleItsEvent(rawEvent, transaction, rawEvent.event_index);
 
         if (event) {
           eventsToSend.push(event);

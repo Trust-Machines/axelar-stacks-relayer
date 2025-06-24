@@ -1,18 +1,18 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
-import { ApiConfigService, CacheInfo } from '@stacks-monorepo/common';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
+import { ApiConfigService } from '@stacks-monorepo/common';
 import { Test } from '@nestjs/testing';
 import { EventProcessorService } from './event.processor.service';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { bufferCV, serializeCV, tupleCV, stringAsciiCV } from '@stacks/transactions';
+import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import { hex } from '@scure/base';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { ScEvent } from './types';
 import { LastProcessedDataRepository } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
 
 describe('EventProcessorService', () => {
-  let redisHelper: DeepMocked<RedisHelper>;
+  let crossChainTransactionRepository: DeepMocked<CrossChainTransactionRepository>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let hiroApiHelper: DeepMocked<HiroApiHelper>;
   let lastProcessedDataRepository: DeepMocked<LastProcessedDataRepository>;
@@ -21,7 +21,7 @@ describe('EventProcessorService', () => {
   let service: EventProcessorService;
 
   beforeEach(async () => {
-    redisHelper = createMock();
+    crossChainTransactionRepository = createMock();
     apiConfigService = createMock();
     hiroApiHelper = createMock();
     lastProcessedDataRepository = createMock();
@@ -35,8 +35,8 @@ describe('EventProcessorService', () => {
       providers: [EventProcessorService],
     })
       .useMocker((token) => {
-        if (token === RedisHelper) {
-          return redisHelper;
+        if (token === CrossChainTransactionRepository) {
+          return crossChainTransactionRepository;
         }
 
         if (token === ApiConfigService) {
@@ -231,8 +231,8 @@ describe('EventProcessorService', () => {
 
       await service.consumeEvents(events);
 
-      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
-      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledTimes(1);
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledWith(['txHash']);
     });
 
     it('Should handle gas service event correctly', async () => {
@@ -262,8 +262,8 @@ describe('EventProcessorService', () => {
 
       await service.consumeEvents(events);
 
-      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
-      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledTimes(1);
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledWith(['txHash']);
     });
 
     it('Should handle ITS event correctly', async () => {
@@ -293,8 +293,8 @@ describe('EventProcessorService', () => {
 
       await service.consumeEvents(events);
 
-      expect(redisHelper.sadd).toHaveBeenCalledTimes(1);
-      expect(redisHelper.sadd).toHaveBeenCalledWith(CacheInfo.CrossChainTransactions().key, 'txHash');
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledTimes(1);
+      expect(crossChainTransactionRepository.createMany).toHaveBeenCalledWith(['txHash']);
     });
 
     it('Should not consume invalid events', async () => {
@@ -324,7 +324,7 @@ describe('EventProcessorService', () => {
 
       await service.consumeEvents(events);
 
-      expect(redisHelper.sadd).not.toHaveBeenCalled();
+      expect(crossChainTransactionRepository.createMany).not.toHaveBeenCalled();
     });
   });
 });
