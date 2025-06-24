@@ -434,17 +434,17 @@ describe('ApprovalsProcessorService', () => {
     it('Should handle undefined', async () => {
       const key = CacheInfo.PendingTransaction('txHashUndefined').key;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(Promise.resolve(undefined));
+      redisHelper.get.mockReturnValueOnce(Promise.resolve(undefined));
       await service.handlePendingTransactionsRaw();
       expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.getDel).toHaveBeenCalledTimes(1);
-      expect(redisHelper.getDel).toHaveBeenCalledWith(key);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledWith(key);
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).not.toHaveBeenCalled();
     });
     it('Should handle success', async () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData: mockExternalData,
@@ -460,8 +460,10 @@ describe('ApprovalsProcessorService', () => {
       );
       await service.handlePendingTransactionsRaw();
       expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.getDel).toHaveBeenCalledTimes(1);
-      expect(redisHelper.getDel).toHaveBeenCalledWith(key);
+      expect(redisHelper.get).toHaveBeenCalledTimes(1);
+      expect(redisHelper.get).toHaveBeenCalledWith(key);
+      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
+      expect(redisHelper.delete).toHaveBeenCalledWith(key);
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
       expect(transactionsHelper.getTransactionGas).not.toHaveBeenCalled();
@@ -471,7 +473,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -507,7 +509,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -554,7 +556,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const executeData = Uint8Array.of(1, 2, 3, 4);
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           executeData,
@@ -580,7 +582,7 @@ describe('ApprovalsProcessorService', () => {
       const key = CacheInfo.PendingTransaction('txHashComplete').key;
       const externalData = mockExternalData;
       redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.getDel.mockReturnValueOnce(
+      redisHelper.get.mockReturnValueOnce(
         Promise.resolve({
           txHash: 'txHashComplete',
           externalData,
@@ -902,24 +904,26 @@ describe('ApprovalsProcessorService', () => {
         `pendingCosmWasm:proof_axelar_msg1`,
         {
           request: {
-            construct_proof_with_payload: {
-              message_id: {
-                source_chain: response.message.sourceChain,
-                message_id: response.message.messageID,
+            construct_proof_with_payload: [
+              {
+                message_id: {
+                  source_chain: response.message.sourceChain,
+                  message_id: response.message.messageID,
+                },
+                payload: Buffer.from('payloadData').toString('hex'),
               },
-              payload: Buffer.from('payloadData').toString('hex'),
-            },
+            ],
           },
           retry: 0,
           type: 'CONSTRUCT_PROOF',
           timestamp: mockDate.getTime(),
         },
-        600,
+        604800,
       );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
-    it('should add a single entry in Redis for construct_proof', async () => {
+    it('should not add a single entry in Redis for construct_proof', async () => {
       const response = {
         message: {
           sourceChain: 'otherChain',
@@ -933,25 +937,7 @@ describe('ApprovalsProcessorService', () => {
 
       await service.processConstructProofTask(response);
 
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        'pendingCosmWasm:proof_otherChain_msg2',
-        {
-          request: {
-            construct_proof: [
-              {
-                source_chain: response.message.sourceChain,
-                message_id: response.message.messageID,
-              },
-            ],
-          },
-          retry: 0,
-          type: 'CONSTRUCT_PROOF',
-          timestamp: mockDate.getTime(),
-        },
-        600,
-      );
-
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).not.toHaveBeenCalled();
     });
   });
 
@@ -975,30 +961,32 @@ describe('ApprovalsProcessorService', () => {
         `pendingCosmWasm:verify_stacks_msg1`,
         {
           request: {
-            verify_message_with_payload: {
-              message: {
-                cc_id: {
-                  source_chain: response.message.sourceChain,
-                  message_id: response.message.messageID,
+            verify_message_with_payload: [
+              {
+                message: {
+                  cc_id: {
+                    source_chain: response.message.sourceChain,
+                    message_id: response.message.messageID,
+                  },
+                  destination_chain: 'axelar',
+                  destination_address: AXELAR_ITS_CONTRACT,
+                  source_address: STACKS_ITS_CONTRACT,
+                  payload_hash: Buffer.from('payloadHash1').toString('hex'),
                 },
-                destination_chain: 'axelar',
-                destination_address: AXELAR_ITS_CONTRACT,
-                source_address: STACKS_ITS_CONTRACT,
-                payload_hash: Buffer.from('payloadHash1').toString('hex'),
+                payload: Buffer.from('payloadData').toString('hex'),
               },
-              payload: Buffer.from('payloadData').toString('hex'),
-            },
+            ],
           },
           retry: 0,
           type: 'VERIFY',
           timestamp: mockDate.getTime(),
         },
-        600,
+        604800,
       );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
 
-    it('should add a single entry in Redis for verify_messages', async () => {
+    it('should not add a single entry in Redis for verify_messages', async () => {
       const response: VerifyTask = {
         message: {
           sourceChain: 'stacks',
@@ -1013,31 +1001,7 @@ describe('ApprovalsProcessorService', () => {
 
       await service.processVerifyTask(response);
 
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        'pendingCosmWasm:verify_stacks_msg2',
-        {
-          request: {
-            verify_messages: [
-              {
-                cc_id: {
-                  source_chain: response.message.sourceChain,
-                  message_id: response.message.messageID,
-                },
-                destination_chain: 'ethereum',
-                destination_address: 'anotherDestination',
-                source_address: 'randomAddress',
-                payload_hash: Buffer.from('payloadHash2').toString('hex'),
-              },
-            ],
-          },
-          retry: 0,
-          type: 'VERIFY',
-          timestamp: mockDate.getTime(),
-        },
-        600,
-      );
-
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).not.toHaveBeenCalled();
     });
   });
 
@@ -1060,7 +1024,7 @@ describe('ApprovalsProcessorService', () => {
           type: 'CONSTRUCT_PROOF',
           timestamp: mockDate.getTime(),
         },
-        600,
+        604800,
       );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });
@@ -1086,7 +1050,7 @@ describe('ApprovalsProcessorService', () => {
           type: 'VERIFY',
           timestamp: mockDate.getTime(),
         },
-        600,
+        604800,
       );
       expect(redisHelper.set).toHaveBeenCalledTimes(1);
     });

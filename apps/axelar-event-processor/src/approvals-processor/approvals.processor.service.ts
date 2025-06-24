@@ -134,7 +134,7 @@ export class ApprovalsProcessorService {
     this.logger.debug(`Handling ${keys.length} pending gateway transactions`);
 
     for (const key of keys) {
-      const cachedValue = await this.redisHelper.getDel<PendingTransaction>(key);
+      const cachedValue = await this.redisHelper.get<PendingTransaction>(key);
 
       if (cachedValue === undefined) {
         continue;
@@ -149,6 +149,8 @@ export class ApprovalsProcessorService {
 
       // Nothing to do on success
       if (success) {
+        await this.redisHelper.delete(key);
+
         this.logger.log(`Transaction with hash ${txHash} was successfully executed!`);
 
         continue;
@@ -157,7 +159,7 @@ export class ApprovalsProcessorService {
       if (!isFinished) {
         // Set value back in cache to be checked again and not block processing of other transactions
         await this.redisHelper.set<PendingTransaction>(
-          CacheInfo.PendingTransaction(txHash).key,
+          key,
           {
             txHash,
             externalData,
@@ -171,6 +173,8 @@ export class ApprovalsProcessorService {
       }
 
       if (retry >= MAX_NUMBER_OF_RETRIES) {
+        await this.redisHelper.delete(key);
+
         this.logger.error(`Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`);
         await this.slackApi.sendError(
           `Gateway transaction error`,
@@ -182,6 +186,9 @@ export class ApprovalsProcessorService {
 
       try {
         await this.processGatewayTxTask(externalData, retry);
+
+        // Delete old tx
+        await this.redisHelper.delete(key);
       } catch (e) {
         this.logger.warn('Error while trying to retry Gateway transaction...', e);
         await this.slackApi.sendWarn(
@@ -191,7 +198,7 @@ export class ApprovalsProcessorService {
 
         // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
         await this.redisHelper.set<PendingTransaction>(
-          CacheInfo.PendingTransaction(txHash).key,
+          key,
           {
             txHash,
             externalData,
@@ -392,7 +399,11 @@ export class ApprovalsProcessorService {
   }
 
   async processConstructProofTask(response: ConstructProofTask) {
-    const request = this.cosmWasmService.buildConstructProofRequest(response);
+    const request = await this.cosmWasmService.buildConstructProofRequest(response);
+
+    if (!request) {
+      return;
+    }
 
     const id = `proof_${response.message.sourceChain}_${response.message.messageID}`;
     const constructProofTransaction: PendingCosmWasmTransaction = {
@@ -412,7 +423,11 @@ export class ApprovalsProcessorService {
   }
 
   async processVerifyTask(response: VerifyTask) {
-    const request = this.cosmWasmService.buildVerifyRequest(response);
+    const request = await this.cosmWasmService.buildVerifyRequest(response);
+
+    if (!request) {
+      return;
+    }
 
     const id = `verify_${response.message.sourceChain}_${response.message.messageID}`;
     const verifyTransaction: PendingCosmWasmTransaction = {

@@ -5,14 +5,14 @@ export class CacheInfo {
   static PendingTransaction(hash: string): CacheInfo {
     return {
       key: `pendingTransaction:${hash}`,
-      ttl: Constants.oneMinute() * 10,
+      ttl: Constants.oneWeek(),
     };
   }
 
   static PendingCosmWasmTransaction(id: string): CacheInfo {
     return {
       key: `pendingCosmWasm:${id}`,
-      ttl: Constants.oneMinute() * 10,
+      ttl: Constants.oneWeek(),
     };
   }
 

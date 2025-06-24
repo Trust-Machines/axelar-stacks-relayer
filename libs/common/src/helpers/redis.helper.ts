@@ -32,24 +32,6 @@ export class RedisHelper {
     return undefined;
   }
 
-  async getDel<T>(key: string): Promise<T | undefined> {
-    try {
-      const data = await this.redis.getdel(key);
-      if (data) {
-        return JSON.parse(data);
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error('RedisCache - An error occurred while trying to getdel from redis cache.', {
-          cacheKey: key,
-          error: error?.toString(),
-        });
-        await this.slackApi.sendError('Redis error', 'An error occurred while trying to getdel from redis cache.');
-      }
-    }
-    return undefined;
-  }
-
   async scan(pattern: string): Promise<string[]> {
     const found: string[] = [];
     let cursor = '0';
