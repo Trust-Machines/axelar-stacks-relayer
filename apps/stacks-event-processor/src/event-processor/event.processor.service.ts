@@ -104,6 +104,12 @@ export class EventProcessorService {
           await this.consumeEvents(eventsToProcess);
         }
 
+        // Save partial progress
+        if (latestEventKey) {
+          this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
+          await this.lastProcessedDataRepository.update(type, latestEventKey);
+        }
+
         // If we found the last processed event on this page, don't go to the next one
         if (lastProcessedIndex !== -1) {
           break;
@@ -124,11 +130,6 @@ export class EventProcessorService {
 
         break;
       }
-    }
-
-    if (latestEventKey) {
-      this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
-      await this.lastProcessedDataRepository.update(type, latestEventKey);
     }
   }
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
-import { Prisma, StacksTransaction, StacksTransactionStatus } from '@prisma/client';
+import { Prisma, StacksTransaction, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
 
 @Injectable()
 export class StacksTransactionRepository {
@@ -28,15 +28,19 @@ export class StacksTransactionRepository {
     take: number = 10,
     timeout: number = 60_000,
   ): Promise<StacksTransaction[]> {
+    // Last updated more than two minutes ago, if retrying
+    const lastUpdatedAtRetry = new Date(new Date().getTime() - 120_000);
+
     return this.prisma.$transaction(
       async (tx) => {
+        // New entries have priority over older ones
         const result = await tx.$queryRaw<StacksTransaction[]>`
           SELECT *
           from "StacksTransaction"
-          WHERE "status" = ${StacksTransactionStatus.PENDING}::"StacksTransactionStatus"
+          WHERE "status" = ${StacksTransactionStatus.PENDING}::"StacksTransactionStatus" AND ("retry" = 0 OR "updatedAt" < ${lastUpdatedAtRetry})
           ORDER BY "retry" ASC, "createdAt" ASC
             FOR
-              UPDATE SKIP LOCKED LIMIT ${take}
+          UPDATE SKIP LOCKED LIMIT ${take}
         `;
 
         if (result.length === 0) {
@@ -69,5 +73,25 @@ export class StacksTransactionRepository {
         timeout,
       },
     );
+  }
+
+  findByTypeAndTxHash(type: StacksTransactionType, txHash: string) {
+    return this.prisma.stacksTransaction.findFirst({
+      where: {
+        type,
+        txHash,
+      },
+    });
+  }
+
+  async updateStatus(data: StacksTransaction) {
+    await this.prisma.stacksTransaction.update({
+      where: {
+        taskItemId: data.taskItemId,
+      },
+      data: {
+        status: data.status,
+      },
+    });
   }
 }

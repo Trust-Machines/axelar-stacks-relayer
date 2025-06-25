@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ApiConfigService, GatewayContract, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common';
+import {
+  ApiConfigService,
+  BinaryUtils,
+  GatewayContract,
+  mapRawEventsToSmartContractEvents,
+} from '@stacks-monorepo/common';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
   GasAddedEvent,
@@ -14,6 +19,8 @@ import { getEventType, ScEvent } from '../../event-processor/types';
 import GasRefundedEvent = Components.Schemas.GasRefundedEvent;
 import Event = Components.Schemas.Event;
 import GasCreditEvent = Components.Schemas.GasCreditEvent;
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import { StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
 
 @Injectable()
 export class GasServiceProcessor {
@@ -23,19 +30,20 @@ export class GasServiceProcessor {
   constructor(
     private readonly gasServiceContract: GasServiceContract,
     private readonly gatewayContract: GatewayContract,
+    private readonly stacksTransactionRepository: StacksTransactionRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
     this.logger = new Logger(GasServiceProcessor.name);
   }
 
-  handleGasServiceEvent(
+  async handleGasServiceEvent(
     rawEvent: ScEvent,
     transaction: Transaction,
     index: number,
     eventIndex: number,
     fee: string,
-  ): Event | undefined {
+  ): Promise<Event | undefined> {
     const eventName = getEventType(rawEvent);
 
     if (eventName === Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT) {
@@ -76,7 +84,7 @@ export class GasServiceProcessor {
     if (eventName === Events.REFUNDED_EVENT) {
       const event = this.gasServiceContract.decodeRefundedEvent(rawEvent);
 
-      return this.handleRefundedEvent(
+      return await this.handleRefundedEvent(
         event,
         transaction.sender_address,
         transaction.tx_id,
@@ -157,14 +165,29 @@ export class GasServiceProcessor {
     };
   }
 
-  private handleRefundedEvent(
+  private async handleRefundedEvent(
     event: RefundedEvent,
     sender: string,
     txHash: string,
     index: number,
     fee: string,
     timestamp: string,
-  ): Event | undefined {
+  ): Promise<Event | undefined> {
+    const stacksTransaction = await this.stacksTransactionRepository.findByTypeAndTxHash(
+      StacksTransactionType.REFUND,
+      BinaryUtils.removeHexPrefix(txHash),
+    );
+
+    if (stacksTransaction) {
+      stacksTransaction.status = StacksTransactionStatus.SUCCESS;
+
+      await this.stacksTransactionRepository.updateStatus(stacksTransaction);
+
+      this.logger.debug(
+        `Successfully executed REFUND transaction with hash ${stacksTransaction.txHash}, id ${stacksTransaction.taskItemId}`,
+      );
+    }
+
     const gasRefundedEvent: GasRefundedEvent = {
       eventID: DecodingUtils.getEventId(txHash, index),
       messageID: DecodingUtils.getEventId(event.txHash, event.logIndex),

@@ -47,7 +47,8 @@ export class CrossChainTransactionProcessorService {
             this.processCrossChainTransactionsRaw.bind(this),
           );
         } catch (e) {
-          if (e instanceof PrismaClientKnownRequestError && e.code === 'P2028') { // Transaction timeout
+          if (e instanceof PrismaClientKnownRequestError && e.code === 'P2028') {
+            // Transaction timeout
             this.logger.warn('Transaction processing has timed out. Will be retried');
             await this.slackApi.sendWarn(
               `Cross chain transaction processing timeout`,
@@ -125,7 +126,7 @@ export class CrossChainTransactionProcessorService {
       }
 
       if (address === this.contractGasServiceStorage) {
-        const event = this.gasServiceProcessor.handleGasServiceEvent(
+        const event = await this.gasServiceProcessor.handleGasServiceEvent(
           rawEvent,
           transaction,
           index,

@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
+import { MessageApproved, MessageApprovedStatus, StacksTransaction } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -23,6 +23,7 @@ import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
 import { ApiConfigService, BinaryUtils } from '@stacks-monorepo/common';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';
 
@@ -31,6 +32,7 @@ describe('GatewayProcessor', () => {
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let slackApi: DeepMocked<SlackApi>;
+  let stacksTransactionRepository: DeepMocked<StacksTransactionRepository>;
 
   let service: GatewayProcessor;
 
@@ -72,6 +74,7 @@ describe('GatewayProcessor', () => {
     messageApprovedRepository = createMock();
     apiConfigService = createMock();
     slackApi = createMock();
+    stacksTransactionRepository = createMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [GatewayProcessor],
@@ -91,6 +94,10 @@ describe('GatewayProcessor', () => {
 
         if (token === SlackApi) {
           return slackApi;
+        }
+
+        if (token === StacksTransactionRepository) {
+          return stacksTransactionRepository;
         }
 
         return null;
@@ -216,8 +223,9 @@ describe('GatewayProcessor', () => {
       },
     };
 
-    it('Should handle event', async () => {
+    it('Should handle event without StacksTransaction', async () => {
       gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
+      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(null);
 
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
@@ -247,6 +255,60 @@ describe('GatewayProcessor', () => {
         fromAddress: 'senderAddress',
         finalized: true,
         timestamp: '11.05.2024',
+      });
+      expect(stacksTransactionRepository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('Should handle event with StacksTransaction', async () => {
+      gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
+
+      const item: StacksTransaction = {
+        taskItemId: 'taskItemId',
+        txHash: 'txHash',
+        status: 'PENDING',
+        type: 'GATEWAY',
+        extraData: {},
+        retry: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(item);
+
+      const transaction = createMock<Transaction>();
+      transaction.tx_id = '0xtxHashGateway';
+      transaction.sender_address = 'senderAddress';
+      transaction.block_time_iso = '11.05.2024';
+
+      const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
+
+      expect(gatewayContract.decodeMessageApprovedEvent).toHaveBeenCalledTimes(1);
+
+      expect(result).not.toBeUndefined();
+      expect(result?.type).toBe('MESSAGE_APPROVED');
+
+      const event = result as MessageApprovedEventApi;
+
+      expect(event.eventID).toBe('0xtxHashGateway-0');
+      expect(event.message.messageID).toBe('messageId');
+      expect(event.message.sourceChain).toBe('ethereum');
+      expect(event.message.sourceAddress).toBe('sourceAddress');
+      expect(event.message.destinationAddress).toBe('SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C');
+      expect(event.message.payloadHash).toBe(BinaryUtils.hexToBase64(contractCallEvent.payloadHash));
+      expect(event.cost).toEqual({
+        amount: '0',
+      });
+      expect(event.meta).toEqual({
+        txID: '0xtxHashGateway',
+        fromAddress: 'senderAddress',
+        finalized: true,
+        timestamp: '11.05.2024',
+      });
+      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledWith('GATEWAY', 'txHashGateway');
+      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledWith({
+        ...item,
+        status: 'SUCCESS',
       });
     });
   });
