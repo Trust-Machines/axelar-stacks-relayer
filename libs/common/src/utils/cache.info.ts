@@ -17,15 +17,6 @@ export class CacheInfo {
     };
   }
 
-  static CrossChainTransactions(): CacheInfo {
-    return {
-      key: `crossChainTransactions`,
-      ttl: Constants.oneWeek(),
-    };
-  }
-
-
-
   static WalletNonce(address: string): CacheInfo {
     return {
       key: `nonce:${address}`,

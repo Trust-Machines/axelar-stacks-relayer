@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ApiConfigService, AxelarGmpApi, CacheInfo } from '@stacks-monorepo/common';
+import { ApiConfigService, AxelarGmpApi } from '@stacks-monorepo/common';
 import { MessageApprovedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Locker, mapRawEventsToSmartContractEvents } from '@stacks-monorepo/common/utils';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { AxiosError } from 'axios';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
@@ -22,9 +22,9 @@ export class CrossChainTransactionProcessorService {
     private readonly gasServiceProcessor: GasServiceProcessor,
     private readonly itsProcessor: ItsProcessor,
     private readonly axelarGmpApi: AxelarGmpApi,
-    private readonly redisHelper: RedisHelper,
     private readonly hiroApiHelper: HiroApiHelper,
     private readonly slackApi: SlackApi,
+    private readonly crossChainTransactionRepository: CrossChainTransactionRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -36,13 +36,22 @@ export class CrossChainTransactionProcessorService {
   // Runs after EventProcessor pollEvents cron has run
   @Cron('5/10 * * * * *')
   async processCrossChainTransactions() {
-    await Locker.lock('processCrossChainTransactions', this.processCrossChainTransactionsRaw.bind(this));
+    await Locker.lock('processCrossChainTransactions', async () => {
+      this.logger.debug('Running processCrossChainTransactions cron');
+
+      let txHashes;
+      do {
+        txHashes = await this.crossChainTransactionRepository.processPending(
+          this.processCrossChainTransactionsRaw.bind(this),
+        );
+      } while (txHashes.length > 0);
+    });
   }
 
-  async processCrossChainTransactionsRaw() {
-    this.logger.debug('Running processCrossChainTransactions cron');
+  async processCrossChainTransactionsRaw(txHashes: string[]): Promise<string[]> {
+    this.logger.log(`Found ${txHashes.length} CrossChainTransactions to query`);
 
-    const txHashes = await this.redisHelper.smembers(CacheInfo.CrossChainTransactions().key);
+    const processedTxs: string[] = [];
     for (const txHash of txHashes) {
       try {
         const { transaction, fee } = await this.hiroApiHelper.getTransactionWithFee(txHash);
@@ -55,7 +64,8 @@ export class CrossChainTransactionProcessorService {
           await this.handleEvents(transaction, fee);
         }
 
-        await this.redisHelper.srem(CacheInfo.CrossChainTransactions().key, txHash);
+        // Mark transaction as processed, will be deleted from database
+        processedTxs.push(txHash);
       } catch (e) {
         this.logger.warn(`An error occurred while processing cross chain transaction ${txHash}. Will be retried`, e);
         await this.slackApi.sendWarn(
@@ -64,6 +74,8 @@ export class CrossChainTransactionProcessorService {
         );
       }
     }
+
+    return processedTxs;
   }
 
   private async handleEvents(transaction: Transaction, fee: string) {
@@ -115,11 +127,7 @@ export class CrossChainTransactionProcessorService {
       }
 
       if (address === this.contractItsStorage) {
-        const event = this.itsProcessor.handleItsEvent(
-          rawEvent,
-          transaction,
-          rawEvent.event_index,
-        );
+        const event = this.itsProcessor.handleItsEvent(rawEvent, transaction, rawEvent.event_index);
 
         if (event) {
           eventsToSend.push(event);

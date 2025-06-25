@@ -89,55 +89,6 @@ export class RedisHelper {
     }
   }
 
-  async sadd(key: string, ...values: string[]): Promise<number | null> {
-    try {
-      return await this.redis.sadd(key, ...values);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error('An error occurred while trying to sadd redis.', {
-          exception: error?.toString(),
-          key,
-          ...values,
-        });
-        await this.slackApi.sendError('Redis error', 'An error occurred while trying to sadd redis cache.');
-      }
-      throw error;
-    }
-  }
-
-  async smembers(key: string): Promise<string[]> {
-    try {
-      return await this.redis.smembers(key);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error('An error occurred while trying to smembers in redis.', {
-          exception: error?.toString(),
-          key,
-        });
-        await this.slackApi.sendError('Redis error', 'An error occurred while trying to smembers redis cache.');
-      }
-      throw error;
-    }
-  }
-
-  async srem(key: string, ...values: string[]) {
-    try {
-      return await this.redis.srem(key, ...values);
-    } catch (error) {
-      if (error instanceof Error) {
-        this.logger.error(
-          'An error occurred while trying to srem redis.',
-          Object.assign({
-            exception: error === null || error === void 0 ? void 0 : error.toString(),
-            key,
-          }),
-        );
-        await this.slackApi.sendError('Redis error', 'An error occurred while trying to srem redis cache.');
-      }
-      throw error;
-    }
-  }
-
   async incrby(key: string, value: number | string): Promise<number> {
     try {
       return await this.redis.incrby(key, value);
