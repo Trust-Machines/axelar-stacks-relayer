@@ -23,7 +23,7 @@ export class CrossChainTransactionRepository {
   processPending(
     doProcessing: (txHashes: string[]) => Promise<string[]>,
     take: number = 10,
-    timeout: number = 30_000,
+    timeout: number = 60_000,
   ): Promise<string[]> {
     return this.prisma.$transaction(
       async (tx) => {

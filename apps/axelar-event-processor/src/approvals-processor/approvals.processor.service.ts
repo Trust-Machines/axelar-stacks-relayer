@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { MessageApprovedStatus } from '@prisma/client';
+import {
+  MessageApprovedStatus,
+  StacksTransaction,
+  StacksTransactionStatus,
+  StacksTransactionType,
+} from '@prisma/client';
 import { BinaryUtils, CacheInfo, GasServiceContract, Locker } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import { Components, ConstructProofTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
@@ -15,7 +20,6 @@ import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import BigNumber from 'bignumber.js';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
-import { PendingTransaction } from './entities/pending-transaction';
 import { CosmwasmService } from './cosmwasm.service';
 import { AxiosError } from 'axios';
 import {
@@ -23,6 +27,9 @@ import {
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { GatewayExtraData } from './entities/stacks-transaction-extra-data';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
@@ -50,6 +57,7 @@ export class ApprovalsProcessorService {
     private readonly cosmWasmService: CosmwasmService,
     @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly slackApi: SlackApi,
+    private readonly stacksTransactionRepository: StacksTransactionRepository,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
@@ -59,9 +67,31 @@ export class ApprovalsProcessorService {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
   }
 
-  @Cron('2/6 * * * * *')
+  // Runs after ApprovalsProcessorService handleNewTasks cron has run
+  @Cron('2/10 * * * * *')
   async handlePendingTransactions() {
-    await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
+    await Locker.lock('pendingTransactions', async () => {
+      this.logger.debug('Running pendingTransactions cron');
+
+      let processedItems;
+      do {
+        try {
+          processedItems = await this.stacksTransactionRepository.processPending(
+            this.handlePendingTransactionsRaw.bind(this),
+          );
+        } catch (e) {
+          if (e instanceof PrismaClientKnownRequestError && e.code === 'P2028') {
+            // Transaction timeout
+            this.logger.warn('Transaction processing has timed out. Will be retried');
+            await this.slackApi.sendWarn(
+              `Cross chain transaction processing timeout`,
+              `Transaction processing has timed out. Will be retried`,
+            );
+          }
+          throw e;
+        }
+      } while (processedItems.length > 0);
+    });
   }
 
   @Cron('2/6 * * * * *')
@@ -81,12 +111,12 @@ export class ApprovalsProcessorService {
         const response = await this.axelarGmpApi.getTasks(CONSTANTS.SOURCE_CHAIN_NAME, lastTaskUUID);
 
         if (response.data.tasks.length === 0) {
-          this.logger.debug('No tasks left to process for now...');
-
           return;
         }
 
         tasks = response.data.tasks;
+
+        this.logger.debug(`Starting processing of ${tasks.length} tasks`);
 
         for (const task of tasks) {
           try {
@@ -124,101 +154,122 @@ export class ApprovalsProcessorService {
     } while (tasks.length > 0);
   }
 
-  async handlePendingTransactionsRaw() {
-    const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
+  async handlePendingTransactionsRaw(items: StacksTransaction[]) {
+    this.logger.debug(`Found ${items.length} pending StacksTransactions to handle`);
 
-    if (keys.length === 0) {
-      return;
-    }
-
-    this.logger.debug(`Handling ${keys.length} pending gateway transactions`);
-
-    for (const key of keys) {
-      const cachedValue = await this.redisHelper.get<PendingTransaction>(key);
-
-      if (cachedValue === undefined) {
-        continue;
-      }
-
-      const { txHash, externalData, retry, timestamp } = cachedValue;
-
-      const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
-        txHash,
-        timestamp,
-      );
-
-      // Nothing to do on success
-      if (success) {
-        await this.redisHelper.delete(key);
-
-        this.logger.log(`Transaction with hash ${txHash} was successfully executed!`);
-
-        continue;
-      }
-
-      if (!isFinished) {
-        // Set value back in cache to be checked again and not block processing of other transactions
-        await this.redisHelper.set<PendingTransaction>(
-          key,
-          {
-            txHash,
-            externalData,
-            retry,
-            timestamp,
-          },
-          CacheInfo.PendingTransaction(txHash).ttl,
-        );
-
-        continue;
-      }
-
-      if (retry >= MAX_NUMBER_OF_RETRIES) {
-        await this.redisHelper.delete(key);
-
-        this.logger.error(`Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`);
-        await this.slackApi.sendError(
-          `Gateway transaction error`,
-          `Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`,
-        );
-
-        continue;
-      }
-
+    const processedItems: StacksTransaction[] = [];
+    for (const item of items) {
       try {
-        await this.processGatewayTxTask(externalData, retry);
+        // If txHash exists, check status
+        if (item.txHash) {
+          const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
+            item.txHash,
+            item.updatedAt.getTime(),
+          );
 
-        // Delete old tx
-        await this.redisHelper.delete(key);
+          // If not yet finished, skip
+          if (!isFinished) {
+            continue;
+          }
+
+          // Mark as successfully executed
+          if (success) {
+            processedItems.push({
+              ...item,
+              status: StacksTransactionStatus.SUCCESS,
+            });
+
+            this.logger.log(
+              `Transaction with hash ${item.txHash} of type ${item.type} was successfully executed, id ${item.taskItemId}!`,
+            );
+
+            continue;
+          }
+
+          // If max number of retries was reached
+          if (item.retry >= MAX_NUMBER_OF_RETRIES) {
+            processedItems.push({
+              ...item,
+              status: StacksTransactionStatus.FAILED,
+            });
+
+            this.logger.error(
+              `Could not execute execute transaction with hash ${item.txHash} of type ${item.type} after ${item.retry} retries, id ${item.taskItemId}`,
+            );
+            await this.slackApi.sendError(
+              `StacksTransaction error`,
+              `Could not execute transaction with hash ${item.txHash} of type ${item.type} after ${item.retry} retries, id ${item.taskItemId}`,
+            );
+
+            continue;
+          }
+        }
+
+        // Send transaction or retry
+        const processedItem = await this.processStacksTransaction(item);
+
+        processedItems.push(processedItem);
       } catch (e) {
-        this.logger.warn('Error while trying to retry Gateway transaction...', e);
-        await this.slackApi.sendWarn(
-          `Gateway transaction retry error`,
-          'Error while trying to retry transaction... Transaction could not be sent to chain. Will be retried',
+        this.logger.warn(
+          `An error occurred while processing StacksTransaction with id ${item.taskItemId}. Will be retried`,
+          e,
         );
-
-        // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
-        await this.redisHelper.set<PendingTransaction>(
-          key,
-          {
-            txHash,
-            externalData,
-            retry,
-            timestamp: Date.now(),
-          },
-          CacheInfo.PendingTransaction(txHash).ttl,
+        await this.slackApi.sendWarn(
+          `Stacks transaction processing error`,
+          `An error occurred while processing StacksTransaction with id ${item.taskItemId}. Will be retried`,
         );
       }
     }
+
+    return processedItems;
+  }
+
+  private async processStacksTransaction(item: StacksTransaction) {
+    if (item.type === StacksTransactionType.GATEWAY) {
+      const extraData = item.extraData as GatewayExtraData;
+
+      if (!extraData?.externalData) {
+        this.logger.error(`Invalid StacksTransaction with type GATEWAY ${item.taskItemId} without externalData`);
+        await this.slackApi.sendError(
+          'StacksTransaction type GATEWAY error',
+          `Invalid StacksTransaction with type GATEWAY ${item.taskItemId} without externalData`,
+        );
+
+        return {
+          ...item,
+          status: StacksTransactionStatus.FAILED,
+        };
+      }
+
+      const txHash = await this.processGatewayTx(extraData.externalData, item.retry);
+
+      return {
+        ...item,
+        retry: item.retry + 1,
+        txHash,
+      };
+    }
+
+    this.logger.error(`Unknown type ${item.type} received for StacksTransaction ${item.taskItemId}`);
+    await this.slackApi.sendError(
+      'StacksTransaction unknown type',
+      `Unknown type ${item.type} received for StacksTransaction ${item.taskItemId}`,
+    );
+
+    return {
+      ...item,
+      status: StacksTransactionStatus.FAILED,
+    };
   }
 
   private async processTask(task: TaskItem) {
-    this.logger.debug('Received Axelar Task response:');
-    this.logger.debug(JSON.stringify(task));
+    // this.logger.debug('Received Axelar Task response:');
+    // this.logger.debug(JSON.stringify(task));
 
     if (task.type === 'GATEWAY_TX') {
       const response = task.task as GatewayTransactionTask;
 
-      await this.processGatewayTxTask(response.executeData);
+      await this.processGatewayTxTask(response.executeData, task.id);
 
       return;
     }
@@ -272,7 +323,21 @@ export class ApprovalsProcessorService {
     }
   }
 
-  private async processGatewayTxTask(externalData: string, retry: number = 0) {
+  private async processGatewayTxTask(externalData: string, taskItemId: string) {
+    await this.stacksTransactionRepository.createOrUpdate({
+      type: StacksTransactionType.GATEWAY,
+      status: StacksTransactionStatus.PENDING,
+      extraData: {
+        externalData,
+      },
+      taskItemId,
+      retry: 0,
+    });
+
+    this.logger.debug(`Processed GATEWAY_TX task ${taskItemId}`);
+  }
+
+  private async processGatewayTx(externalData: string, retry: number = 0) {
     try {
       const data = gatewayTxDataDecoder(DecodingUtils.deserialize(BinaryUtils.base64ToHex(externalData)));
 
@@ -296,18 +361,7 @@ export class ApprovalsProcessorService {
         BigInt(fee),
       );
 
-      const txHash = await this.transactionsHelper.sendTransaction(transaction);
-
-      await this.redisHelper.set<PendingTransaction>(
-        CacheInfo.PendingTransaction(txHash).key,
-        {
-          txHash,
-          externalData,
-          retry: retry + 1,
-          timestamp: Date.now(),
-        },
-        CacheInfo.PendingTransaction(txHash).ttl,
-      );
+      return await this.transactionsHelper.sendTransaction(transaction);
     } catch (e) {
       await this.deleteGatewayTxFeeCache();
 

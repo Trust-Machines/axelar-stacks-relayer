@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApprovedStatus } from '@prisma/client';
+import { MessageApprovedStatus, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
 import { ApiConfigService, CacheInfo, GasServiceContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import {
@@ -21,6 +21,7 @@ import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transac
 import { CosmwasmService } from './cosmwasm.service';
 import { LastProcessedDataRepository } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import TaskItem = Components.Schemas.TaskItem;
 import RefundTask = Components.Schemas.RefundTask;
@@ -59,6 +60,7 @@ describe('ApprovalsProcessorService', () => {
   let apiConfigService: DeepMocked<ApiConfigService>;
   let mockNetwork: DeepMocked<StacksNetwork>;
   let slackApi: DeepMocked<SlackApi>;
+  let stacksTransactionRepository: DeepMocked<StacksTransactionRepository>;
 
   let service: ApprovalsProcessorService;
 
@@ -74,6 +76,7 @@ describe('ApprovalsProcessorService', () => {
     walletSigner = 'mocked-wallet-signer';
     apiConfigService = createMock();
     slackApi = createMock();
+    stacksTransactionRepository = createMock();
 
     apiConfigService.getContractItsProxy.mockReturnValue(STACKS_ITS_CONTRACT);
     apiConfigService.getAxelarContractIts.mockReturnValue(AXELAR_ITS_CONTRACT);
@@ -136,6 +139,10 @@ describe('ApprovalsProcessorService', () => {
 
         if (token === SlackApi) {
           return slackApi;
+        }
+
+        if (token === StacksTransactionRepository) {
+          return stacksTransactionRepository;
         }
 
         return null;
@@ -232,11 +239,6 @@ describe('ApprovalsProcessorService', () => {
             },
           }),
         );
-      const transaction: DeepMocked<StacksTransaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
-      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
-      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve('100000000'));
-      redisHelper.get.mockResolvedValueOnce(undefined);
 
       await service.handleNewTasksRaw();
 
@@ -244,29 +246,16 @@ describe('ApprovalsProcessorService', () => {
       expect(axelarGmpApi.getTasks).toHaveBeenCalledTimes(2);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', undefined);
       expect(axelarGmpApi.getTasks).toHaveBeenCalledWith('stacks', 'UUID');
-      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(2);
-      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(mockDataDecoded, walletSigner);
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0, mockNetwork);
-      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.sendTransaction).toHaveBeenCalled();
       expect(lastProcessedDataRepository.update).toHaveBeenCalledTimes(1);
-      expect(redisHelper.set).toHaveBeenCalledTimes(2);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.GatewayTxFee(0).key,
-        '100000000',
-        CacheInfo.GatewayTxFee(0).ttl,
-      );
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.PendingTransaction('txHash').key,
-        {
-          txHash: 'txHash',
+      expect(stacksTransactionRepository.createOrUpdate).toHaveBeenCalledWith({
+        type: StacksTransactionType.GATEWAY,
+        status: StacksTransactionStatus.PENDING,
+        extraData: {
           externalData: mockExternalData,
-          retry: 1,
-          timestamp: mockDate.getTime(),
         },
-        CacheInfo.PendingTransaction('txHash').ttl,
-      );
+        taskItemId: 'UUID',
+        retry: 0,
+      });
       expect(lastProcessedDataRepository.update).toHaveBeenCalledWith('lastTaskUUID', 'UUID');
     });
 
@@ -408,15 +397,10 @@ describe('ApprovalsProcessorService', () => {
             },
           }),
         );
-      const transaction: DeepMocked<StacksTransaction> = createMock();
-      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
-      transactionsHelper.getTransactionGas.mockRejectedValueOnce(new Error('Network error'));
-      redisHelper.get.mockResolvedValueOnce(undefined);
+      stacksTransactionRepository.createOrUpdate.mockRejectedValueOnce(new Error('Network error'));
 
       await service.handleNewTasksRaw();
 
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0, mockNetwork);
       expect(lastProcessedDataRepository.update).not.toHaveBeenCalledTimes(1);
       // Mock lastUUID
       lastProcessedDataRepository.get.mockImplementation(() => {
@@ -431,56 +415,118 @@ describe('ApprovalsProcessorService', () => {
   });
 
   describe('handlePendingTransactions', () => {
-    it('Should handle undefined', async () => {
-      const key = CacheInfo.PendingTransaction('txHashUndefined').key;
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(Promise.resolve(undefined));
-      await service.handlePendingTransactionsRaw();
-      expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledWith(key);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).not.toHaveBeenCalled();
+    it('Should handle invalid type', async () => {
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'INVALID' as any,
+          status: 'PENDING',
+          extraData: {},
+          txHash: null,
+          retry: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+      expect(slackApi.sendError).toHaveBeenCalledTimes(1);
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toEqual('FAILED');
     });
-    it('Should handle success', async () => {
-      const key = CacheInfo.PendingTransaction('txHashComplete').key;
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
-        Promise.resolve({
-          txHash: 'txHashComplete',
-          executeData: mockExternalData,
-          retry: 1,
-          timestamp: 1234,
-        }),
+    it('Should handle GATEWAY send', async () => {
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve('100000000'));
+      redisHelper.get.mockResolvedValueOnce(undefined);
+
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'GATEWAY',
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: null,
+          retry: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).not.toHaveBeenCalled();
+      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(2);
+      expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(mockDataDecoded, walletSigner);
+      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 0, mockNetwork);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
+      expect(transactionsHelper.sendTransaction).toHaveBeenCalled();
+      expect(redisHelper.set).toHaveBeenCalledTimes(1);
+      expect(redisHelper.set).toHaveBeenCalledWith(
+        CacheInfo.GatewayTxFee(0).key,
+        '100000000',
+        CacheInfo.GatewayTxFee(0).ttl,
       );
+      expect(result).toHaveLength(1);
+      expect(result[0].txHash).toEqual('txHash');
+    });
+    it('Should handle GATEWAY send invalid extraData', async () => {
+      const transaction: DeepMocked<StacksTransaction> = createMock();
+      gatewayContract.buildTransactionExternalFunction.mockResolvedValueOnce(transaction);
+      transactionsHelper.sendTransaction.mockReturnValueOnce(Promise.resolve('txHash'));
+      transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve('100000000'));
+      redisHelper.get.mockResolvedValueOnce(undefined);
+
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'GATEWAY',
+          status: 'PENDING',
+          extraData: {},
+          txHash: null,
+          retry: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).not.toHaveBeenCalled();
+      expect(slackApi.sendError).toHaveBeenCalledTimes(1);
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toEqual('FAILED');
+    });
+    it('Should handle GATEWAY success', async () => {
       transactionsHelper.isTransactionSuccessfulWithTimeout.mockReturnValueOnce(
         Promise.resolve({
           success: true,
           isFinished: true,
         }),
       );
-      await service.handlePendingTransactionsRaw();
-      expect(redisHelper.scan).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledTimes(1);
-      expect(redisHelper.get).toHaveBeenCalledWith(key);
-      expect(redisHelper.delete).toHaveBeenCalledTimes(1);
-      expect(redisHelper.delete).toHaveBeenCalledWith(key);
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'INVALID' as any,
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: 'txHashComplete',
+          retry: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'txHashComplete',
+        expect.anything(),
+      );
       expect(transactionsHelper.getTransactionGas).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toEqual('SUCCESS');
     });
 
     it('Should handle wait until finished', async () => {
-      const key = CacheInfo.PendingTransaction('txHashComplete').key;
-      const externalData = mockExternalData;
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
-        Promise.resolve({
-          txHash: 'txHashComplete',
-          externalData,
-          retry: 1,
-          timestamp: 1234,
-        }),
-      );
       transactionsHelper.isTransactionSuccessfulWithTimeout.mockReturnValueOnce(
         Promise.resolve({
           success: false,
@@ -488,35 +534,30 @@ describe('ApprovalsProcessorService', () => {
         }),
       );
 
-      await service.handlePendingTransactionsRaw();
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'INVALID' as any,
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: 'txHashComplete',
+          retry: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.PendingTransaction('txHashComplete').key,
-        {
-          txHash: 'txHashComplete',
-          externalData,
-          retry: 1,
-          timestamp: 1234,
-        },
-        CacheInfo.PendingTransaction('txHashComplete').ttl,
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'txHashComplete',
+        expect.anything(),
       );
+      expect(result).toHaveLength(0);
     });
 
     it('Should handle retry', async () => {
-      const key = CacheInfo.PendingTransaction('txHashComplete').key;
-      const externalData = mockExternalData;
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
-        Promise.resolve({
-          txHash: 'txHashComplete',
-          externalData,
-          retry: 1,
-          timestamp: 1234,
-        }),
-      );
       transactionsHelper.isTransactionSuccessfulWithTimeout.mockReturnValueOnce(
         Promise.resolve({
           success: false,
@@ -529,41 +570,38 @@ describe('ApprovalsProcessorService', () => {
       transactionsHelper.getTransactionGas.mockReturnValueOnce(Promise.resolve('100000000'));
       redisHelper.get.mockResolvedValueOnce(undefined);
 
-      await service.handlePendingTransactionsRaw();
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'GATEWAY',
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: 'txHash',
+          retry: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'txHash',
+        expect.anything(),
+      );
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledTimes(2);
       expect(gatewayContract.buildTransactionExternalFunction).toHaveBeenCalledWith(mockDataDecoded, walletSigner);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 1, mockNetwork);
       expect(transactionsHelper.sendTransaction).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransaction).toHaveBeenCalled();
-      expect(redisHelper.set).toHaveBeenCalledTimes(2);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.PendingTransaction('txHash').key,
-        {
-          txHash: 'txHash',
-          externalData,
-          retry: 2,
-          timestamp: mockDate.getTime(),
-        },
-        CacheInfo.PendingTransaction('txHash').ttl,
-      );
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toEqual('PENDING');
+      expect(result[0].retry).toEqual(2);
     });
 
     it('Should not handle final retry', async () => {
-      const key = CacheInfo.PendingTransaction('txHashComplete').key;
-      const executeData = Uint8Array.of(1, 2, 3, 4);
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
-        Promise.resolve({
-          txHash: 'txHashComplete',
-          executeData,
-          retry: 3,
-          timestamp: 1234,
-        }),
-      );
       transactionsHelper.isTransactionSuccessfulWithTimeout.mockReturnValueOnce(
         Promise.resolve(
           Promise.resolve({
@@ -572,24 +610,33 @@ describe('ApprovalsProcessorService', () => {
           }),
         ),
       );
-      await service.handlePendingTransactionsRaw();
+
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'INVALID' as any,
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: 'txHashComplete',
+          retry: 3,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith(
+        'txHashComplete',
+        expect.anything(),
+      );
       expect(transactionsHelper.getTransactionGas).not.toHaveBeenCalled();
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toEqual('FAILED');
     });
 
     it('Should handle retry error', async () => {
-      const key = CacheInfo.PendingTransaction('txHashComplete').key;
-      const externalData = mockExternalData;
-      redisHelper.scan.mockReturnValueOnce(Promise.resolve([key]));
-      redisHelper.get.mockReturnValueOnce(
-        Promise.resolve({
-          txHash: 'txHashComplete',
-          externalData,
-          retry: 1,
-          timestamp: 1234,
-        }),
-      );
       transactionsHelper.isTransactionSuccessfulWithTimeout.mockReturnValueOnce(
         Promise.resolve({
           success: false,
@@ -601,23 +648,26 @@ describe('ApprovalsProcessorService', () => {
       transactionsHelper.getTransactionGas.mockRejectedValueOnce(new Error('Network error'));
       redisHelper.get.mockResolvedValueOnce(undefined);
 
-      await service.handlePendingTransactionsRaw();
+      const result = await service.handlePendingTransactionsRaw([
+        {
+          taskItemId: 'taskItemId',
+          type: 'GATEWAY',
+          status: 'PENDING',
+          extraData: {
+            externalData: mockExternalData,
+          },
+          txHash: 'txHashComplete',
+          retry: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', 1234);
+      expect(transactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('txHashComplete', expect.anything());
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.getTransactionGas).toHaveBeenCalledWith(transaction, 1, mockNetwork);
-      expect(redisHelper.set).toHaveBeenCalledTimes(1);
-      expect(redisHelper.set).toHaveBeenCalledWith(
-        CacheInfo.PendingTransaction('txHashComplete').key,
-        {
-          txHash: 'txHashComplete',
-          externalData,
-          retry: 1,
-          timestamp: mockDate.getTime(),
-        },
-        CacheInfo.PendingTransaction('txHashComplete').ttl,
-      );
+      expect(result).toHaveLength(0);
     });
   });
 

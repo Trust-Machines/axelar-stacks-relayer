@@ -46,3 +46,25 @@ model CrossChainTransaction {
   createdAt DateTime @default(now()) @db.Timestamp(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamp(6)
 }
+
+model StacksTransaction {
+  taskItemId String                  @unique @db.Uuid
+  type       StacksTransactionType
+  status     StacksTransactionStatus
+  extraData  Json
+  txHash     String?                 @db.VarChar(66)
+  retry      Int                     @db.SmallInt
+  createdAt  DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime                @default(now()) @updatedAt @db.Timestamp(6)
+}
+
+enum StacksTransactionType {
+  GATEWAY
+  REFUND
+}
+
+enum StacksTransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
