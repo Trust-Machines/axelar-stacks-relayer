@@ -22,7 +22,6 @@ model MessageApproved {
   retry               Int                   @db.SmallInt
   createdAt           DateTime              @default(now()) @db.Timestamp(6)
   updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamp(6)
-  successTimes        Int?                  @db.SmallInt
   taskItemId          String?               @db.Uuid
   availableGasBalance String                @default("0") @db.VarChar(255)
   extraData           Json                  @default("{}")

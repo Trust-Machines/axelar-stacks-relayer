@@ -54,6 +54,15 @@
       "compilerOptions": {
         "tsConfigPath": "apps/stacks-scalable-processors/tsconfig.app.json"
       }
+    },
+    "stacks-transaction-processor": {
+      "type": "application",
+      "root": "apps/stacks-transaction-processor",
+      "entryFile": "main",
+      "sourceRoot": "apps/stacks-transaction-processor/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/stacks-transaction-processor/tsconfig.app.json"
+      }
     }
   }
 }

@@ -232,17 +232,13 @@ export class GatewayProcessor {
   ): Promise<Event | undefined> {
     const messageExecutedEvent = this.gatewayContract.decodeMessageExecutedEvent(rawEvent);
 
-    const messageApproved = await this.messageApprovedRepository.findBySourceChainAndMessageId(
+    const statusUpdated = await this.messageApprovedRepository.updateStatusIfItExists(
       messageExecutedEvent.sourceChain,
       messageExecutedEvent.messageId,
+      MessageApprovedStatus.SUCCESS,
     );
 
-    if (messageApproved) {
-      messageApproved.status = MessageApprovedStatus.SUCCESS;
-      messageApproved.successTimes = (messageApproved.successTimes || 0) + 1;
-
-      await this.messageApprovedRepository.updateStatusAndSuccessTimes(messageApproved);
-    } else {
+    if (!statusUpdated) {
       this.logger.warn(
         `Could not find corresponding message approved for message executed event in database from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
       );

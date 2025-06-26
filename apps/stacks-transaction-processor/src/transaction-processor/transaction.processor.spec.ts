@@ -8,7 +8,7 @@ import { StacksNetwork } from '@stacks/network';
 import { StacksTransaction } from '@stacks/transactions';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
-import { StacksTransactionProcessorService } from './stacks-transaction.processor.service';
+import { TransactionProcessorService } from './transaction.processor.service';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { StacksTransaction as PrismaStacksTransaction } from '@prisma/client';
@@ -39,7 +39,7 @@ describe('TransactionsProcessorService', () => {
   let gasServiceContract: DeepMocked<GasServiceContract>;
   let hiroApiHelper: DeepMocked<HiroApiHelper>;
 
-  let service: StacksTransactionProcessorService;
+  let service: TransactionProcessorService;
 
   beforeEach(async () => {
     redisHelper = createMock();
@@ -53,7 +53,7 @@ describe('TransactionsProcessorService', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
-        StacksTransactionProcessorService,
+        TransactionProcessorService,
         {
           provide: ProviderKeys.STACKS_NETWORK,
           useValue: mockNetwork,
@@ -99,7 +99,7 @@ describe('TransactionsProcessorService', () => {
 
     gasServiceContract.getGasImpl.mockResolvedValue('contract_impl_address.contract_impl_name');
 
-    service = moduleRef.get(StacksTransactionProcessorService);
+    service = moduleRef.get(TransactionProcessorService);
   });
 
   it('Should handle invalid type', async () => {
