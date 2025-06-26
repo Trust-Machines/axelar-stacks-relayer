@@ -173,19 +173,14 @@ export class GatewayProcessor {
     timestamp: string,
     index: number,
   ): Promise<Event> {
-    const stacksTransaction = await this.stacksTransactionRepository.findByTypeAndTxHash(
+    const statusUpdated = await this.stacksTransactionRepository.updateStatusIfItExists(
       StacksTransactionType.GATEWAY,
       BinaryUtils.removeHexPrefix(txHash),
+      StacksTransactionStatus.SUCCESS,
     );
 
-    if (stacksTransaction) {
-      stacksTransaction.status = StacksTransactionStatus.SUCCESS;
-
-      await this.stacksTransactionRepository.updateStatus(stacksTransaction);
-
-      this.logger.debug(
-        `Successfully executed GATEWAY transaction with hash ${stacksTransaction.txHash}, id ${stacksTransaction.taskItemId}`,
-      );
+    if (statusUpdated) {
+      this.logger.log(`Successfully executed GATEWAY transaction with hash ${txHash}`);
     }
 
     const event = this.gatewayContract.decodeMessageApprovedEvent(rawEvent);

@@ -75,23 +75,17 @@ export class StacksTransactionRepository {
     );
   }
 
-  findByTypeAndTxHash(type: StacksTransactionType, txHash: string) {
-    return this.prisma.stacksTransaction.findFirst({
+  async updateStatusIfItExists(type: StacksTransactionType, txHash: string, status: StacksTransactionStatus) {
+    const result = await this.prisma.stacksTransaction.updateMany({
       where: {
         type,
         txHash,
       },
-    });
-  }
-
-  async updateStatus(data: StacksTransaction) {
-    await this.prisma.stacksTransaction.update({
-      where: {
-        taskItemId: data.taskItemId,
-      },
       data: {
-        status: data.status,
+        status,
       },
     });
+
+    return result.count > 0;
   }
 }
