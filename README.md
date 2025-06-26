@@ -7,7 +7,7 @@ Based on Amplifier API Docs: https://bright-ambert-2bd.notion.site/Amplifier-API
 1. Run `npm install` in the project directory
 2. Copy `.env.example` file to `.env` file and update the values
 3. Run `docker-compose up -d`
-4. Run `npm start` or `npm start:axelar-event-processor`
+4. Run `npm start:all:watch`
 
 ## Dependencies
 
@@ -25,6 +25,35 @@ $ npm run test
 # lint
 $ npm run lint
 ```
+
+## Apps
+
+This repo contains of 4 separate apps that can be started & scaled independently if needed.
+
+### axelar-event-processor
+
+Queries the Axelar Amplifier API every 10 seconds for new Tasks. Depending on the task type, it saves required information to the database.
+
+**NOTE: Only ONE instance of this service should run.**
+
+### stacks-event-processor
+
+Queries the Stacks Blockchain API every 10 seconds for new events from the contracts we are interested in. Saves transaction hash to database.
+
+**NOTE: Only ONE instance of this service should run.**
+
+### stacks-transaction-processor
+
+Processes StacksTransaction entries from the database and sends them to the Stacks blockchain. These are currently of type *GATEWAY* and *REFUND*.
+
+**NOTE: Needs to run with the Stacks wallet which is the gas collector in the GasService contract. Multiple instances of this service can run**.
+
+### stacks-scalabe-processors
+
+Processes CrossChainTransaction entries created by the `stacks-event-processor` by querying the Stacks blockchain for each transaction and handling events accordingly.
+Also processes MessageApproved entries, by sending EXECUTE transactions to Stacks smart contracts.
+
+**NOTE: This service should run with a different Stacks wallet then the `stacks-transaction-processor`. Multiple instances of this service can run, although for maximum efficiency each instance should have it's own Stacks wallet.**
 
 ## Regenerating Typescript interfaces from OpenApi schema file
 

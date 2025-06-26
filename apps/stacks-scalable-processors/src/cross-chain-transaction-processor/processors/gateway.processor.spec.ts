@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApproved, MessageApprovedStatus, StacksTransaction } from '@prisma/client';
+import { MessageApprovedStatus, StacksTransaction } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -17,12 +17,12 @@ import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
 import { GatewayProcessor } from './gateway.processor';
-import CallEvent = Components.Schemas.CallEvent;
-import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
-import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
 import { ApiConfigService, BinaryUtils, ScEvent } from '@stacks-monorepo/common';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import CallEvent = Components.Schemas.CallEvent;
+import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
+import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';
 

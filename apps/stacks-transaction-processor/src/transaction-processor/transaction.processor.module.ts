@@ -2,7 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ApiConfigModule, ApiModule, ContractsModule, DatabaseModule } from '@stacks-monorepo/common';
 import { HelpersModule } from '@stacks-monorepo/common/helpers/helpers.module';
-import { StacksTransactionProcessorService } from './stacks-transaction.processor.service';
+import { TransactionProcessorService } from './transaction.processor.service';
 
 @Module({
   imports: [
@@ -13,6 +13,6 @@ import { StacksTransactionProcessorService } from './stacks-transaction.processo
     ContractsModule,
     DatabaseModule,
   ],
-  providers: [StacksTransactionProcessorService],
+  providers: [TransactionProcessorService],
 })
-export class StacksTransactionProcessorModule {}
+export class TransactionProcessorModule {}
