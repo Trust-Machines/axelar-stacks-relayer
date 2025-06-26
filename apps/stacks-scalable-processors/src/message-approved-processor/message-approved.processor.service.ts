@@ -15,6 +15,7 @@ import { AnchorMode, bufferCV, principalCV, StacksTransaction, stringAsciiCV } f
 import { AxiosError } from 'axios';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 // Support a max of 3 retries (mainly because some Interchain Token Service endpoints need to be called 2 times)
 const MAX_NUMBER_OF_RETRIES: number = 3;
@@ -46,113 +47,129 @@ export class MessageApprovedProcessorService {
     await Locker.lock('processPendingMessageApproved', async () => {
       this.logger.debug('Running processPendingMessageApproved cron');
 
-      // Always start processing from beginning (page 0) since the query will skip recently updated entries
-      let entries;
-      while ((entries = await this.messageApprovedRepository.findPending(0))?.length) {
-        this.logger.log(`Found ${entries.length} CallContractApproved transactions to execute`);
-
-        const transactionsToSend: StacksTransaction[] = [];
-        const entriesToUpdate: MessageApproved[] = [];
-        const entriesWithTransactions: MessageApproved[] = [];
-        for (const messageApproved of entries) {
-          if (messageApproved.retry >= MAX_NUMBER_OF_RETRIES) {
-            await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
-
-            entriesToUpdate.push(messageApproved);
-
-            continue;
-          }
-
-          this.logger.debug(
-            `Trying to execute MessageApproved transaction from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
+      let processedItems;
+      do {
+        try {
+          processedItems = await this.messageApprovedRepository.processPending(
+            this.processPendingMessageApprovedRaw.bind(this),
           );
-
-          if (!messageApproved.payload.length) {
-            this.logger.error(
-              `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
-            );
-            await this.slackApi.sendError(
-              'Message approved payload error',
-              `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
-            );
-
-            messageApproved.status = MessageApprovedStatus.FAILED;
-
-            entriesToUpdate.push(messageApproved);
-
-            continue;
-          }
-
-          try {
-            const { transaction, incrementRetry, extraData } = await this.buildExecuteTransaction(messageApproved);
-
-            messageApproved.extraData = extraData;
-
-            if (incrementRetry) {
-              messageApproved.retry += 1;
-              messageApproved.executeTxHash = null;
-            }
-
-            if (!transaction) {
-              entriesToUpdate.push(messageApproved);
-
-              continue;
-            }
-
-            transactionsToSend.push(transaction);
-
-            messageApproved.executeTxHash = transaction.txid();
-
-            entriesWithTransactions.push(messageApproved);
-          } catch (e) {
-            this.logger.warn(
-              `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
-              e,
-            );
+        } catch (e) {
+          if (e instanceof PrismaClientKnownRequestError && e.code === 'P2028') {
+            // Transaction timeout
+            this.logger.warn('Message approved processing has timed out. Will be retried');
             await this.slackApi.sendWarn(
-              'Message approved error',
-              `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
+              `Message approved processing timeout`,
+              `Processing has timed out. Will be retried`,
             );
-
-            await this.transactionsHelper.deleteNonce();
-
-            if (e instanceof GasError || e instanceof ItsError) {
-              messageApproved.retry += 1;
-
-              entriesToUpdate.push(messageApproved);
-            } else if (e instanceof TooLowAvailableBalanceError) {
-              await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
-
-              entriesToUpdate.push(messageApproved);
-            } else {
-              throw e;
-            }
           }
+          throw e;
+        }
+      } while (processedItems.length > 0);
+    });
+  }
+
+  async processPendingMessageApprovedRaw(items: MessageApproved[]) {
+    this.logger.log(`Found ${items.length} MessageApproved transactions to execute`);
+
+    const transactionsToSend: StacksTransaction[] = [];
+    const entriesToUpdate: MessageApproved[] = [];
+    const entriesWithTransactions: MessageApproved[] = [];
+    for (const messageApproved of items) {
+      if (messageApproved.retry >= MAX_NUMBER_OF_RETRIES) {
+        await this.handleMessageApprovedFailed(messageApproved, 'ERROR');
+
+        entriesToUpdate.push(messageApproved);
+
+        continue;
+      }
+
+      this.logger.debug(
+        `Trying to execute MessageApproved transaction from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
+      );
+
+      if (!messageApproved.payload.length) {
+        this.logger.error(
+          `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
+        );
+        await this.slackApi.sendError(
+          'Message approved payload error',
+          `Can not send transaction without payload from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}`,
+        );
+
+        messageApproved.status = MessageApprovedStatus.FAILED;
+
+        entriesToUpdate.push(messageApproved);
+
+        continue;
+      }
+
+      try {
+        const { transaction, incrementRetry, extraData } = await this.buildExecuteTransaction(messageApproved);
+
+        messageApproved.extraData = extraData;
+
+        if (incrementRetry) {
+          messageApproved.retry += 1;
+          messageApproved.executeTxHash = null;
         }
 
-        const hashes = await this.transactionsHelper.sendTransactions(transactionsToSend);
+        if (!transaction) {
+          entriesToUpdate.push(messageApproved);
 
-        if (hashes) {
-          for (const entry of entriesWithTransactions) {
-            const sent = hashes.includes(entry.executeTxHash as string);
-
-            entriesToUpdate.push(entry);
-
-            // If not sent revert fields but still save to database so it is retried later and does
-            // not block the processing. Break is used to not update the next transactions so that
-            // they can be executed again in the next iteration
-            if (!sent) {
-              entry.executeTxHash = null;
-              break;
-            }
-          }
+          continue;
         }
 
-        if (entriesToUpdate.length) {
-          await this.messageApprovedRepository.updateManyPartial(entriesToUpdate);
+        transactionsToSend.push(transaction);
+
+        messageApproved.executeTxHash = transaction.txid();
+
+        entriesWithTransactions.push(messageApproved);
+      } catch (e) {
+        this.logger.warn(
+          `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
+          e,
+        );
+        await this.slackApi.sendWarn(
+          'Message approved error',
+          `Could not build and sign execute transaction for chain ${messageApproved.sourceChain}: ${messageApproved.messageId}. Will be retried`,
+        );
+
+        await this.transactionsHelper.deleteNonce();
+
+        if (e instanceof GasError || e instanceof ItsError) {
+          messageApproved.retry += 1;
+
+          entriesToUpdate.push(messageApproved);
+        } else if (e instanceof TooLowAvailableBalanceError) {
+          await this.handleMessageApprovedFailed(messageApproved, 'INSUFFICIENT_GAS');
+
+          entriesToUpdate.push(messageApproved);
+        } else {
+          throw e;
         }
       }
-    });
+    }
+
+    const hashes = await this.transactionsHelper.sendTransactions(transactionsToSend);
+
+    if (hashes) {
+      for (const entry of entriesWithTransactions) {
+        const sent = hashes.includes(entry.executeTxHash as string);
+
+        entriesToUpdate.push(entry);
+
+        // If not sent revert fields but still save to the database so it is retried later and does
+        // not block the processing. Break is used to not update the next transactions so that
+        // they can be executed again in the next iteration, since all the other transactions after the failed one
+        // were also not sent
+        if (!sent) {
+          entry.executeTxHash = null;
+          break;
+        }
+      }
+    }
+
+    return entriesToUpdate;
   }
 
   private async buildExecuteTransaction(messageApproved: MessageApproved): Promise<MessageApprovedData> {
@@ -221,8 +238,6 @@ export class MessageApprovedProcessorService {
       );
     }
 
-    messageApproved.status = MessageApprovedStatus.FAILED;
-
     const cannotExecuteEvent: CannotExecuteMessageEventV2 = {
       eventID: messageApproved.messageId,
       messageID: messageApproved.messageId,
@@ -235,20 +250,26 @@ export class MessageApprovedProcessorService {
       },
     };
 
-    try {
-      const eventsToSend: Event[] = [
-        {
-          type: 'CANNOT_EXECUTE_MESSAGE/V2',
-          ...cannotExecuteEvent,
-        },
-      ];
+    const eventsToSend: Event[] = [
+      {
+        type: 'CANNOT_EXECUTE_MESSAGE/V2',
+        ...cannotExecuteEvent,
+      },
+    ];
 
+    try {
       await this.axelarGmpApi.postEvents(eventsToSend, messageApproved.executeTxHash || '');
+
+      // Only update status after events were successfully sent
+      messageApproved.status = MessageApprovedStatus.FAILED;
     } catch (e) {
-      this.logger.error('Could not send all events to GMP API...', e);
-      await this.slackApi.sendError(
+      this.logger.warn(
+        `Could not send all events to GMP API ofr message approved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}. Will be retried`,
+        e,
+      );
+      await this.slackApi.sendWarn(
         'Axelar GMP API error',
-        'Could not send all events to GMP API from MessageApprovedProcessor...',
+        'Could not send all events to GMP API ofr message approved from ${messageApproved.sourceChain} with message id ${messageApproved.messageId}. Will be retried',
       );
 
       if (e instanceof AxiosError) {

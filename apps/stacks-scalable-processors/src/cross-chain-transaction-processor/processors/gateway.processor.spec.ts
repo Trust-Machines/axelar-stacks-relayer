@@ -16,12 +16,11 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
-import { ScEvent } from '../../event-processor/types';
 import { GatewayProcessor } from './gateway.processor';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
-import { ApiConfigService, BinaryUtils } from '@stacks-monorepo/common';
+import { ApiConfigService, BinaryUtils, ScEvent } from '@stacks-monorepo/common';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
 
@@ -344,38 +343,19 @@ describe('GatewayProcessor', () => {
     it('Should handle event update contract call approved', async () => {
       gatewayContract.decodeMessageExecutedEvent.mockReturnValueOnce(messageExecutedEvent);
 
-      const messageApproved: MessageApproved = {
-        sourceChain: 'ethereum',
-        messageId: 'messageId',
-        status: MessageApprovedStatus.PENDING,
-        sourceAddress: 'sourceAddress',
-        contractAddress: 'senderAddress',
-        payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
-        payload: Buffer.from('payload'),
-        retry: 0,
-        executeTxHash: null,
-        updatedAt: new Date(),
-        createdAt: new Date(),
-        successTimes: null,
-        taskItemId: null,
-        availableGasBalance: '0',
-        extraData: {},
-      };
-
-      messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(messageApproved));
+      messageApprovedRepository.updateStatusIfItExists.mockResolvedValueOnce(true);
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
 
       expect(gatewayContract.decodeMessageExecutedEvent).toHaveBeenCalledTimes(1);
 
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledWith('ethereum', 'messageId');
-      expect(messageApprovedRepository.updateStatusAndSuccessTimes).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.updateStatusAndSuccessTimes).toHaveBeenCalledWith({
-        ...messageApproved,
-        status: MessageApprovedStatus.SUCCESS,
-        successTimes: 1,
-      });
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'ethereum',
+        'messageId',
+        MessageApprovedStatus.SUCCESS,
+      );
+      expect(slackApi.sendWarn).not.toHaveBeenCalled();
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('MESSAGE_EXECUTED');
@@ -397,15 +377,19 @@ describe('GatewayProcessor', () => {
     });
 
     it('Should handle event no contract call approved', async () => {
-      messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(null));
+      messageApprovedRepository.updateStatusIfItExists.mockResolvedValueOnce(false);
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '20');
 
       expect(gatewayContract.decodeMessageExecutedEvent).toHaveBeenCalledTimes(1);
 
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledWith('ethereum', 'messageId');
-      expect(messageApprovedRepository.updateManyPartial).not.toHaveBeenCalled();
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'ethereum',
+        'messageId',
+        MessageApprovedStatus.SUCCESS,
+      );
+      expect(slackApi.sendWarn).toHaveBeenCalled();
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('MESSAGE_EXECUTED');

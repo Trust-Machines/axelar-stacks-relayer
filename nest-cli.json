@@ -41,7 +41,18 @@
       "sourceRoot": "libs/common/src",
       "compilerOptions": {
         "tsConfigPath": "libs/common/tsconfig.lib.json",
-        "assets": ["assets/**"]
+        "assets": [
+          "assets/**"
+        ]
+      }
+    },
+    "stacks-scalable-processors": {
+      "type": "application",
+      "root": "apps/stacks-scalable-processors",
+      "entryFile": "main",
+      "sourceRoot": "apps/stacks-scalable-processors/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/stacks-scalable-processors/tsconfig.app.json"
       }
     }
   }

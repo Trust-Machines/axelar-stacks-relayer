@@ -6,7 +6,7 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import { hex } from '@scure/base';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { ScEvent } from './types';
+import { ScEvent } from '@stacks-monorepo/common/utils';
 import { LastProcessedDataRepository } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';

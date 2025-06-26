@@ -16,7 +16,7 @@ import {
   callReadOnlyFunction,
 } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { ScEvent } from '@stacks-monorepo/common/utils/types';
 import BigNumber from 'bignumber.js';
 import { ApiConfigService } from '../config';
 import { ProviderKeys } from '../utils/provider.enum';

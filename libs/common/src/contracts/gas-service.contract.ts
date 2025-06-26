@@ -16,7 +16,7 @@ import {
   uintCV,
 } from '@stacks/transactions';
 import { bufferFromHex } from '@stacks/transactions/dist/cl';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { ScEvent } from '@stacks-monorepo/common/utils';
 import {
   DecodingUtils,
   gasAddedDecoder,
