@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MessageApprovedStatus } from '@prisma/client';
+import { MessageApprovedStatus, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
 import { ApiConfigService, BinaryUtils, GatewayContract } from '@stacks-monorepo/common';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
@@ -8,16 +8,17 @@ import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import BigNumber from 'bignumber.js';
+import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
+import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
+import { ethers } from 'ethers';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 import Event = Components.Schemas.Event;
 import MessageExecutedEvent = Components.Schemas.MessageExecutedEvent;
 import SignersRotatedEvent = Components.Schemas.SignersRotatedEvent;
-import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
-import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
-import { ethers } from 'ethers';
-import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
-import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 
 @Injectable()
 export class GatewayProcessor {
@@ -28,6 +29,7 @@ export class GatewayProcessor {
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly apiConfigService: ApiConfigService,
     private readonly slackApi: SlackApi,
+    private readonly stacksTransactionRepository: StacksTransactionRepository,
   ) {
     this.logger = new Logger(GatewayProcessor.name);
   }
@@ -52,7 +54,7 @@ export class GatewayProcessor {
     }
 
     if (eventName === Events.MESSAGE_APPROVED_EVENT) {
-      return this.handleMessageApprovedEvent(
+      return await this.handleMessageApprovedEvent(
         rawEvent,
         transaction.sender_address,
         transaction.tx_id,
@@ -164,13 +166,28 @@ export class GatewayProcessor {
     };
   }
 
-  private handleMessageApprovedEvent(
+  private async handleMessageApprovedEvent(
     rawEvent: ScEvent,
     sender: string,
     txHash: string,
     timestamp: string,
     index: number,
-  ): Event {
+  ): Promise<Event> {
+    const stacksTransaction = await this.stacksTransactionRepository.findByTypeAndTxHash(
+      StacksTransactionType.GATEWAY,
+      BinaryUtils.removeHexPrefix(txHash),
+    );
+
+    if (stacksTransaction) {
+      stacksTransaction.status = StacksTransactionStatus.SUCCESS;
+
+      await this.stacksTransactionRepository.updateStatus(stacksTransaction);
+
+      this.logger.debug(
+        `Successfully executed GATEWAY transaction with hash ${stacksTransaction.txHash}, id ${stacksTransaction.taskItemId}`,
+      );
+    }
+
     const event = this.gatewayContract.decodeMessageApprovedEvent(rawEvent);
 
     const messageApproved: MessageApprovedEvent = {

@@ -15,8 +15,10 @@ import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
 import { GasServiceProcessor } from './gas-service.processor';
-import GasCreditEvent = Components.Schemas.GasCreditEvent;
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import { StacksTransaction } from '@prisma/client';
+import GasCreditEvent = Components.Schemas.GasCreditEvent;
 
 const mockGasContractId = 'mockGasAddress.contract_name';
 const mockGatewayContractId = 'mockGatewayAddress.contract_name';
@@ -26,6 +28,7 @@ describe('GasServiceProcessor', () => {
   let gatewayContract: DeepMocked<GatewayContract>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let slackApi: DeepMocked<SlackApi>;
+  let stacksTransactionRepository: DeepMocked<StacksTransactionRepository>;
 
   let service: GasServiceProcessor;
 
@@ -34,6 +37,7 @@ describe('GasServiceProcessor', () => {
     gatewayContract = createMock();
     apiConfigService = createMock();
     slackApi = createMock();
+    stacksTransactionRepository = createMock();
 
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
 
@@ -57,6 +61,10 @@ describe('GasServiceProcessor', () => {
           return slackApi;
         }
 
+        if (token === StacksTransactionRepository) {
+          return stacksTransactionRepository;
+        }
+
         return null;
       })
       .compile();
@@ -64,7 +72,7 @@ describe('GasServiceProcessor', () => {
     service = module.get<GasServiceProcessor>(GasServiceProcessor);
   });
 
-  it('Should not handle event', () => {
+  it('Should not handle event', async () => {
     const message = bufferCV(
       serializeCV(
         tupleCV({
@@ -87,7 +95,7 @@ describe('GasServiceProcessor', () => {
       },
     };
 
-    const result = service.handleGasServiceEvent(rawEvent, createMock(), 0, 0, '100');
+    const result = await service.handleGasServiceEvent(rawEvent, createMock(), 0, 0, '100');
 
     expect(result).toBeUndefined();
     expect(gasServiceContract.decodeNativeGasPaidForContractCallEvent).not.toHaveBeenCalled();
@@ -138,7 +146,7 @@ describe('GasServiceProcessor', () => {
     payload: Buffer.from('payload'),
   };
 
-  function assertEventGasPaidForContractCall(rawEvent: ScEvent, isValid = true, tokenID: string | null = 'STX') {
+  async function assertEventGasPaidForContractCall(rawEvent: ScEvent, isValid = true, tokenID: string | null = 'STX') {
     const message = bufferCV(
       serializeCV(
         tupleCV({
@@ -172,7 +180,7 @@ describe('GasServiceProcessor', () => {
       transaction.events = [];
     }
 
-    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
+    const result = await service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
     if (!isValid) {
       expect(result).toBeUndefined();
@@ -203,17 +211,17 @@ describe('GasServiceProcessor', () => {
   describe('Handle event native gas paid for contract call', () => {
     const { rawEvent, event } = getMockGasPaid(Events.NATIVE_GAS_PAID_FOR_CONTRACT_CALL_EVENT);
 
-    it('Should handle', () => {
+    it('Should handle', async () => {
       gasServiceContract.decodeNativeGasPaidForContractCallEvent.mockReturnValueOnce(event);
       gatewayContract.decodeContractCallEvent.mockReturnValueOnce(contractCallEvent);
 
-      assertEventGasPaidForContractCall(rawEvent, true, null);
+      await assertEventGasPaidForContractCall(rawEvent, true, null);
     });
 
-    it('Should not handle if contract call event not found', () => {
+    it('Should not handle if contract call event not found', async () => {
       gasServiceContract.decodeNativeGasPaidForContractCallEvent.mockReturnValueOnce(event);
 
-      assertEventGasPaidForContractCall(rawEvent, false);
+      await assertEventGasPaidForContractCall(rawEvent, false);
     });
   });
 
@@ -250,13 +258,13 @@ describe('GasServiceProcessor', () => {
     return { rawEvent, event };
   };
 
-  function assertGasAddedEvent(rawEvent: ScEvent, tokenID: string | null = 'STX') {
+  async function assertGasAddedEvent(rawEvent: ScEvent, tokenID: string | null = 'STX') {
     const transaction = createMock<Transaction>();
     transaction.tx_id = 'txHash';
     transaction.sender_address = 'senderAddress';
     transaction.block_time_iso = '11.05.2024';
 
-    const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
+    const result = await service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
     expect(result).not.toBeUndefined();
     expect(result?.type).toBe('GAS_CREDIT');
@@ -281,10 +289,10 @@ describe('GasServiceProcessor', () => {
   describe('Handle event native gas added', () => {
     const { rawEvent, event } = getMockGasAdded(Events.NATIVE_GAS_ADDED_EVENT);
 
-    it('Should handle', () => {
+    it('Should handle', async () => {
       gasServiceContract.decodeNativeGasAddedEvent.mockReturnValueOnce(event);
 
-      assertGasAddedEvent(rawEvent, null);
+      await assertGasAddedEvent(rawEvent, null);
     });
   });
 
@@ -318,15 +326,16 @@ describe('GasServiceProcessor', () => {
       receiver: 'senderAddress',
     };
 
-    it('Should handle', () => {
+    it('Should handle without StacksTransaction', async () => {
       gasServiceContract.decodeRefundedEvent.mockReturnValueOnce(refundedEvent);
+      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(null);
 
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
       transaction.sender_address = 'senderAddress';
       transaction.block_time_iso = '11.05.2024';
 
-      const result = service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
+      const result = await service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('GAS_REFUNDED');
@@ -348,6 +357,59 @@ describe('GasServiceProcessor', () => {
         fromAddress: 'senderAddress',
         finalized: true,
         timestamp: '11.05.2024',
+      });
+      expect(stacksTransactionRepository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('Should handle with StacksTransaction', async () => {
+      gasServiceContract.decodeRefundedEvent.mockReturnValueOnce(refundedEvent);
+
+      const item: StacksTransaction = {
+        taskItemId: 'taskItemId',
+        txHash: 'txHash',
+        status: 'PENDING',
+        type: 'REFUND',
+        extraData: {},
+        retry: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(item);
+
+      const transaction = createMock<Transaction>();
+      transaction.tx_id = '0xtxHashRefund';
+      transaction.sender_address = 'senderAddress';
+      transaction.block_time_iso = '11.05.2024';
+
+      const result = await service.handleGasServiceEvent(rawEvent, transaction, 0, 0, '100');
+
+      expect(result).not.toBeUndefined();
+      expect(result?.type).toBe('GAS_REFUNDED');
+
+      const event = result as GasRefundedEvent;
+
+      expect(event.eventID).toBe('0xtxHashRefund-0');
+      expect(event.messageID).toBe('txHash-1');
+      expect(event.recipientAddress).toBe('senderAddress');
+      expect(event.refundedAmount).toEqual({
+        tokenID: null,
+        amount: '500',
+      });
+      expect(event.cost).toEqual({
+        amount: '100',
+      });
+      expect(event.meta).toEqual({
+        txID: '0xtxHashRefund',
+        fromAddress: 'senderAddress',
+        finalized: true,
+        timestamp: '11.05.2024',
+      });
+      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledWith('REFUND', 'txHashRefund');
+      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledWith({
+        ...item,
+        status: 'SUCCESS',
       });
     });
   });

@@ -9,6 +9,7 @@ import { AxiosError } from 'axios';
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class CrossChainTransactionProcessorService {
@@ -41,9 +42,21 @@ export class CrossChainTransactionProcessorService {
 
       let txHashes;
       do {
-        txHashes = await this.crossChainTransactionRepository.processPending(
-          this.processCrossChainTransactionsRaw.bind(this),
-        );
+        try {
+          txHashes = await this.crossChainTransactionRepository.processPending(
+            this.processCrossChainTransactionsRaw.bind(this),
+          );
+        } catch (e) {
+          if (e instanceof PrismaClientKnownRequestError && e.code === 'P2028') {
+            // Transaction timeout
+            this.logger.warn('Transaction processing has timed out. Will be retried');
+            await this.slackApi.sendWarn(
+              `Cross chain transaction processing timeout`,
+              `Transaction processing has timed out. Will be retried`,
+            );
+          }
+          throw e;
+        }
       } while (txHashes.length > 0);
     });
   }
@@ -113,7 +126,7 @@ export class CrossChainTransactionProcessorService {
       }
 
       if (address === this.contractGasServiceStorage) {
-        const event = this.gasServiceProcessor.handleGasServiceEvent(
+        const event = await this.gasServiceProcessor.handleGasServiceEvent(
           rawEvent,
           transaction,
           index,

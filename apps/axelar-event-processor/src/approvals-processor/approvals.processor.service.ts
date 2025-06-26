@@ -1,21 +1,13 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { MessageApprovedStatus } from '@prisma/client';
-import { BinaryUtils, CacheInfo, GasServiceContract, Locker } from '@stacks-monorepo/common';
+import { MessageApprovedStatus, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
+import { CacheInfo, Locker } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
 import { Components, ConstructProofTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
-import { TransactionsHelper } from '@stacks-monorepo/common/contracts/transactions.helper';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
-import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import { DecodingUtils, gatewayTxDataDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
-import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
-import { StacksNetwork } from '@stacks/network';
-import BigNumber from 'bignumber.js';
 import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
-import { PendingTransaction } from './entities/pending-transaction';
 import { CosmwasmService } from './cosmwasm.service';
 import { AxiosError } from 'axios';
 import {
@@ -23,6 +15,7 @@ import {
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
 import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
@@ -31,8 +24,6 @@ import VerifyTask = Components.Schemas.VerifyTask;
 import ReactToRetriablePollTask = Components.Schemas.ReactToRetriablePollTask;
 import ReactToExpiredSigningSessionTask = Components.Schemas.ReactToExpiredSigningSessionTask;
 
-const MAX_NUMBER_OF_RETRIES = 3;
-
 @Injectable()
 export class ApprovalsProcessorService {
   private readonly logger: Logger;
@@ -40,16 +31,11 @@ export class ApprovalsProcessorService {
   constructor(
     private readonly axelarGmpApi: AxelarGmpApi,
     private readonly redisHelper: RedisHelper,
-    @Inject(ProviderKeys.WALLET_SIGNER) private readonly walletSigner: string,
-    private readonly transactionsHelper: TransactionsHelper,
-    private readonly gatewayContract: GatewayContract,
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly lastProcessedDataRepository: LastProcessedDataRepository,
-    private readonly gasServiceContract: GasServiceContract,
-    private readonly hiroApiHelper: HiroApiHelper,
     private readonly cosmWasmService: CosmwasmService,
-    @Inject(ProviderKeys.STACKS_NETWORK) private readonly network: StacksNetwork,
     private readonly slackApi: SlackApi,
+    private readonly stacksTransactionRepository: StacksTransactionRepository,
   ) {
     this.logger = new Logger(ApprovalsProcessorService.name);
   }
@@ -57,11 +43,6 @@ export class ApprovalsProcessorService {
   @Cron('0/10 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
-  }
-
-  @Cron('2/6 * * * * *')
-  async handlePendingTransactions() {
-    await Locker.lock('pendingTransactions', this.handlePendingTransactionsRaw.bind(this));
   }
 
   @Cron('2/6 * * * * *')
@@ -81,12 +62,12 @@ export class ApprovalsProcessorService {
         const response = await this.axelarGmpApi.getTasks(CONSTANTS.SOURCE_CHAIN_NAME, lastTaskUUID);
 
         if (response.data.tasks.length === 0) {
-          this.logger.debug('No tasks left to process for now...');
-
           return;
         }
 
         tasks = response.data.tasks;
+
+        this.logger.debug(`Starting processing of ${tasks.length} tasks`);
 
         for (const task of tasks) {
           try {
@@ -124,101 +105,14 @@ export class ApprovalsProcessorService {
     } while (tasks.length > 0);
   }
 
-  async handlePendingTransactionsRaw() {
-    const keys = await this.redisHelper.scan(CacheInfo.PendingTransaction('*').key);
-
-    if (keys.length === 0) {
-      return;
-    }
-
-    this.logger.debug(`Handling ${keys.length} pending gateway transactions`);
-
-    for (const key of keys) {
-      const cachedValue = await this.redisHelper.get<PendingTransaction>(key);
-
-      if (cachedValue === undefined) {
-        continue;
-      }
-
-      const { txHash, externalData, retry, timestamp } = cachedValue;
-
-      const { isFinished, success } = await this.transactionsHelper.isTransactionSuccessfulWithTimeout(
-        txHash,
-        timestamp,
-      );
-
-      // Nothing to do on success
-      if (success) {
-        await this.redisHelper.delete(key);
-
-        this.logger.log(`Transaction with hash ${txHash} was successfully executed!`);
-
-        continue;
-      }
-
-      if (!isFinished) {
-        // Set value back in cache to be checked again and not block processing of other transactions
-        await this.redisHelper.set<PendingTransaction>(
-          key,
-          {
-            txHash,
-            externalData,
-            retry,
-            timestamp,
-          },
-          CacheInfo.PendingTransaction(txHash).ttl,
-        );
-
-        continue;
-      }
-
-      if (retry >= MAX_NUMBER_OF_RETRIES) {
-        await this.redisHelper.delete(key);
-
-        this.logger.error(`Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`);
-        await this.slackApi.sendError(
-          `Gateway transaction error`,
-          `Could not execute Gateway execute transaction with hash ${txHash} after ${retry} retries`,
-        );
-
-        continue;
-      }
-
-      try {
-        await this.processGatewayTxTask(externalData, retry);
-
-        // Delete old tx
-        await this.redisHelper.delete(key);
-      } catch (e) {
-        this.logger.warn('Error while trying to retry Gateway transaction...', e);
-        await this.slackApi.sendWarn(
-          `Gateway transaction retry error`,
-          'Error while trying to retry transaction... Transaction could not be sent to chain. Will be retried',
-        );
-
-        // Set value back in cache to be retried again (with same retry number if it failed to even be sent to the chain)
-        await this.redisHelper.set<PendingTransaction>(
-          key,
-          {
-            txHash,
-            externalData,
-            retry,
-            timestamp: Date.now(),
-          },
-          CacheInfo.PendingTransaction(txHash).ttl,
-        );
-      }
-    }
-  }
-
   private async processTask(task: TaskItem) {
-    this.logger.debug('Received Axelar Task response:');
-    this.logger.debug(JSON.stringify(task));
+    // this.logger.debug('Received Axelar Task response:');
+    // this.logger.debug(JSON.stringify(task));
 
     if (task.type === 'GATEWAY_TX') {
       const response = task.task as GatewayTransactionTask;
 
-      await this.processGatewayTxTask(response.executeData);
+      await this.processGatewayTxTask(response, task.id);
 
       return;
     }
@@ -234,7 +128,7 @@ export class ApprovalsProcessorService {
     if (task.type === 'REFUND') {
       const response = task.task as RefundTask;
 
-      await this.processRefundTask(response);
+      await this.processRefundTask(response, task.id);
 
       return;
     }
@@ -272,56 +166,16 @@ export class ApprovalsProcessorService {
     }
   }
 
-  private async processGatewayTxTask(externalData: string, retry: number = 0) {
-    try {
-      const data = gatewayTxDataDecoder(DecodingUtils.deserialize(BinaryUtils.base64ToHex(externalData)));
+  private async processGatewayTxTask(response: GatewayTransactionTask, taskItemId: string) {
+    await this.stacksTransactionRepository.createOrUpdate({
+      type: StacksTransactionType.GATEWAY,
+      status: StacksTransactionStatus.PENDING,
+      extraData: response as any,
+      taskItemId,
+      retry: 0,
+    });
 
-      this.logger.log(`Trying to execute Gateway transaction with externalData:`);
-      this.logger.log(data);
-
-      let fee = await this.redisHelper.get<string>(CacheInfo.GatewayTxFee(retry).key);
-
-      if (!fee) {
-        const initialTx = await this.gatewayContract.buildTransactionExternalFunction(data, this.walletSigner);
-
-        fee = await this.transactionsHelper.getTransactionGas(initialTx, retry, this.network);
-
-        await this.redisHelper.set(CacheInfo.GatewayTxFee(retry).key, fee, CacheInfo.GatewayTxFee(retry).ttl);
-      }
-
-      // After estimating the gas, we need to build the tx again
-      const transaction = await this.gatewayContract.buildTransactionExternalFunction(
-        data,
-        this.walletSigner,
-        BigInt(fee),
-      );
-
-      const txHash = await this.transactionsHelper.sendTransaction(transaction);
-
-      await this.redisHelper.set<PendingTransaction>(
-        CacheInfo.PendingTransaction(txHash).key,
-        {
-          txHash,
-          externalData,
-          retry: retry + 1,
-          timestamp: Date.now(),
-        },
-        CacheInfo.PendingTransaction(txHash).ttl,
-      );
-    } catch (e) {
-      await this.deleteGatewayTxFeeCache();
-
-      throw e;
-    }
-  }
-
-  private async deleteGatewayTxFeeCache() {
-    await this.redisHelper.delete(
-      CacheInfo.GatewayTxFee(0).key,
-      CacheInfo.GatewayTxFee(1).key,
-      CacheInfo.GatewayTxFee(2).key,
-      CacheInfo.GatewayTxFee(3).key,
-    );
+    this.logger.debug(`Processed GATEWAY_TX task ${taskItemId}`);
   }
 
   private async processExecuteTask(response: ExecuteTask, taskItemId: string) {
@@ -344,58 +198,16 @@ export class ApprovalsProcessorService {
     );
   }
 
-  private async processRefundTask(response: RefundTask) {
-    let tokenBalance: BigNumber;
+  private async processRefundTask(response: RefundTask, taskItemId: string) {
+    await this.stacksTransactionRepository.createOrUpdate({
+      type: StacksTransactionType.REFUND,
+      status: StacksTransactionStatus.PENDING,
+      extraData: response as any,
+      taskItemId,
+      retry: 0,
+    });
 
-    const gasImpl = await this.gasServiceContract.getGasImpl();
-
-    const addressBalance = await this.hiroApiHelper.getAccountBalance(gasImpl);
-
-    try {
-      if (response.remainingGasBalance.tokenID) {
-        const token = addressBalance.fungible_tokens[response.remainingGasBalance.tokenID];
-
-        tokenBalance = new BigNumber(token?.balance ?? 0);
-      } else {
-        tokenBalance = new BigNumber(addressBalance.stx.balance ?? 0);
-      }
-
-      if (tokenBalance.lt(response.remainingGasBalance.amount)) {
-        throw new Error(
-          `Insufficient balance for token ${response.remainingGasBalance.tokenID || CONSTANTS.STX_IDENTIFIER}` +
-            ` in gas service impl contract ${gasImpl}. Needed ${response.remainingGasBalance.amount},` +
-            ` but balance is ${tokenBalance.toFixed()}`,
-        );
-      }
-    } catch (e) {
-      this.logger.error(
-        `Could not process refund for ${response.message.messageID}, for account ${response.refundRecipientAddress},` +
-          ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
-        e,
-      );
-      await this.slackApi.sendError(
-        `Refund task error`,
-        `Could not process refund for ${response.message.messageID} for account ${response.refundRecipientAddress},` +
-          ` token ${response.remainingGasBalance.tokenID}, amount ${response.remainingGasBalance.amount}`,
-      );
-
-      return;
-    }
-
-    const [messageTxHash, logIndex] = response.message.messageID.split('-');
-
-    const transaction = await this.gasServiceContract.refund(
-      this.walletSigner,
-      gasImpl,
-      messageTxHash,
-      logIndex,
-      response.refundRecipientAddress,
-      response.remainingGasBalance.amount,
-    );
-
-    const txHash = await this.transactionsHelper.sendTransaction(transaction);
-
-    this.logger.debug(`Processed refund for ${response.message.messageID}, sent transaction ${txHash}`);
+    this.logger.debug(`Processed REFUND task ${taskItemId}`);
   }
 
   async processConstructProofTask(response: ConstructProofTask) {
