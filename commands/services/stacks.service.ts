@@ -8,12 +8,14 @@ import {
   TransactionsHelper,
 } from '@stacks-monorepo/common';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
-import { GatewayProcessor } from '../../apps/stacks-event-processor/src/cross-chain-transaction-processor/processors';
 import { DecodingUtils, gatewayTxDataDecoder } from '@stacks-monorepo/common/utils/decoding.utils';
 import CallEvent = Components.Schemas.CallEvent;
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { StacksNetwork } from '@stacks/network';
 import { ItsContract, ItsExtraData } from '@stacks-monorepo/common/contracts/ITS/its.contract';
+import {
+  GatewayProcessor
+} from '../../apps/stacks-scalable-processors/src/cross-chain-transaction-processor/processors';
 
 @Injectable()
 export class StacksService {
