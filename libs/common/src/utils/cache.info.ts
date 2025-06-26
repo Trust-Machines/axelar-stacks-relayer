@@ -2,13 +2,6 @@ export class CacheInfo {
   key: string = '';
   ttl: number = Constants.oneSecond() * 6;
 
-  static PendingCosmWasmTransaction(id: string): CacheInfo {
-    return {
-      key: `pendingCosmWasm:${id}`,
-      ttl: Constants.oneWeek(),
-    };
-  }
-
   static WalletNonce(address: string): CacheInfo {
     return {
       key: `nonce:${address}`,

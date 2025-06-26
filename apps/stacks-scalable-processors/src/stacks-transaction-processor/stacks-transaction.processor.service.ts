@@ -21,7 +21,7 @@ import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers'
 const MAX_NUMBER_OF_RETRIES = 3;
 
 @Injectable()
-export class TransactionsProcessorService {
+export class StacksTransactionProcessorService {
   private readonly logger: Logger;
 
   constructor(
@@ -35,7 +35,7 @@ export class TransactionsProcessorService {
     private readonly gasServiceContract: GasServiceContract,
     private readonly hiroApiHelper: HiroApiHelper,
   ) {
-    this.logger = new Logger(TransactionsProcessorService.name);
+    this.logger = new Logger(StacksTransactionProcessorService.name);
   }
 
   // Runs after ApprovalsProcessorService handleNewTasks cron has run

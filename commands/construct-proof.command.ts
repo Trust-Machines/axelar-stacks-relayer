@@ -1,7 +1,7 @@
 import { Command, CommandRunner } from 'nest-commander';
 import { ApiConfigService } from '@stacks-monorepo/common';
 import { Injectable, Logger } from '@nestjs/common';
-import { CosmwasmService } from '../apps/axelar-event-processor/src/approvals-processor/cosmwasm.service';
+import { CosmwasmService } from './services/cosmwasm.service';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { StacksService } from './services/stacks.service';
 import { AxelarService } from './services/axelar.service';
