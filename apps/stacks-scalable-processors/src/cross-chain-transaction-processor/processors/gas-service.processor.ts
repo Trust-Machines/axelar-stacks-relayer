@@ -168,19 +168,14 @@ export class GasServiceProcessor {
     fee: string,
     timestamp: string,
   ): Promise<Event | undefined> {
-    const stacksTransaction = await this.stacksTransactionRepository.findByTypeAndTxHash(
+    const statusUpdated = await this.stacksTransactionRepository.updateStatusIfItExists(
       StacksTransactionType.REFUND,
       BinaryUtils.removeHexPrefix(txHash),
+      StacksTransactionStatus.SUCCESS,
     );
 
-    if (stacksTransaction) {
-      stacksTransaction.status = StacksTransactionStatus.SUCCESS;
-
-      await this.stacksTransactionRepository.updateStatus(stacksTransaction);
-
-      this.logger.debug(
-        `Successfully executed REFUND transaction with hash ${stacksTransaction.txHash}, id ${stacksTransaction.taskItemId}`,
-      );
+    if (statusUpdated) {
+      this.logger.log(`Successfully executed REFUND transaction with hash ${txHash}`);
     }
 
     const gasRefundedEvent: GasRefundedEvent = {

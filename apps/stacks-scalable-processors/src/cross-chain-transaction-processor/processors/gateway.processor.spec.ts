@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApprovedStatus, StacksTransaction } from '@prisma/client';
+import { MessageApprovedStatus } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -224,7 +224,7 @@ describe('GatewayProcessor', () => {
 
     it('Should handle event without StacksTransaction', async () => {
       gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
-      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(null);
+      stacksTransactionRepository.updateStatusIfItExists.mockResolvedValueOnce(false);
 
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
@@ -255,23 +255,13 @@ describe('GatewayProcessor', () => {
         finalized: true,
         timestamp: '11.05.2024',
       });
-      expect(stacksTransactionRepository.updateStatus).not.toHaveBeenCalled();
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
     });
 
     it('Should handle event with StacksTransaction', async () => {
       gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
 
-      const item: StacksTransaction = {
-        taskItemId: 'taskItemId',
-        txHash: 'txHash',
-        status: 'PENDING',
-        type: 'GATEWAY',
-        extraData: {},
-        retry: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      stacksTransactionRepository.findByTypeAndTxHash.mockResolvedValueOnce(item);
+      stacksTransactionRepository.updateStatusIfItExists.mockResolvedValueOnce(true);
 
       const transaction = createMock<Transaction>();
       transaction.tx_id = '0xtxHashGateway';
@@ -302,13 +292,12 @@ describe('GatewayProcessor', () => {
         finalized: true,
         timestamp: '11.05.2024',
       });
-      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledTimes(1);
-      expect(stacksTransactionRepository.findByTypeAndTxHash).toHaveBeenCalledWith('GATEWAY', 'txHashGateway');
-      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledTimes(1);
-      expect(stacksTransactionRepository.updateStatus).toHaveBeenCalledWith({
-        ...item,
-        status: 'SUCCESS',
-      });
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'GATEWAY',
+        'txHashGateway',
+        'SUCCESS',
+      );
     });
   });
 
