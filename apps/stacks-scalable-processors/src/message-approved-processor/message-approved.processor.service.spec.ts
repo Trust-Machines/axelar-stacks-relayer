@@ -1,4 +1,4 @@
-import { DeepMocked, createMock } from '@golevelup/ts-jest';
+import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
 import { GatewayContract } from '@stacks-monorepo/common/contracts/gateway.contract';
@@ -86,12 +86,10 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
-    messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
     transactionsHelper.makeContractCall.mockResolvedValueOnce({
       txid: jest.fn(() => 'mock-txid'),
       tx_id: 'mock-txid',
@@ -99,15 +97,13 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
     transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
     transactionsHelper.sendTransactions.mockResolvedValueOnce(['mock-txid']);
 
-    await service.processPendingMessageApproved();
+    const processedItems = await service.processPendingMessageApprovedRaw([mockEntry]);
 
-    expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
     expect(transactionsHelper.makeContractCall).toHaveBeenCalledTimes(1);
     expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
-    expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+    expect(processedItems).toHaveLength(1);
 
-    // @ts-ignore
-    const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+    const updatedMessageApproved: MessageApproved = processedItems[0];
 
     expect(updatedMessageApproved.extraData).toBe(null);
     expect(updatedMessageApproved.retry).toBe(1);
@@ -128,21 +124,18 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
-    messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
     const handleMessageApprovedFailedSpy = jest.spyOn(service, 'handleMessageApprovedFailed');
 
-    await service.processPendingMessageApproved();
+    const processedItems = await service.processPendingMessageApprovedRaw([mockEntry]);
 
-    expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledWith([
-      expect.objectContaining({ status: MessageApprovedStatus.FAILED }),
-    ]);
     expect(handleMessageApprovedFailedSpy).toHaveBeenCalledWith(expect.any(Object), 'ERROR');
     expect(transactionsHelper.makeContractCall).not.toHaveBeenCalled();
+    expect(processedItems).toHaveLength(1);
+    expect(processedItems[0].status).toEqual('FAILED');
   });
 
   it('should fail if the payload is empty', async () => {
@@ -159,19 +152,15 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
-    messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
+    const processedItems = await service.processPendingMessageApprovedRaw([mockEntry]);
 
-    await service.processPendingMessageApproved();
-
-    expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledWith([
-      expect.objectContaining({ status: MessageApprovedStatus.FAILED }),
-    ]);
     expect(transactionsHelper.makeContractCall).not.toHaveBeenCalled();
+    expect(processedItems).toHaveLength(1);
+    expect(processedItems[0].status).toEqual('FAILED');
   });
 
   it('should retry on GasError', async () => {
@@ -188,17 +177,17 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
-    messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
     transactionsHelper.makeContractCall.mockRejectedValueOnce(new GasError('Gas error'));
 
-    await service.processPendingMessageApproved();
+    const processedItems = await service.processPendingMessageApprovedRaw([mockEntry]);
 
-    expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledWith([expect.objectContaining({ retry: 1 })]);
+    expect(processedItems).toHaveLength(1);
+    expect(processedItems[0].status).toEqual('PENDING');
+    expect(processedItems[0].retry).toEqual(1);
   });
 
   it('should fail on TooLowAvailableBalanceError', async () => {
@@ -215,20 +204,17 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
-    messageApprovedRepository.findPending.mockResolvedValueOnce([mockEntry]).mockResolvedValueOnce([]);
     transactionsHelper.makeContractCall.mockRejectedValueOnce(new TooLowAvailableBalanceError('Gas too low'));
     const handleMessageApprovedFailedSpy = jest.spyOn(service, 'handleMessageApprovedFailed');
 
-    await service.processPendingMessageApproved();
+    const processedItems = await service.processPendingMessageApprovedRaw([mockEntry]);
 
-    expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledWith([
-      expect.objectContaining({ status: MessageApprovedStatus.FAILED }),
-    ]);
+    expect(processedItems).toHaveLength(1);
+    expect(processedItems[0].status).toEqual('FAILED');
     expect(handleMessageApprovedFailedSpy).toHaveBeenCalledWith(expect.any(Object), 'INSUFFICIENT_GAS');
   });
 
@@ -246,13 +232,11 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
       availableGasBalance: '1000',
       createdAt: new Date(),
       updatedAt: new Date(),
-      successTimes: null,
       taskItemId: null,
       extraData: {},
     };
 
     it('should process ITS entry with transaction and incrementRetry', async () => {
-      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
       transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
       transactionsHelper.sendTransactions.mockResolvedValueOnce(['mock-txid']);
 
@@ -267,15 +251,14 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
         }),
       );
 
-      await service.processPendingMessageApproved();
+      const processedItems = await service.processPendingMessageApprovedRaw([mockItsEntry]);
 
-      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
       expect(itsContract.execute).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+      expect(processedItems).toHaveLength(1);
 
       // @ts-ignore
-      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+      const updatedMessageApproved: MessageApproved = processedItems[0];
 
       expect(updatedMessageApproved.extraData).toBe(null);
       expect(updatedMessageApproved.retry).toBe(1);
@@ -284,7 +267,6 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
 
     it('should process ITS entry with transaction and no increment retry', async () => {
       mockItsEntry.retry = 0;
-      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
       transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
       transactionsHelper.sendTransactions.mockResolvedValueOnce(['mock-txid']);
 
@@ -299,15 +281,14 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
         }),
       );
 
-      await service.processPendingMessageApproved();
+      const processedItems = await service.processPendingMessageApprovedRaw([mockItsEntry]);
 
-      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
       expect(itsContract.execute).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+      expect(processedItems).toHaveLength(1);
 
       // @ts-ignore
-      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+      const updatedMessageApproved: MessageApproved = processedItems[0];
 
       expect(updatedMessageApproved.extraData).toBe(null);
       expect(updatedMessageApproved.retry).toBe(0);
@@ -316,7 +297,6 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
 
     it('should process ITS entry with no transaction and no retry', async () => {
       mockItsEntry.executeTxHash = 'mock-txid';
-      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
       transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
 
       itsContract.execute.mockReturnValueOnce(
@@ -329,16 +309,15 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
         }),
       );
 
-      await service.processPendingMessageApproved();
+      const processedItems = await service.processPendingMessageApprovedRaw([mockItsEntry]);
 
-      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
       expect(itsContract.execute).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledWith([]);
-      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+      expect(processedItems).toHaveLength(1);
 
       // @ts-ignore
-      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+      const updatedMessageApproved: MessageApproved = processedItems[0];
 
       expect(updatedMessageApproved.extraData).toEqual({
         test: 'data',
@@ -349,7 +328,6 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
 
     it('should process ITS entry with no transaction, increment retry and old executeTxHash', async () => {
       mockItsEntry.executeTxHash = 'mock-txid';
-      messageApprovedRepository.findPending.mockResolvedValueOnce([mockItsEntry]).mockResolvedValueOnce([]);
       transactionsHelper.checkAvailableGasBalance.mockResolvedValueOnce(true);
 
       itsContract.execute.mockReturnValueOnce(
@@ -362,16 +340,15 @@ describe('MessageApprovedProcessorService - processPendingMessageApproved', () =
         }),
       );
 
-      await service.processPendingMessageApproved();
+      const processedItems = await service.processPendingMessageApprovedRaw([mockItsEntry]);
 
-      expect(messageApprovedRepository.findPending).toHaveBeenCalledTimes(2);
       expect(itsContract.execute).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledTimes(1);
       expect(transactionsHelper.sendTransactions).toHaveBeenCalledWith([]);
-      expect(messageApprovedRepository.updateManyPartial).toHaveBeenCalledTimes(1);
+      expect(processedItems).toHaveLength(1);
 
       // @ts-ignore
-      const updatedMessageApproved: MessageApproved = messageApprovedRepository.updateManyPartial.mock.lastCall[0][0];
+      const updatedMessageApproved: MessageApproved = processedItems[0];
 
       expect(updatedMessageApproved.extraData).toEqual({
         test: 'data',
