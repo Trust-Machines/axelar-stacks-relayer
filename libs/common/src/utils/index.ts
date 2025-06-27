@@ -3,3 +3,4 @@ export * from './dynamic.module.utils';
 export * from './locker';
 export * from './mappers';
 export * from './binary.utils';
+export * from './event.types';

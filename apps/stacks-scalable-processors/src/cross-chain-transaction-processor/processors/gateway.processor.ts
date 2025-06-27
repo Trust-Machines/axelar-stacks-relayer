@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MessageApprovedStatus } from '@prisma/client';
+import { MessageApprovedStatus, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
 import { ApiConfigService, BinaryUtils, GatewayContract } from '@stacks-monorepo/common';
 import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
@@ -8,16 +8,17 @@ import { DecodingUtils } from '@stacks-monorepo/common/utils/decoding.utils';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import BigNumber from 'bignumber.js';
-import { getEventType, ScEvent } from '../../event-processor/types';
+import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
+import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
+import { ethers } from 'ethers';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
+import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEvent = Components.Schemas.MessageApprovedEvent;
 import Event = Components.Schemas.Event;
 import MessageExecutedEvent = Components.Schemas.MessageExecutedEvent;
 import SignersRotatedEvent = Components.Schemas.SignersRotatedEvent;
-import { HubMessage } from '@stacks-monorepo/common/contracts/ITS/messages/hub.message';
-import { ContractCallEvent } from '@stacks-monorepo/common/contracts/entities/gateway-events';
-import { ethers } from 'ethers';
-import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 @Injectable()
 export class GatewayProcessor {
@@ -28,6 +29,7 @@ export class GatewayProcessor {
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly apiConfigService: ApiConfigService,
     private readonly slackApi: SlackApi,
+    private readonly stacksTransactionRepository: StacksTransactionRepository,
   ) {
     this.logger = new Logger(GatewayProcessor.name);
   }
@@ -52,7 +54,7 @@ export class GatewayProcessor {
     }
 
     if (eventName === Events.MESSAGE_APPROVED_EVENT) {
-      return this.handleMessageApprovedEvent(
+      return await this.handleMessageApprovedEvent(
         rawEvent,
         transaction.sender_address,
         transaction.tx_id,
@@ -164,13 +166,23 @@ export class GatewayProcessor {
     };
   }
 
-  private handleMessageApprovedEvent(
+  private async handleMessageApprovedEvent(
     rawEvent: ScEvent,
     sender: string,
     txHash: string,
     timestamp: string,
     index: number,
-  ): Event {
+  ): Promise<Event> {
+    const statusUpdated = await this.stacksTransactionRepository.updateStatusIfItExists(
+      StacksTransactionType.GATEWAY,
+      BinaryUtils.removeHexPrefix(txHash),
+      StacksTransactionStatus.SUCCESS,
+    );
+
+    if (statusUpdated) {
+      this.logger.log(`Successfully executed GATEWAY transaction with hash ${txHash}`);
+    }
+
     const event = this.gatewayContract.decodeMessageApprovedEvent(rawEvent);
 
     const messageApproved: MessageApprovedEvent = {
@@ -215,17 +227,13 @@ export class GatewayProcessor {
   ): Promise<Event | undefined> {
     const messageExecutedEvent = this.gatewayContract.decodeMessageExecutedEvent(rawEvent);
 
-    const messageApproved = await this.messageApprovedRepository.findBySourceChainAndMessageId(
+    const statusUpdated = await this.messageApprovedRepository.updateStatusIfItExists(
       messageExecutedEvent.sourceChain,
       messageExecutedEvent.messageId,
+      MessageApprovedStatus.SUCCESS,
     );
 
-    if (messageApproved) {
-      messageApproved.status = MessageApprovedStatus.SUCCESS;
-      messageApproved.successTimes = (messageApproved.successTimes || 0) + 1;
-
-      await this.messageApprovedRepository.updateStatusAndSuccessTimes(messageApproved);
-    } else {
+    if (!statusUpdated) {
       this.logger.warn(
         `Could not find corresponding message approved for message executed event in database from ${messageExecutedEvent.sourceChain} with message id ${messageExecutedEvent.messageId}`,
       );

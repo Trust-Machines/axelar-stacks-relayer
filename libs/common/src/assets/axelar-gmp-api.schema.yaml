@@ -364,7 +364,6 @@ components:
               type: string
               nullable: true
               x-omitempty: true
-              # TODO: use exact length
               minLength: 1
     MessageExecutedEventMetadata:
       allOf:
@@ -374,7 +373,6 @@ components:
               type: string
               nullable: true
               x-omitempty: true
-              # TODO: use exact length
               minLength: 1
             childMessageIDs:
               type: array

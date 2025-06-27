@@ -22,7 +22,6 @@ model MessageApproved {
   retry               Int                   @db.SmallInt
   createdAt           DateTime              @default(now()) @db.Timestamp(6)
   updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamp(6)
-  successTimes        Int?                  @db.SmallInt
   taskItemId          String?               @db.Uuid
   availableGasBalance String                @default("0") @db.VarChar(255)
   extraData           Json                  @default("{}")
@@ -39,4 +38,32 @@ enum MessageApprovedStatus {
 model LastProcessedData {
   type  String @id @db.VarChar(255)
   value String @db.VarChar(255)
+}
+
+model CrossChainTransaction {
+  txHash    String   @id @db.VarChar(66)
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamp(6)
+}
+
+model StacksTransaction {
+  taskItemId String                  @unique @db.Uuid
+  type       StacksTransactionType
+  status     StacksTransactionStatus
+  extraData  Json
+  txHash     String?                 @db.VarChar(66)
+  retry      Int                     @db.SmallInt
+  createdAt  DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime                @default(now()) @updatedAt @db.Timestamp(6)
+}
+
+enum StacksTransactionType {
+  GATEWAY
+  REFUND
+}
+
+enum StacksTransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

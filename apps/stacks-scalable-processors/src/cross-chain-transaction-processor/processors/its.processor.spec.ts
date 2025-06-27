@@ -5,7 +5,6 @@ import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api'
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
-import { ScEvent } from '../../event-processor/types';
 import { ItsProcessor } from './its.processor';
 import { ItsContract } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import {
@@ -14,7 +13,7 @@ import {
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import ITSInterchainTokenDeploymentStartedEvent = Components.Schemas.ITSInterchainTokenDeploymentStartedEvent;
 import ITSInterchainTransferEvent = Components.Schemas.ITSInterchainTransferEvent;
-import { BinaryUtils } from '@stacks-monorepo/common';
+import { BinaryUtils, ScEvent } from '@stacks-monorepo/common';
 
 const mockItsContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.its-contract';
 

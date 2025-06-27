@@ -1,5 +1,5 @@
 import { cvToJSON, deserializeCV } from '@stacks/transactions';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { ScEvent } from '@stacks-monorepo/common/utils';
 import BigNumber from 'bignumber.js';
 import { GasAddedEvent, GasPaidForContractCallEvent, RefundedEvent } from '../contracts/entities/gas-service-events';
 import {

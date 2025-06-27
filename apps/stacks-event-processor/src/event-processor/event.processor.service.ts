@@ -1,16 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ApiConfigService, CacheInfo, Locker } from '@stacks-monorepo/common';
+import { ApiConfigService, Locker } from '@stacks-monorepo/common';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { Events } from '@stacks-monorepo/common/utils/event.enum';
-import { getEventType, ScEvent } from './types';
+import { getEventType, ScEvent } from '@stacks-monorepo/common/utils';
 import {
   LAST_PROCESSED_DATA_TYPE,
   LastProcessedDataRepository,
 } from '@stacks-monorepo/common/database/repository/last-processed-data.repository';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { AxiosError } from 'axios';
+import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
 
 @Injectable()
 export class EventProcessorService {
@@ -22,9 +22,9 @@ export class EventProcessorService {
 
   constructor(
     private readonly hiroApiHelper: HiroApiHelper,
-    private readonly redisHelper: RedisHelper,
     private readonly lastProcessedDataRepository: LastProcessedDataRepository,
     private readonly slackApi: SlackApi,
+    private readonly crossChainTransactionRepository: CrossChainTransactionRepository,
     apiConfigService: ApiConfigService,
   ) {
     this.contractGatewayStorage = apiConfigService.getContractGatewayStorage();
@@ -49,21 +49,23 @@ export class EventProcessorService {
       this.lastProcessedDataRepository.get(LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS),
     ]);
 
-    await this.getContractEvents(
-      this.contractGatewayStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY,
-      gatewayLastProcessedEvent,
-    );
-    await this.getContractEvents(
-      this.contractGasServiceStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE,
-      gasLastProcessedEvent,
-    );
-    await this.getContractEvents(
-      this.contractItsStorage,
-      LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS,
-      itsLastProcessedEvent,
-    );
+    await Promise.all([
+      this.getContractEvents(
+        this.contractGatewayStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GATEWAY,
+        gatewayLastProcessedEvent,
+      ),
+      this.getContractEvents(
+        this.contractGasServiceStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_GAS_SERVICE,
+        gasLastProcessedEvent,
+      ),
+      this.getContractEvents(
+        this.contractItsStorage,
+        LAST_PROCESSED_DATA_TYPE.LAST_PROCESSED_EVENT_ITS,
+        itsLastProcessedEvent,
+      ),
+    ]);
   }
 
   private async getContractEvents(contractId: string, type: string, lastProcessedEventKey: string | undefined) {
@@ -104,6 +106,12 @@ export class EventProcessorService {
           await this.consumeEvents(eventsToProcess);
         }
 
+        // Save partial progress
+        if (latestEventKey) {
+          this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
+          await this.lastProcessedDataRepository.update(type, latestEventKey);
+        }
+
         // If we found the last processed event on this page, don't go to the next one
         if (lastProcessedIndex !== -1) {
           break;
@@ -125,11 +133,6 @@ export class EventProcessorService {
         break;
       }
     }
-
-    if (latestEventKey) {
-      this.logger.debug(`${contractId} update latest event key to ${latestEventKey}`);
-      await this.lastProcessedDataRepository.update(type, latestEventKey);
-    }
   }
 
   async consumeEvents(events: ScEvent[]) {
@@ -145,7 +148,7 @@ export class EventProcessorService {
       }
 
       if (crossChainTransactions.size > 0) {
-        await this.redisHelper.sadd(CacheInfo.CrossChainTransactions().key, ...crossChainTransactions);
+        await this.crossChainTransactionRepository.createMany([...crossChainTransactions]);
       }
     } catch (e) {
       this.logger.error(`An unhandled error occurred when consuming events: ${JSON.stringify(events)}`, e);

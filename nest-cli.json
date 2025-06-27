@@ -41,7 +41,27 @@
       "sourceRoot": "libs/common/src",
       "compilerOptions": {
         "tsConfigPath": "libs/common/tsconfig.lib.json",
-        "assets": ["assets/**"]
+        "assets": [
+          "assets/**"
+        ]
+      }
+    },
+    "stacks-scalable-processors": {
+      "type": "application",
+      "root": "apps/stacks-scalable-processors",
+      "entryFile": "main",
+      "sourceRoot": "apps/stacks-scalable-processors/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/stacks-scalable-processors/tsconfig.app.json"
+      }
+    },
+    "stacks-transaction-processor": {
+      "type": "application",
+      "root": "apps/stacks-transaction-processor",
+      "entryFile": "main",
+      "sourceRoot": "apps/stacks-transaction-processor/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/stacks-transaction-processor/tsconfig.app.json"
       }
     }
   }
