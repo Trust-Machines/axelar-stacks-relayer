@@ -28,7 +28,6 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "dotenv -e .env.test -- jest --config ./apps/stacks-event-processor/test/jest-e2e.json --force-exit --passWithNoTests",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
     "deploy": "prisma migrate deploy",
@@ -58,7 +57,6 @@
     "bull": "^4.12.9",
     "cache-manager": "^5.6.1",
     "cron": "^3.1.7",
-    "ethers": "^6.13.4",
     "ioredis": "^5.4.1",
     "js-yaml": "^4.1.0",
     "module-alias": "^2.2.3",
@@ -119,9 +117,6 @@
     "moduleNameMapper": {
       "^@stacks-monorepo/common(|/.*)$": "<rootDir>/libs/common/src/$1",
       "^@stacks-monorepo/common": "<rootDir>/libs/common"
-    },
-    "roots": [
-      "<rootDir>/apps/"
-    ]
+    }
   }
 }

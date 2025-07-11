@@ -79,14 +79,6 @@ Note: Commands may hang at the end, it is safe to close them after getting the s
 
 ### Stacks -> ITS Hub
 
-#### Verifying Messages
-
-Can be used to verify any message, from Stacks ITS or from other contracts as well.
-
-```shell
-npm run cli verify-message <stacks tx hash>
-```
-
 #### Executing on ITS Hub
 
 This should only be used for executing messages from the Stacks ITS towards ITS Hub
@@ -97,10 +89,12 @@ npm run cli its-hub-execute <stacks tx hash>
 
 ### ITS Hub -> Stacks
 
-#### Construct Proof
+#### Stacks Gateway
+
+Execute approve messages on Stacks Gateway:
 
 ```shell
-npm run cli construct-proof <axelar tx hash>
+npm run cli stacks-gateway <execute data>
 ```
 
 #### Stacks Execute

@@ -16,8 +16,4 @@ export class BinaryUtils {
   static removeHexPrefix(str: string): string {
     return str.startsWith('0x') ? str.slice(2) : str;
   }
-
-  static addHexPrefix(str: string): string {
-    return str.startsWith('0x') ? str : `0x${str}`;
-  }
 }

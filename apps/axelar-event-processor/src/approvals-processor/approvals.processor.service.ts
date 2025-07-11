@@ -1,14 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { MessageApprovedStatus, StacksTransactionStatus, StacksTransactionType } from '@prisma/client';
-import { CacheInfo, Locker } from '@stacks-monorepo/common';
+import { Locker } from '@stacks-monorepo/common';
 import { AxelarGmpApi } from '@stacks-monorepo/common/api/axelar.gmp.api';
-import { Components, ConstructProofTask } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import { MessageApprovedRepository } from '@stacks-monorepo/common/database/repository/message-approved.repository';
-import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 import { CONSTANTS } from '@stacks-monorepo/common/utils/constants.enum';
-import { PendingCosmWasmTransaction } from './entities/pending-cosm-wasm-transaction';
-import { CosmwasmService } from './cosmwasm.service';
 import { AxiosError } from 'axios';
 import {
   LAST_PROCESSED_DATA_TYPE,
@@ -20,9 +17,6 @@ import TaskItem = Components.Schemas.TaskItem;
 import GatewayTransactionTask = Components.Schemas.GatewayTransactionTask;
 import ExecuteTask = Components.Schemas.ExecuteTask;
 import RefundTask = Components.Schemas.RefundTask;
-import VerifyTask = Components.Schemas.VerifyTask;
-import ReactToRetriablePollTask = Components.Schemas.ReactToRetriablePollTask;
-import ReactToExpiredSigningSessionTask = Components.Schemas.ReactToExpiredSigningSessionTask;
 
 @Injectable()
 export class ApprovalsProcessorService {
@@ -30,10 +24,8 @@ export class ApprovalsProcessorService {
 
   constructor(
     private readonly axelarGmpApi: AxelarGmpApi,
-    private readonly redisHelper: RedisHelper,
     private readonly messageApprovedRepository: MessageApprovedRepository,
     private readonly lastProcessedDataRepository: LastProcessedDataRepository,
-    private readonly cosmWasmService: CosmwasmService,
     private readonly slackApi: SlackApi,
     private readonly stacksTransactionRepository: StacksTransactionRepository,
   ) {
@@ -43,11 +35,6 @@ export class ApprovalsProcessorService {
   @Cron('0/10 * * * * *')
   async handleNewTasks() {
     await Locker.lock('handleNewTasks', this.handleNewTasksRaw.bind(this));
-  }
-
-  @Cron('2/6 * * * * *')
-  async handlePendingCosmWasmTransaction() {
-    await Locker.lock('pendingCosmWasmTransaction', this.handlePendingCosmWasmTransactionRaw.bind(this));
   }
 
   async handleNewTasksRaw() {
@@ -106,9 +93,6 @@ export class ApprovalsProcessorService {
   }
 
   private async processTask(task: TaskItem) {
-    // this.logger.debug('Received Axelar Task response:');
-    // this.logger.debug(JSON.stringify(task));
-
     if (task.type === 'GATEWAY_TX') {
       const response = task.task as GatewayTransactionTask;
 
@@ -133,37 +117,11 @@ export class ApprovalsProcessorService {
       return;
     }
 
-    if (task.type === 'CONSTRUCT_PROOF') {
-      const response = task.task as ConstructProofTask;
-
-      await this.processConstructProofTask(response);
-
-      return;
-    }
-
-    if (task.type === 'VERIFY') {
-      const response = task.task as VerifyTask;
-
-      await this.processVerifyTask(response);
-
-      return;
-    }
-
-    if (task.type === 'REACT_TO_EXPIRED_SIGNING_SESSION') {
-      const response = task.task as ReactToExpiredSigningSessionTask;
-
-      await this.processReactToExpiredSigningSession(response);
-
-      return;
-    }
-
-    if (task.type === 'REACT_TO_RETRIABLE_POLL') {
-      const response = task.task as ReactToRetriablePollTask;
-
-      await this.processReactToRetriablePoll(response);
-
-      return;
-    }
+    this.logger.warn(`Received unknown task of type ${task.type}, id ${task.id}`, task);
+    await this.slackApi.sendWarn(
+      'Axelar event processor unknown task',
+      `Received unknown task of type ${task.type}, id ${task.id}`,
+    );
   }
 
   private async processGatewayTxTask(response: GatewayTransactionTask, taskItemId: string) {
@@ -208,110 +166,5 @@ export class ApprovalsProcessorService {
     });
 
     this.logger.debug(`Processed REFUND task ${taskItemId}`);
-  }
-
-  async processConstructProofTask(response: ConstructProofTask) {
-    const request = await this.cosmWasmService.buildConstructProofRequest(response);
-
-    if (!request) {
-      return;
-    }
-
-    const id = `proof_${response.message.sourceChain}_${response.message.messageID}`;
-    const constructProofTransaction: PendingCosmWasmTransaction = {
-      request,
-      retry: 0,
-      type: 'CONSTRUCT_PROOF',
-      timestamp: Date.now(),
-    };
-    await this.cosmWasmService.storeCosmWasmTransaction(
-      CacheInfo.PendingCosmWasmTransaction(id).key,
-      constructProofTransaction,
-    );
-
-    this.logger.debug(
-      `Processed CONSTRUCT_PROOF task, message from ${response.message.sourceChain} with messageId ${response.message.messageID}`,
-    );
-  }
-
-  async processVerifyTask(response: VerifyTask) {
-    const request = await this.cosmWasmService.buildVerifyRequest(response);
-
-    if (!request) {
-      return;
-    }
-
-    const id = `verify_${response.message.sourceChain}_${response.message.messageID}`;
-    const verifyTransaction: PendingCosmWasmTransaction = {
-      request,
-      retry: 0,
-      type: 'VERIFY',
-      timestamp: Date.now(),
-    };
-    await this.cosmWasmService.storeCosmWasmTransaction(
-      CacheInfo.PendingCosmWasmTransaction(id).key,
-      verifyTransaction,
-    );
-
-    this.logger.debug(
-      `Processed VERIFY task, message to ${response.destinationChain} with messageId ${response.message.messageID}`,
-    );
-  }
-
-  async processReactToExpiredSigningSession(response: ReactToExpiredSigningSessionTask) {
-    const id = `retry_proof_${response.invokedContractAddress}_${response.sessionID}`;
-    const constructProofTransaction: PendingCosmWasmTransaction = {
-      request: response.requestPayload,
-      retry: 0,
-      type: 'CONSTRUCT_PROOF',
-      timestamp: Date.now(),
-    };
-    await this.cosmWasmService.storeCosmWasmTransaction(
-      CacheInfo.PendingCosmWasmTransaction(id).key,
-      constructProofTransaction,
-    );
-
-    this.logger.debug(
-      `Processed REACT_TO_EXPIRED_SIGNING_SESSION task, session id ${response.sessionID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
-    );
-  }
-
-  async processReactToRetriablePoll(response: ReactToRetriablePollTask) {
-    const id = `retry_verify_${response.invokedContractAddress}_${response.pollID}`;
-    const verifyTransaction: PendingCosmWasmTransaction = {
-      request: response.requestPayload,
-      retry: 0,
-      type: 'VERIFY',
-      timestamp: Date.now(),
-    };
-    await this.cosmWasmService.storeCosmWasmTransaction(
-      CacheInfo.PendingCosmWasmTransaction(id).key,
-      verifyTransaction,
-    );
-
-    this.logger.debug(
-      `Processed REACT_TO_RETRIABLE_POLL task, pool id ${response.pollID}, broadcast id ${response.broadcastID}, payload: ${response.requestPayload}`,
-    );
-  }
-
-  async handlePendingCosmWasmTransactionRaw() {
-    const keys = await this.redisHelper.scan(CacheInfo.PendingCosmWasmTransaction('*').key);
-
-    if (keys.length === 0) {
-      return;
-    }
-
-    this.logger.debug(`Handling ${keys.length} pending CosmWasm transactions`);
-
-    for (const key of keys) {
-      const cachedValue = await this.cosmWasmService.getCosmWasmTransaction(key);
-      if (!cachedValue) continue;
-
-      if (cachedValue.broadcastID) {
-        await this.cosmWasmService.handleBroadcastStatus(key, cachedValue);
-      } else {
-        await this.cosmWasmService.broadcastCosmWasmTransaction(key, cachedValue);
-      }
-    }
   }
 }

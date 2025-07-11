@@ -10,7 +10,7 @@ import CallEvent = Components.Schemas.CallEvent;
 @Injectable()
 @Command({ name: 'its-hub-execute', description: 'Execute a message on ITS Hub' })
 export class ItsHubExecuteCommand extends CommandRunner {
-  private readonly axelarItsHubContract: string;
+  private readonly axelarChainGatewayContract: string;
   private readonly logger: Logger;
 
   constructor(
@@ -20,7 +20,7 @@ export class ItsHubExecuteCommand extends CommandRunner {
   ) {
     super();
 
-    this.axelarItsHubContract = apiConfigService.getAxelarChainGatewayContract();
+    this.axelarChainGatewayContract = apiConfigService.getAxelarChainGatewayContract();
     this.logger = new Logger(ItsHubExecuteCommand.name);
   }
 
@@ -59,7 +59,7 @@ export class ItsHubExecuteCommand extends CommandRunner {
     const client = await this.axelarService.getCosmWasmClient(wallet);
     const [account] = await wallet.getAccounts();
 
-    const tx = await client.execute(account.address, this.axelarItsHubContract, request, 'auto');
+    const tx = await client.execute(account.address, this.axelarChainGatewayContract, request, 'auto');
 
     this.logger.debug(`Sent verify transaction to CosmWasm Gateway contract, txHash ${tx.transactionHash}`, tx);
   }

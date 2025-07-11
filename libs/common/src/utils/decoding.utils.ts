@@ -116,7 +116,7 @@ export const deployInterchainTokenDecoder = (json: any): DeployInterchainToken =
   name: json.value['name'].value,
   symbol: json.value['symbol'].value,
   decimals: parseInt(json.value['decimals'].value),
-  minter: json.value['minter'].value,
+  minter: json.value['minter-bytes'].value,
 });
 
 export const interchainTokenDeploymentStartedEventDecoder = (json: any): InterchainTokenDeploymentStartedEvent => ({
