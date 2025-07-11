@@ -15,7 +15,7 @@ import {
   tupleCV,
   uintCV,
 } from '@stacks/transactions';
-import { bufferFromHex, stringAscii } from '@stacks/transactions/dist/cl';
+import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { ItsContract, ItsExtraData } from '@stacks-monorepo/common/contracts/ITS/its.contract';
 import { ApiConfigService, GatewayContract, TransactionsHelper } from '@stacks-monorepo/common';
 import { TokenManagerContract } from '@stacks-monorepo/common/contracts/ITS/token-manager.contract';
@@ -110,8 +110,6 @@ describe('ItsContract', () => {
 
     service = module.get<ItsContract>(ItsContract);
 
-    jest.spyOn(HubMessage, 'abiDecode').mockImplementation(jest.fn());
-
     mockNativeInterchainTokenContract.getTemplateContractId.mockReturnValue('mockTemplate.ContractId');
     mockNativeInterchainTokenContract.getTemplateDeployVerificationParams.mockReturnValue(Promise.resolve(tupleCV({})));
 
@@ -151,7 +149,7 @@ describe('ItsContract', () => {
 
   describe('execute', () => {
     it('should return null transaction for an invalid payload', async () => {
-      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(null);
+      jest.spyOn(HubMessage, 'clarityDecode').mockReturnValue(null);
       jest.spyOn(service as any, 'handleInterchainTransfer').mockImplementation(jest.fn());
       jest.spyOn(service as any, 'handleDeployNativeInterchainToken').mockImplementation(jest.fn());
 
@@ -182,12 +180,11 @@ describe('ItsContract', () => {
       const messageId = 'messageId';
       const availableGasBalance = '100';
       const receiveFromHub = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: { messageType: HubMessageType.InterchainTransfer } as InterchainTransfer,
       };
 
-      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(receiveFromHub);
+      jest.spyOn(HubMessage, 'clarityDecode').mockReturnValue(receiveFromHub);
       jest.spyOn(service as any, 'handleInterchainTransfer').mockImplementation(jest.fn());
       jest.spyOn(service as any, 'handleDeployNativeInterchainToken').mockImplementation(jest.fn());
 
@@ -218,12 +215,11 @@ describe('ItsContract', () => {
       const messageId = 'messageId';
       const availableGasBalance = '100';
       const receiveFromHub = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: { messageType: HubMessageType.InterchainTransfer } as InterchainTransfer,
       };
 
-      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(receiveFromHub);
+      jest.spyOn(HubMessage, 'clarityDecode').mockReturnValue(receiveFromHub);
       jest.spyOn(service as any, 'handleInterchainTransfer').mockImplementation(jest.fn());
 
       await service.execute(
@@ -245,6 +241,7 @@ describe('ItsContract', () => {
         sourceChain,
         'axelarContract',
         availableGasBalance,
+        'payload',
       );
     });
 
@@ -255,12 +252,11 @@ describe('ItsContract', () => {
       const availableGasBalance = '100';
       const sourceAddress = 'axelarContract';
       const receiveFromHub = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: { messageType: HubMessageType.DeployInterchainToken } as DeployInterchainToken,
       };
 
-      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(receiveFromHub);
+      jest.spyOn(HubMessage, 'clarityDecode').mockReturnValue(receiveFromHub);
       jest.spyOn(service as any, 'handleDeployNativeInterchainToken').mockImplementation(jest.fn());
 
       await service.execute(
@@ -283,17 +279,17 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         null,
+        'payload',
         undefined,
       );
     });
 
     it('should log an error and return null transaction for an unknown message type', async () => {
       const receiveFromHub = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: 'sourceChain',
         payload: { messageType: 5 } as DeployInterchainToken,
       };
-      jest.spyOn(HubMessage, 'abiDecode').mockReturnValue(receiveFromHub);
+      jest.spyOn(HubMessage, 'clarityDecode').mockReturnValue(receiveFromHub);
 
       const result = await service.execute(
         'senderKey',
@@ -323,7 +319,6 @@ describe('ItsContract', () => {
       const sourceAddress = 'itsHubAddress';
       const availableGasBalance = '100';
       const message = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: {
           messageType: 0,
@@ -370,6 +365,7 @@ describe('ItsContract', () => {
         sourceChain,
         sourceAddress,
         availableGasBalance,
+        '0x'
       );
 
       expect(result).toEqual(transactionMock);
@@ -404,7 +400,6 @@ describe('ItsContract', () => {
       const sourceAddress = 'itsHubAddress';
       const availableGasBalance = '100';
       const message = {
-        messageType: HubMessageType.ReceiveFromHub,
         sourceChain: sourceChain,
         payload: {
           tokenId: 'tokenId',
@@ -424,6 +419,7 @@ describe('ItsContract', () => {
           sourceChain,
           sourceAddress,
           availableGasBalance,
+          '0x'
         ),
       ).rejects.toThrow('Could not get token info');
       expect(service['getTokenInfo']).toHaveBeenCalledWith(message.payload.tokenId);
@@ -434,7 +430,6 @@ describe('ItsContract', () => {
   describe('handleDeployNativeInterchainToken', () => {
     const senderKey = 'senderKey';
     const message = {
-      messageType: HubMessageType.ReceiveFromHub,
       payload: { name: 'tokenName', messageType: HubMessageType.DeployInterchainToken } as DeployInterchainToken,
     } as ReceiveFromHub;
     const messageId = 'messageId';
@@ -458,7 +453,6 @@ describe('ItsContract', () => {
       // For checkDeployInterchainTokenGasBalance
       mockNativeInterchainTokenContract.setupTransaction.mockResolvedValue(setupTx);
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
-      jest.spyOn(HubMessage, 'clarityEncode').mockReturnValue(stringAscii('payload'));
 
       const result = await service.handleDeployNativeInterchainToken(
         senderKey,
@@ -468,6 +462,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         null,
+        'payload',
         undefined,
       );
 
@@ -527,6 +522,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         null,
+        '0x',
         {
           step: 'CONTRACT_DEPLOY',
           contractId: 'address.oldContractId',
@@ -561,6 +557,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        '0x',
         {
           step: 'CONTRACT_DEPLOY',
           contractId: 'address.contractId-1000',
@@ -598,6 +595,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        '0x',
         {
           step: 'CONTRACT_DEPLOY',
           contractId: 'address.contractId-1000',
@@ -639,6 +637,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        '0x',
         {
           step: 'CONTRACT_DEPLOY',
           contractId: 'address.contractId-1000',
@@ -684,6 +683,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        '0x',
         {
           step: 'CONTRACT_SETUP',
           contractId: 'address.contractId-1000',
@@ -721,6 +721,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        '0x',
         {
           step: 'CONTRACT_SETUP',
           contractId: 'address.contractId-1000',
@@ -752,7 +753,6 @@ describe('ItsContract', () => {
 
       const executeTx = createMock<StacksTransaction>();
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
-      jest.spyOn(HubMessage, 'clarityEncode').mockReturnValue(stringAscii('payload'));
 
       const result = await service.handleDeployNativeInterchainToken(
         senderKey,
@@ -762,6 +762,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        'payload',
         {
           step: 'CONTRACT_SETUP',
           contractId: 'address.contractId-1000',
@@ -811,6 +812,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        'payload',
         {
           step: 'ITS_EXECUTE',
           contractId: 'address.contractId-1000',
@@ -851,6 +853,7 @@ describe('ItsContract', () => {
         sourceAddress,
         availableGasBalance,
         'executeTxHash',
+        'payload',
         {
           step: 'ITS_EXECUTE',
           contractId: 'address.contractId-1000',
@@ -892,7 +895,6 @@ describe('ItsContract', () => {
 
       mockNativeInterchainTokenContract.setupTransaction.mockResolvedValue(setupTx);
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
-      jest.spyOn(HubMessage, 'clarityEncode').mockReturnValue(stringAscii('payload'));
 
       mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));
       await expect(
@@ -904,6 +906,7 @@ describe('ItsContract', () => {
           sourceAddress,
           availableGasBalance,
           null,
+          'payload',
           {} as unknown as ItsExtraData,
         ),
       ).rejects.toThrow('Insufficient gas balance');

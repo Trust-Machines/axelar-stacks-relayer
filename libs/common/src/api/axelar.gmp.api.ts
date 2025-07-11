@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BroadcastID,
-  BroadcastRequest,
+  WasmRequest,
   Client as AxelarGmpApiClient,
   Components,
 } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
@@ -77,7 +77,7 @@ export class AxelarGmpApi {
     });
   }
 
-  async broadcastMsgExecuteContract(request: BroadcastRequest, wasmContractAddress: string) {
+  async broadcastMsgExecuteContract(request: WasmRequest, wasmContractAddress: string) {
     const response = await this.apiClient.broadcastMsgExecuteContract(
       {
         wasmContractAddress,

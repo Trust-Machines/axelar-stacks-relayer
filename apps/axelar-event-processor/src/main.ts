@@ -1,8 +1,8 @@
 import { NestFactory } from '@nestjs/core';
-import { ApprovalsProcessorModule } from './approvals-processor';
+import { AxelarEventProcessorModule } from './axelar-event-processor.module';
 
 async function bootstrap() {
-  await NestFactory.createApplicationContext(ApprovalsProcessorModule);
+  await NestFactory.createApplicationContext(AxelarEventProcessorModule);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises

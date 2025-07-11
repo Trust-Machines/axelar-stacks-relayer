@@ -1,5 +1,5 @@
 import { cvToJSON, deserializeCV } from '@stacks/transactions';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { ScEvent } from '@stacks-monorepo/common/utils';
 import BigNumber from 'bignumber.js';
 import { GasAddedEvent, GasPaidForContractCallEvent, RefundedEvent } from '../contracts/entities/gas-service-events';
 import {
@@ -116,7 +116,7 @@ export const deployInterchainTokenDecoder = (json: any): DeployInterchainToken =
   name: json.value['name'].value,
   symbol: json.value['symbol'].value,
   decimals: parseInt(json.value['decimals'].value),
-  minter: json.value['minter'].value,
+  minter: json.value['minter-bytes'].value,
 });
 
 export const interchainTokenDeploymentStartedEventDecoder = (json: any): InterchainTokenDeploymentStartedEvent => ({

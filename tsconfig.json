@@ -43,7 +43,7 @@
       ],
       "@stacks-monorepo/common/*": [
         "libs/common/src/*"
-      ],
+      ]
     }
   }
 }

@@ -2,27 +2,6 @@ export class CacheInfo {
   key: string = '';
   ttl: number = Constants.oneSecond() * 6;
 
-  static PendingTransaction(hash: string): CacheInfo {
-    return {
-      key: `pendingTransaction:${hash}`,
-      ttl: Constants.oneMinute() * 10,
-    };
-  }
-
-  static PendingCosmWasmTransaction(id: string): CacheInfo {
-    return {
-      key: `pendingCosmWasmTransaction:${id}`,
-      ttl: Constants.oneMinute() * 10,
-    };
-  }
-
-  static CrossChainTransactions(): CacheInfo {
-    return {
-      key: `crossChainTransactions`,
-      ttl: Constants.oneWeek(),
-    };
-  }
-
   static WalletNonce(address: string): CacheInfo {
     return {
       key: `nonce:${address}`,

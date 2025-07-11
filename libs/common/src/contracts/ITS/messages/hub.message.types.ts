@@ -1,5 +1,4 @@
 export interface ReceiveFromHub {
-  messageType: number;
   sourceChain: string;
   payload: InterchainTransfer | DeployInterchainToken;
 }
@@ -25,6 +24,4 @@ export interface DeployInterchainToken {
 export enum HubMessageType {
   InterchainTransfer = 0,
   DeployInterchainToken = 1,
-  SendToHub = 3,
-  ReceiveFromHub = 4,
 }

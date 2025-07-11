@@ -1,6 +1,6 @@
 import { createMock, DeepMocked } from '@golevelup/ts-jest';
 import { Test } from '@nestjs/testing';
-import { MessageApproved, MessageApprovedStatus } from '@prisma/client';
+import { MessageApprovedStatus } from '@prisma/client';
 import { hex } from '@scure/base';
 import { Components, SignersRotatedEvent } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
 import {
@@ -16,13 +16,13 @@ import { Events } from '@stacks-monorepo/common/utils/event.enum';
 import { Transaction } from '@stacks/blockchain-api-client/src/types';
 import { bufferCV, serializeCV, stringAsciiCV, tupleCV } from '@stacks/transactions';
 import BigNumber from 'bignumber.js';
-import { ScEvent } from '../../event-processor/types';
 import { GatewayProcessor } from './gateway.processor';
+import { ApiConfigService, BinaryUtils, ScEvent } from '@stacks-monorepo/common';
+import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
+import { StacksTransactionRepository } from '@stacks-monorepo/common/database/repository/stacks-transaction.repository';
 import CallEvent = Components.Schemas.CallEvent;
 import MessageApprovedEventApi = Components.Schemas.MessageApprovedEvent;
 import MessageExecutedEventApi = Components.Schemas.MessageExecutedEvent;
-import { ApiConfigService, BinaryUtils } from '@stacks-monorepo/common';
-import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
 const mockGatewayContractId = 'SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C.contract_name';
 
@@ -31,6 +31,7 @@ describe('GatewayProcessor', () => {
   let messageApprovedRepository: DeepMocked<MessageApprovedRepository>;
   let apiConfigService: DeepMocked<ApiConfigService>;
   let slackApi: DeepMocked<SlackApi>;
+  let stacksTransactionRepository: DeepMocked<StacksTransactionRepository>;
 
   let service: GatewayProcessor;
 
@@ -72,6 +73,7 @@ describe('GatewayProcessor', () => {
     messageApprovedRepository = createMock();
     apiConfigService = createMock();
     slackApi = createMock();
+    stacksTransactionRepository = createMock();
 
     const moduleRef = await Test.createTestingModule({
       providers: [GatewayProcessor],
@@ -91,6 +93,10 @@ describe('GatewayProcessor', () => {
 
         if (token === SlackApi) {
           return slackApi;
+        }
+
+        if (token === StacksTransactionRepository) {
+          return stacksTransactionRepository;
         }
 
         return null;
@@ -216,8 +222,9 @@ describe('GatewayProcessor', () => {
       },
     };
 
-    it('Should handle event', async () => {
+    it('Should handle event without StacksTransaction', async () => {
       gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
+      stacksTransactionRepository.updateStatusIfItExists.mockResolvedValueOnce(false);
 
       const transaction = createMock<Transaction>();
       transaction.tx_id = 'txHash';
@@ -248,6 +255,49 @@ describe('GatewayProcessor', () => {
         finalized: true,
         timestamp: '11.05.2024',
       });
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+    });
+
+    it('Should handle event with StacksTransaction', async () => {
+      gatewayContract.decodeMessageApprovedEvent.mockReturnValueOnce(messageApprovedEvent);
+
+      stacksTransactionRepository.updateStatusIfItExists.mockResolvedValueOnce(true);
+
+      const transaction = createMock<Transaction>();
+      transaction.tx_id = '0xtxHashGateway';
+      transaction.sender_address = 'senderAddress';
+      transaction.block_time_iso = '11.05.2024';
+
+      const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
+
+      expect(gatewayContract.decodeMessageApprovedEvent).toHaveBeenCalledTimes(1);
+
+      expect(result).not.toBeUndefined();
+      expect(result?.type).toBe('MESSAGE_APPROVED');
+
+      const event = result as MessageApprovedEventApi;
+
+      expect(event.eventID).toBe('0xtxHashGateway-0');
+      expect(event.message.messageID).toBe('messageId');
+      expect(event.message.sourceChain).toBe('ethereum');
+      expect(event.message.sourceAddress).toBe('sourceAddress');
+      expect(event.message.destinationAddress).toBe('SP6P4EJF0VG8V0RB3TQQKJBHDQKEF6NVRD1KZE3C');
+      expect(event.message.payloadHash).toBe(BinaryUtils.hexToBase64(contractCallEvent.payloadHash));
+      expect(event.cost).toEqual({
+        amount: '0',
+      });
+      expect(event.meta).toEqual({
+        txID: '0xtxHashGateway',
+        fromAddress: 'senderAddress',
+        finalized: true,
+        timestamp: '11.05.2024',
+      });
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(stacksTransactionRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'GATEWAY',
+        'txHashGateway',
+        'SUCCESS',
+      );
     });
   });
 
@@ -282,38 +332,19 @@ describe('GatewayProcessor', () => {
     it('Should handle event update contract call approved', async () => {
       gatewayContract.decodeMessageExecutedEvent.mockReturnValueOnce(messageExecutedEvent);
 
-      const messageApproved: MessageApproved = {
-        sourceChain: 'ethereum',
-        messageId: 'messageId',
-        status: MessageApprovedStatus.PENDING,
-        sourceAddress: 'sourceAddress',
-        contractAddress: 'senderAddress',
-        payloadHash: 'ebc84cbd75ba5516bf45e7024a9e12bc3c5c880f73e3a5beca7ebba52b2867a7',
-        payload: Buffer.from('payload'),
-        retry: 0,
-        executeTxHash: null,
-        updatedAt: new Date(),
-        createdAt: new Date(),
-        successTimes: null,
-        taskItemId: null,
-        availableGasBalance: '0',
-        extraData: {},
-      };
-
-      messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(messageApproved));
+      messageApprovedRepository.updateStatusIfItExists.mockResolvedValueOnce(true);
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '0');
 
       expect(gatewayContract.decodeMessageExecutedEvent).toHaveBeenCalledTimes(1);
 
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledWith('ethereum', 'messageId');
-      expect(messageApprovedRepository.updateStatusAndSuccessTimes).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.updateStatusAndSuccessTimes).toHaveBeenCalledWith({
-        ...messageApproved,
-        status: MessageApprovedStatus.SUCCESS,
-        successTimes: 1,
-      });
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'ethereum',
+        'messageId',
+        MessageApprovedStatus.SUCCESS,
+      );
+      expect(slackApi.sendWarn).not.toHaveBeenCalled();
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('MESSAGE_EXECUTED');
@@ -335,15 +366,19 @@ describe('GatewayProcessor', () => {
     });
 
     it('Should handle event no contract call approved', async () => {
-      messageApprovedRepository.findBySourceChainAndMessageId.mockReturnValueOnce(Promise.resolve(null));
+      messageApprovedRepository.updateStatusIfItExists.mockResolvedValueOnce(false);
 
       const result = await service.handleGatewayEvent(rawEvent, transaction, 0, '100', '20');
 
       expect(gatewayContract.decodeMessageExecutedEvent).toHaveBeenCalledTimes(1);
 
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledTimes(1);
-      expect(messageApprovedRepository.findBySourceChainAndMessageId).toHaveBeenCalledWith('ethereum', 'messageId');
-      expect(messageApprovedRepository.updateManyPartial).not.toHaveBeenCalled();
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledTimes(1);
+      expect(messageApprovedRepository.updateStatusIfItExists).toHaveBeenCalledWith(
+        'ethereum',
+        'messageId',
+        MessageApprovedStatus.SUCCESS,
+      );
+      expect(slackApi.sendWarn).toHaveBeenCalled();
 
       expect(result).not.toBeUndefined();
       expect(result?.type).toBe('MESSAGE_EXECUTED');

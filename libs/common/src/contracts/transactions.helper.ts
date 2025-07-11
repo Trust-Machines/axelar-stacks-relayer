@@ -22,7 +22,7 @@ import { ApiConfigService } from '../config';
 import { GasCheckerPayload } from './entities/gas-checker-payload';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 
-const TX_TIMEOUT_MILLIS = 240_000;
+const TX_TIMEOUT_MILLIS = 240_000; // 4 minutes
 
 @Injectable()
 export class TransactionsHelper {

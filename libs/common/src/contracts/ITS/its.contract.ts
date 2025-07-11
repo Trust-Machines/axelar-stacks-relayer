@@ -6,7 +6,6 @@ import {
   AnchorMode,
   bufferCV,
   callReadOnlyFunction,
-  ClarityValue,
   createAssetInfo,
   createFungiblePostCondition,
   createSTXPostCondition,
@@ -35,7 +34,6 @@ import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { GatewayContract } from '../gateway.contract';
 import { GasServiceContract } from '../gas-service.contract';
 import { GasCheckerPayload } from '../entities/gas-checker-payload';
-import { ScEvent } from '../../../../../apps/stacks-event-processor/src/event-processor/types';
 import {
   DecodingUtils,
   interchainTokenDeploymentStartedEventDecoder,
@@ -46,7 +44,7 @@ import {
   InterchainTransferEvent,
 } from '@stacks-monorepo/common/contracts/entities/its-events';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
-import { BinaryUtils, CacheInfo } from '@stacks-monorepo/common';
+import { BinaryUtils, CacheInfo, ScEvent } from '@stacks-monorepo/common';
 import { ItsError } from '@stacks-monorepo/common/contracts/entities/its.error';
 import { TokenType } from '@stacks-monorepo/common/contracts/ITS/types/token-type';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
@@ -143,9 +141,13 @@ export class ItsContract implements OnModuleInit {
       `Executing message with ID: ${messageId}, source chain: ${sourceChain}, source address: ${sourceAddress}, destination address: ${destinationAddress}, payload: ${payloadHex}`,
     );
 
-    const message = HubMessage.abiDecode(payloadHex);
+    const message = HubMessage.clarityDecode(payloadHex);
     if (!message) {
-      this.logger.fatal(`Could ABI decode ITS message payload ${payloadHex}. This should NOT have happened...`);
+      this.logger.fatal(`Could not decode Stacks ITS message payload ${payloadHex}. This should NOT have happened...`);
+      await this.slackApi.sendError(
+        'Could not decode Stacks ITS message payload',
+        `Could not decode Stacks ITS message payload ${payloadHex}. This should NOT have happened...`,
+      );
 
       return { transaction: null, incrementRetry: true, extraData: null };
     }
@@ -161,6 +163,7 @@ export class ItsContract implements OnModuleInit {
           sourceChain,
           sourceAddress,
           availableGasBalance,
+          payloadHex,
         );
 
         return { transaction, incrementRetry: true, extraData: null };
@@ -174,11 +177,12 @@ export class ItsContract implements OnModuleInit {
           sourceAddress,
           availableGasBalance,
           executeTxHash,
+          payloadHex,
           extraData,
         );
       default:
-        this.logger.error(`Unknown message type: ${message?.messageType}`);
-        await this.slackApi.sendError('ITS contract error', `Unknown message type: ${message?.messageType}`);
+        this.logger.error(`Unknown message type: ${innerMessage?.messageType}`);
+        await this.slackApi.sendError('ITS contract error', `Unknown message type: ${innerMessage?.messageType}`);
 
         return {
           transaction: null,
@@ -195,6 +199,7 @@ export class ItsContract implements OnModuleInit {
     sourceChain: string,
     sourceAddress: string,
     availableGasBalance: string,
+    payloadHex: string,
   ) {
     this.logger.debug(`Handling interchain transfer for message ID: ${messageId}, message: ${JSON.stringify(message)}`);
     const tokenInfo = await this.getTokenInfo(message.payload.tokenId);
@@ -212,6 +217,7 @@ export class ItsContract implements OnModuleInit {
       sourceAddress,
       tokenInfo,
       availableGasBalance,
+      payloadHex,
     );
   }
 
@@ -223,6 +229,7 @@ export class ItsContract implements OnModuleInit {
     sourceAddress: string,
     availableGasBalance: string,
     executeTxHash: string | null,
+    payloadHex: string,
     extraData?: ItsExtraData,
   ): Promise<MessageApprovedData> {
     // In case we haven't started deploying anything for this yet, check gas first
@@ -234,6 +241,7 @@ export class ItsContract implements OnModuleInit {
         sourceChain,
         sourceAddress,
         availableGasBalance,
+        payloadHex,
       );
 
       extraData = {
@@ -330,11 +338,9 @@ export class ItsContract implements OnModuleInit {
           extraData.deployTxHash as string,
         );
 
-        const payload = HubMessage.clarityEncode(message);
-
         const transaction = await this.executeDeployInterchainToken(
           senderKey,
-          payload,
+          payloadHex,
           messageId,
           sourceChain,
           sourceAddress,
@@ -364,6 +370,7 @@ export class ItsContract implements OnModuleInit {
     sourceAddress: string,
     tokenInfo: TokenInfo,
     availableGasBalance: string,
+    payloadHex: string,
   ): Promise<StacksTransaction> {
     const tokenAddress = await this.tokenManagerContract.getTokenAddress(tokenInfo);
     if (!tokenAddress) {
@@ -378,7 +385,6 @@ export class ItsContract implements OnModuleInit {
     const destinationContract = optionalCVOf(
       isEmptyData(innerMessage.data) ? undefined : principalCV(innerMessage.destinationAddress),
     );
-    const payload = HubMessage.clarityEncode(message);
 
     const postConditions = await this.getExecuteReceivePostConditions(tokenInfo, innerMessage.amount, tokenAddress);
 
@@ -394,7 +400,7 @@ export class ItsContract implements OnModuleInit {
         stringAsciiCV(sourceAddress),
         principalCV(tokenInfo.managerAddress),
         principalCV(tokenAddress),
-        payload,
+        bufferCV(BinaryUtils.hexToBuffer(payloadHex)),
         destinationContract,
       ],
       senderKey,
@@ -410,7 +416,7 @@ export class ItsContract implements OnModuleInit {
 
   async executeDeployInterchainToken(
     senderKey: string,
-    payload: ClarityValue,
+    payloadHex: string,
     messageId: string,
     sourceChain: string,
     sourceAddress: string,
@@ -441,7 +447,7 @@ export class ItsContract implements OnModuleInit {
           stringAsciiCV(messageId),
           stringAsciiCV(sourceAddress),
           principalCV(tokenAddress),
-          payload,
+          bufferCV(BinaryUtils.hexToBuffer(payloadHex)),
           verificationParams,
         ],
         senderKey,
@@ -541,6 +547,7 @@ export class ItsContract implements OnModuleInit {
     sourceChain: string,
     sourceAddress: string,
     availableGasBalance: string,
+    payloadHex: string,
   ) {
     const gasCheckerPayload: GasCheckerPayload[] = [];
     const innerMessage = message.payload as DeployInterchainToken;
@@ -564,11 +571,9 @@ export class ItsContract implements OnModuleInit {
     );
     gasCheckerPayload.push({ transaction: setupTx });
 
-    const payload = HubMessage.clarityEncode(message);
-
     const executeDeployInterchainTokenTx = await this.executeDeployInterchainToken(
       senderKey,
-      payload,
+      payloadHex,
       messageId,
       sourceChain,
       sourceAddress,

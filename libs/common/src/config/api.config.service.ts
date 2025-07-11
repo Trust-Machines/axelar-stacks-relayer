@@ -124,24 +124,6 @@ export class ApiConfigService {
     return axelarContractIts;
   }
 
-  getMultisigProverContract(): string {
-    const contract = this.configService.get<string>('AXELAR_MULTISIG_PROVER_CONTRACT');
-    if (!contract) {
-      throw new Error('No Axelar Multisig Prover present');
-    }
-
-    return contract;
-  }
-
-  getAxelarGatewayContract(): string {
-    const contract = this.configService.get<string>('AXELAR_GATEWAY_CONTRACT');
-    if (!contract) {
-      throw new Error('No Axelar Gateway present');
-    }
-
-    return contract;
-  }
-
   getAxelarGmpApiUrl(): string {
     const axelarGmpApiUrl = this.configService.get<string>('AXELAR_GMP_API_URL');
     if (!axelarGmpApiUrl) {
@@ -196,5 +178,41 @@ export class ApiConfigService {
     const slackWebhookUrl = this.configService.get<string>('SLACK_WEBHOOK_URL');
 
     return slackWebhookUrl ?? '';
+  }
+
+  getAxelarMnemonic(): string {
+    const mnemonic = this.configService.get<string>('AXELAR_MNEMONIC');
+    if (!mnemonic) {
+      throw new Error('No Axelar Mnemonic present');
+    }
+
+    return mnemonic;
+  }
+
+  getAxelarRpcUrl(): string {
+    const rpcUrl = this.configService.get<string>('AXELAR_RPC_URL');
+    if (!rpcUrl) {
+      throw new Error('No Axelar RPC Url present');
+    }
+
+    return rpcUrl;
+  }
+
+  getAxelarGasPrice(): string {
+    const gasPrice = this.configService.get<string>('AXELAR_GAS_PRICE');
+    if (!gasPrice) {
+      throw new Error('No Axelar Gas Price present');
+    }
+
+    return gasPrice;
+  }
+
+  getAxelarChainGatewayContract(): string {
+    const contract = this.configService.get<string>('AXELAR_CHAIN_GATEWAY_CONTRACT');
+    if (!contract) {
+      throw new Error('No Axelar Chain Gateway present');
+    }
+
+    return contract;
   }
 }

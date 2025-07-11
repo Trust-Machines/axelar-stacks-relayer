@@ -3,7 +3,7 @@ import { OperationResponse, Transaction } from '@stacks/blockchain-api-client/sr
 import axios, { AxiosInstance } from 'axios';
 import { ApiConfigService } from '../config';
 import { mapRawEventsToSmartContractEvents } from '../utils';
-import { ScEvent } from 'apps/stacks-event-processor/src/event-processor/types';
+import { ScEvent } from '@stacks-monorepo/common/utils';
 import { deserializeTransaction, StacksTransaction } from '@stacks/transactions';
 
 export type AddressBalanceResponse = OperationResponse['get_account_balance']; // This is missing from the SDK so we import it manually
