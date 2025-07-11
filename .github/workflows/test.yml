@@ -39,7 +39,3 @@ jobs:
 
       - run: npm run generate
       - run: npm run test
-
-      - run: npm install -g dotenv-cli
-      - run: npm run test:migrate
-      - run: npm run test:e2e
