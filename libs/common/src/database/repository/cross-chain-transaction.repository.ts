@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@stacks-monorepo/common/database/prisma.service';
+import { CrossChainTransaction } from '@prisma/client';
 
 @Injectable()
 export class CrossChainTransactionRepository {
@@ -9,39 +10,58 @@ export class CrossChainTransactionRepository {
     await this.prisma.crossChainTransaction.createMany({
       data: txHashes.map((txHash) => ({
         txHash,
+        burnBlockHeight: null,
       })),
       skipDuplicates: true,
     });
   }
 
   /**
-   * Process up to `${take}` items from the database. Runs logic in a database transaction, commiting everything after
+   * Process up to `${take}` transactions from the database that have been finalized or finality information is not set yet. Runs logic in a database transaction, commiting everything after
    * the batch has been processed.
    * Uses Postgres `FOR UPDATE SKIP LOCKED`, which allows multiple consumers running in parallel without being blocked.
    * Deletes successfully processed items at the end of the database transaction. Unsuccessful entries can be retried.
    */
   processPending(
-    doProcessing: (txHashes: string[]) => Promise<string[]>,
+    doProcessing: (crossChainTransactions: CrossChainTransaction[]) => Promise<{
+      processedTxs: string[];
+      updatedTxs: CrossChainTransaction[];
+    }>,
+    finalizedBurnBlockHeight: number,
     take: number = 10,
     timeout: number = 60_000,
   ): Promise<string[]> {
     return this.prisma.$transaction(
       async (tx) => {
-        const result = await tx.$queryRaw<{ txHash: string }[]>`
-          SELECT "txHash"
+        const result = await tx.$queryRaw<CrossChainTransaction[]>`
+          SELECT *
           from "CrossChainTransaction"
+          WHERE "burnBlockHeight" is NULL
+             OR "burnBlockHeight" <= ${finalizedBurnBlockHeight}
           ORDER BY "createdAt" ASC
             FOR
               UPDATE SKIP LOCKED LIMIT ${take}
         `;
 
-        const txHashes = result.map((data) => data.txHash);
-
-        if (txHashes.length === 0) {
+        if (result.length === 0) {
           return [];
         }
 
-        const processedTxs = await doProcessing(txHashes);
+        const { processedTxs, updatedTxs } = await doProcessing(result);
+
+        if (updatedTxs.length > 0) {
+          for (const updatedTx of updatedTxs) {
+            await tx.crossChainTransaction.update({
+              where: {
+                txHash: updatedTx.txHash,
+              },
+              data: {
+                burnBlockHeight: updatedTx.burnBlockHeight,
+              },
+              select: null,
+            });
+          }
+        }
 
         // Only delete txs which have been successfully processed
         if (processedTxs.length > 0) {
@@ -54,7 +74,7 @@ export class CrossChainTransactionRepository {
           });
         }
 
-        return processedTxs;
+        return [...processedTxs, ...updatedTxs.map(updatedTx => updatedTx.txHash)];
       },
       {
         timeout,

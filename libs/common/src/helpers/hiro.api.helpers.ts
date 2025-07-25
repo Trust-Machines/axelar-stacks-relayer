@@ -18,6 +18,10 @@ export type ContractInfoResponse = {
   abi: any;
 };
 
+export type BlockResponse = {
+  burn_block_height: number;
+}
+
 const API_TIMEOUT = 30_000; // 30 seconds
 
 @Injectable()
@@ -99,6 +103,11 @@ export class HiroApiHelper {
     const response = await this.client.get(`/v3/blocks/height/${blockHeight}`, {
       responseType: 'arraybuffer',
     });
+    return response.data;
+  }
+
+  async getLatestBlock(): Promise<BlockResponse> {
+    const response = await this.client.get(`extended/v2/blocks/latest`);
     return response.data;
   }
 }
