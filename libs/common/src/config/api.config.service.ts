@@ -180,6 +180,15 @@ export class ApiConfigService {
     return slackWebhookUrl ?? '';
   }
 
+  getConfirmationHeight(): number {
+    const confirmationHeight = this.configService.get<number>('CONFIRMATION_HEIGHT');
+    if (!confirmationHeight) {
+      throw new Error('No Confirmation Height present');
+    }
+
+    return Number(confirmationHeight);
+  }
+
   getAxelarMnemonic(): string {
     const mnemonic = this.configService.get<string>('AXELAR_MNEMONIC');
     if (!mnemonic) {
