@@ -41,9 +41,10 @@ model LastProcessedData {
 }
 
 model CrossChainTransaction {
-  txHash    String   @id @db.VarChar(66)
-  createdAt DateTime @default(now()) @db.Timestamp(6)
-  updatedAt DateTime @default(now()) @updatedAt @db.Timestamp(6)
+  txHash          String   @id @db.VarChar(66)
+  burnBlockHeight BigInt?
+  createdAt       DateTime @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamp(6)
 }
 
 model StacksTransaction {

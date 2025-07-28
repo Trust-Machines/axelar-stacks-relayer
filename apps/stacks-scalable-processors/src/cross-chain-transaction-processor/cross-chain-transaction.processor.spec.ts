@@ -8,6 +8,8 @@ import { CrossChainTransactionProcessorService } from './cross-chain-transaction
 import { GasServiceProcessor, GatewayProcessor, ItsProcessor } from './processors';
 import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { CrossChainTransactionRepository } from '@stacks-monorepo/common/database/repository/cross-chain-transaction.repository';
+import { Components } from '@stacks-monorepo/common/api/entities/axelar.gmp.api';
+import Event = Components.Schemas.Event;
 
 const mockTransactionResponse = {
   tx_id: '5cc3bf9866b77b6d05b3756a0faff67d7685058579550989f39cb4319bec0fc1',
@@ -48,6 +50,7 @@ describe('CrossChainTransactionProcessor', () => {
     apiConfigService.getContractGatewayStorage.mockReturnValue(mockGatewayContractId);
     apiConfigService.getContractGasServiceStorage.mockReturnValue(mockGasContractId);
     apiConfigService.getContractItsStorage.mockReturnValue(mockItsContractId);
+    apiConfigService.getConfirmationHeight.mockReturnValue(2);
 
     const moduleRef = await Test.createTestingModule({
       providers: [CrossChainTransactionProcessorService],
@@ -93,6 +96,8 @@ describe('CrossChainTransactionProcessor', () => {
   });
 
   it('Should not process pending or failed transaction', async () => {
+    hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
     hiroApi.getTransactionWithFee.mockImplementation((txHash: string) => {
       if (txHash === 'txHashNone') {
         throw new Error('not found');
@@ -100,6 +105,7 @@ describe('CrossChainTransactionProcessor', () => {
 
       const transaction = { ...(mockTransactionResponse as any) };
       transaction.tx_id = txHash;
+      transaction.burn_block_height = 1n;
 
       if (txHash === 'txHashPending') {
         transaction.tx_status = 'pending';
@@ -110,7 +116,11 @@ describe('CrossChainTransactionProcessor', () => {
       return Promise.resolve({ transaction, fee: transaction.fee_rate });
     });
 
-    await service.processCrossChainTransactionsRaw(['txHashNone', 'txHashPending', 'txHashFailed']);
+    await service.processCrossChainTransactionsRaw([
+      { txHash: 'txHashNone', burnBlockHeight: 1n, createdAt: new Date(), updatedAt: new Date() },
+      { txHash: 'txHashPending', burnBlockHeight: 1n, createdAt: new Date(), updatedAt: new Date() },
+      { txHash: 'txHashFailed', burnBlockHeight: 1n, createdAt: new Date(), updatedAt: new Date() },
+    ]);
 
     expect(gatewayProcessor.handleGatewayEvent).not.toHaveBeenCalled();
     expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
@@ -178,8 +188,45 @@ describe('CrossChainTransactionProcessor', () => {
     transaction.tx_status = 'success';
     transaction.fee_rate = '180';
     transaction.token_transfer.amount = 0;
+    transaction.burn_block_height = 1n;
+
+    it('Should set burn block height for call contract only', async () => {
+      hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
+      transaction.events = [rawGatewayEvent];
+
+      hiroApi.getTransactionWithFee.mockResolvedValueOnce({
+        transaction: transaction,
+        fee: transaction.fee_rate,
+      });
+
+      gatewayProcessor.handleGatewayEvent.mockResolvedValueOnce({
+        type: 'CALL',
+      } as unknown as Event);
+
+      const crossChainTx = {
+        txHash: 'txHash',
+        burnBlockHeight: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const { processedTxs, updatedTxs } = await service.processCrossChainTransactionsRaw([crossChainTx]);
+
+      expect(processedTxs).toHaveLength(0);
+      expect(updatedTxs).toHaveLength(1);
+
+      expect(updatedTxs[0]).toEqual({
+        ...crossChainTx,
+        burnBlockHeight: 1n,
+      });
+
+      expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
+      expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledTimes(1);
+    });
 
     it('Should handle multiple events', async () => {
+      hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
       transaction.events = [rawGasEvent, rawGatewayEvent, rawItsEvent];
 
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
@@ -187,7 +234,17 @@ describe('CrossChainTransactionProcessor', () => {
         fee: transaction.fee_rate,
       });
 
-      await service.processCrossChainTransactionsRaw(['txHash']);
+      const { processedTxs, updatedTxs } = await service.processCrossChainTransactionsRaw([
+        {
+          txHash: 'txHash',
+          burnBlockHeight: 1n,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      expect(processedTxs).toHaveLength(1);
+      expect(updatedTxs).toHaveLength(0);
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledWith(
@@ -215,6 +272,8 @@ describe('CrossChainTransactionProcessor', () => {
     });
 
     it('Should handle multiple approval events and set cost for each', async () => {
+      hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
       transaction.events = [rawApprovedEvent, rawApprovedEvent];
 
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
@@ -239,7 +298,14 @@ describe('CrossChainTransactionProcessor', () => {
         }),
       );
 
-      await service.processCrossChainTransactionsRaw(['txHash']);
+      await service.processCrossChainTransactionsRaw([
+        {
+          txHash: 'txHash',
+          burnBlockHeight: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledTimes(2);
       expect(gatewayProcessor.handleGatewayEvent).toHaveBeenCalledWith(
@@ -262,6 +328,8 @@ describe('CrossChainTransactionProcessor', () => {
     });
 
     it('Should not postEvents if no events to send', async () => {
+      hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
       transaction.events = [];
 
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
@@ -269,7 +337,14 @@ describe('CrossChainTransactionProcessor', () => {
         fee: transaction.fee_rate,
       });
 
-      await service.processCrossChainTransactionsRaw(['txHash']);
+      await service.processCrossChainTransactionsRaw([
+        {
+          txHash: 'txHash',
+          burnBlockHeight: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(gasServiceProcessor.handleGasServiceEvent).not.toHaveBeenCalled();
       expect(gatewayProcessor.handleGatewayEvent).not.toHaveBeenCalled();
@@ -277,6 +352,8 @@ describe('CrossChainTransactionProcessor', () => {
     });
 
     it('Should handle postEvents error', async () => {
+      hiroApi.getLatestBlock.mockResolvedValueOnce({ burn_block_height: 2 });
+
       transaction.events = [rawGasEvent];
 
       hiroApi.getTransactionWithFee.mockResolvedValueOnce({
@@ -286,7 +363,14 @@ describe('CrossChainTransactionProcessor', () => {
 
       axelarGmpApi.postEvents.mockRejectedValueOnce('Network error');
 
-      await service.processCrossChainTransactionsRaw(['txHash']);
+      await service.processCrossChainTransactionsRaw([
+        {
+          txHash: 'txHash',
+          burnBlockHeight: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       expect(gasServiceProcessor.handleGasServiceEvent).toHaveBeenCalledTimes(1);
       expect(axelarGmpApi.postEvents).toHaveBeenCalledTimes(1);
