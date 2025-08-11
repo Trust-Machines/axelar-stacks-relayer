@@ -440,7 +440,6 @@ describe('ItsContract', () => {
     it('should handle first step contract deploy only', async () => {
       const deployTx = createMock<StacksTransaction>();
       deployTx.txid.mockReturnValue('txId');
-      const setupTx = createMock<StacksTransaction>();
       const executeTx = createMock<StacksTransaction>();
 
       mockNativeInterchainTokenContract.deployContractTransaction.mockResolvedValue({
@@ -451,7 +450,6 @@ describe('ItsContract', () => {
       jest.spyOn(Date, 'now').mockReturnValue(1000);
 
       // For checkDeployInterchainTokenGasBalance
-      mockNativeInterchainTokenContract.setupTransaction.mockResolvedValue(setupTx);
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
 
       const result = await service.handleDeployNativeInterchainToken(
@@ -493,14 +491,6 @@ describe('ItsContract', () => {
         (message.payload as DeployInterchainToken).name,
       );
 
-      expect(mockNativeInterchainTokenContract.setupTransaction).toHaveBeenCalledTimes(1);
-      expect(mockNativeInterchainTokenContract.setupTransaction).toHaveBeenCalledWith(
-        senderKey,
-        'mockTemplate',
-        'ContractId',
-        message.payload,
-        true,
-      );
       expect(service.executeDeployInterchainToken).toHaveBeenCalledWith(
         senderKey,
         expect.anything(),
@@ -619,133 +609,7 @@ describe('ItsContract', () => {
       expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', 1000);
     });
 
-    it('should handle second step contract setup after contract deploy succeeded', async () => {
-      mockTransactionsHelper.isTransactionSuccessfulWithTimeout.mockResolvedValueOnce({
-        isFinished: true,
-        success: true,
-      });
-
-      const setupTx = createMock<StacksTransaction>();
-      mockNativeInterchainTokenContract.setupTransaction.mockResolvedValue(setupTx);
-      jest.spyOn(Date, 'now').mockReturnValue(2000);
-
-      const result = await service.handleDeployNativeInterchainToken(
-        senderKey,
-        message,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-        'executeTxHash',
-        '0x',
-        {
-          step: 'CONTRACT_DEPLOY',
-          contractId: 'address.contractId-1000',
-          timestamp: 1000,
-          deployTxHash: 'txId',
-        },
-      );
-
-      expect(result).toEqual({
-        transaction: setupTx,
-        incrementRetry: false,
-        extraData: {
-          step: 'CONTRACT_SETUP',
-          contractId: 'address.contractId-1000',
-          timestamp: 2000,
-          deployTxHash: 'txId',
-        },
-      });
-
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', 1000);
-
-      expect(mockNativeInterchainTokenContract.setupTransaction).toHaveBeenCalledTimes(1);
-      expect(mockNativeInterchainTokenContract.setupTransaction).toHaveBeenCalledWith(
-        senderKey,
-        'address',
-        'contractId-1000',
-        message.payload,
-      );
-    });
-
-    it('should handle second step contract setup in progress', async () => {
-      mockTransactionsHelper.isTransactionSuccessfulWithTimeout.mockResolvedValueOnce({
-        isFinished: false,
-        success: false,
-      });
-
-      const result = await service.handleDeployNativeInterchainToken(
-        senderKey,
-        message,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-        'executeTxHash',
-        '0x',
-        {
-          step: 'CONTRACT_SETUP',
-          contractId: 'address.contractId-1000',
-          timestamp: 2000,
-          deployTxHash: 'txId',
-        },
-      );
-
-      expect(result).toEqual({
-        transaction: null,
-        incrementRetry: false,
-        extraData: {
-          step: 'CONTRACT_SETUP',
-          contractId: 'address.contractId-1000',
-          timestamp: 2000,
-          deployTxHash: 'txId',
-        },
-      });
-
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', 2000);
-    });
-
-    it('should handle second step contract setup failed', async () => {
-      mockTransactionsHelper.isTransactionSuccessfulWithTimeout.mockResolvedValueOnce({
-        isFinished: true,
-        success: false,
-      });
-
-      const result = await service.handleDeployNativeInterchainToken(
-        senderKey,
-        message,
-        messageId,
-        sourceChain,
-        sourceAddress,
-        availableGasBalance,
-        'executeTxHash',
-        '0x',
-        {
-          step: 'CONTRACT_SETUP',
-          contractId: 'address.contractId-1000',
-          timestamp: 2000,
-          deployTxHash: 'txId',
-        },
-      );
-
-      expect(result).toEqual({
-        transaction: null,
-        incrementRetry: true, // retry will be incremented
-        extraData: {
-          step: 'CONTRACT_SETUP',
-          contractId: 'address.contractId-1000',
-          timestamp: 2000,
-          deployTxHash: 'txId',
-        },
-      });
-
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledTimes(1);
-      expect(mockTransactionsHelper.isTransactionSuccessfulWithTimeout).toHaveBeenCalledWith('executeTxHash', 2000);
-    });
-
-    it('should handle third step execute after contract setup suceeded', async () => {
+    it('should handle second step execute after contract deploy suceeded', async () => {
       mockTransactionsHelper.isTransactionSuccessfulWithTimeout.mockResolvedValueOnce({
         isFinished: true,
         success: true,
@@ -764,7 +628,7 @@ describe('ItsContract', () => {
         'executeTxHash',
         'payload',
         {
-          step: 'CONTRACT_SETUP',
+          step: 'CONTRACT_DEPLOY',
           contractId: 'address.contractId-1000',
           timestamp: 2000,
           deployTxHash: 'txId',
@@ -883,7 +747,6 @@ describe('ItsContract', () => {
     it('should fail if available gas balance check fails', async () => {
       const deployTx = createMock<StacksTransaction>();
       deployTx.txid.mockReturnValue('txId');
-      const setupTx = createMock<StacksTransaction>();
       const executeTx = createMock<StacksTransaction>();
 
       mockNativeInterchainTokenContract.deployContractTransaction.mockResolvedValue({
@@ -893,7 +756,6 @@ describe('ItsContract', () => {
       mockTransactionsHelper.makeContractId.mockReturnValue('address.contractId-1000');
       jest.spyOn(Date, 'now').mockReturnValue(1000);
 
-      mockNativeInterchainTokenContract.setupTransaction.mockResolvedValue(setupTx);
       jest.spyOn(service as any, 'executeDeployInterchainToken').mockResolvedValue(executeTx);
 
       mockTransactionsHelper.checkAvailableGasBalance.mockRejectedValue(new Error('Insufficient gas balance'));

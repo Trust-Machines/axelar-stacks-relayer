@@ -109,6 +109,5 @@ npm run cli stacks-execute <axelar tx hash>
 
 ```shell
 npm run cli stacks-execute <axelar tx hash> -- --step CONTRACT_DEPLOY # 1st step
-npm run cli stacks-execute <axelar tx hash> -- --step CONTRACT_SETUP --contract-id <previously deployed stacks contract id> # 2nd step
-npm run cli stacks-execute <axelar tx hash> -- --step ITS_EXECUTE --contract-id <previously deployed stacks contract id> --deploy-tx-hash <previously returned tx hash from step 1> # 3rd step
+npm run cli stacks-execute <axelar tx hash> -- --step ITS_EXECUTE --contract-id <previously deployed stacks contract id> --deploy-tx-hash <previously returned tx hash> # 2nd step
 ```

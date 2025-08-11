@@ -4,7 +4,7 @@ import { StacksService } from './services/stacks.service';
 import { AxelarService } from './services/axelar.service';
 
 interface StacksExecuteOptions {
-  step?: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
+  step?: 'CONTRACT_DEPLOY' | 'ITS_EXECUTE';
   contractId?: string;
   deployTxHash?: string;
 }
@@ -51,19 +51,19 @@ export class StacksExecute extends CommandRunner {
 
   @Option({
     flags: '-s, --step <step>',
-    description: 'Execution step: CONTRACT_DEPLOY, CONTRACT_SETUP, or ITS_EXECUTE',
+    description: 'Execution step: CONTRACT_DEPLOY or ITS_EXECUTE',
   })
-  parseStep(val: string): 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE' {
-    const validSteps = ['CONTRACT_DEPLOY', 'CONTRACT_SETUP', 'ITS_EXECUTE'];
+  parseStep(val: string): 'CONTRACT_DEPLOY' | 'ITS_EXECUTE' {
+    const validSteps = ['CONTRACT_DEPLOY', 'ITS_EXECUTE'];
     if (!validSteps.includes(val)) {
       throw new Error(`Invalid step: ${val}. Must be one of: ${validSteps.join(', ')}`);
     }
-    return val as 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
+    return val as 'CONTRACT_DEPLOY' | 'ITS_EXECUTE';
   }
 
   @Option({
     flags: '-c, --contract-id <contractId>',
-    description: 'Contract ID (required for CONTRACT_SETUP and ITS_EXECUTE steps)',
+    description: 'Contract ID (required for ITS_EXECUTE step)',
   })
   parseContractId(val: string): string {
     return val;
