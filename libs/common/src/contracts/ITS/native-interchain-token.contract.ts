@@ -4,20 +4,12 @@ import { StacksNetwork } from '@stacks/network';
 import {
   AnchorMode,
   ClarityVersion,
-  optionalCVOf,
   PostConditionMode,
-  principalCV,
   SignedContractDeployOptions,
   StacksTransaction,
-  stringAsciiCV,
   TupleCV,
-  uintCV,
 } from '@stacks/transactions';
-import { bufferFromHex } from '@stacks/transactions/dist/cl';
 import { TransactionsHelper } from '../transactions.helper';
-import { DeployInterchainToken } from './messages/hub.message.types';
-import { TokenType } from './types/token-type';
-import { isEmptyData } from '@stacks-monorepo/common/utils/is-emtpy-data';
 import { ProviderKeys } from '@stacks-monorepo/common/utils/provider.enum';
 import { VerifyOnchainContract } from '@stacks-monorepo/common/contracts/ITS/verify-onchain.contract';
 import { HiroApiHelper } from '@stacks-monorepo/common/helpers/hiro.api.helpers';
@@ -72,36 +64,6 @@ export class NativeInterchainTokenContract implements OnModuleInit {
     const transaction = await this.transactionsHelper.makeContractDeploy(txOptions, simulate);
 
     return { transaction, contractName };
-  }
-
-  async setupTransaction(
-    senderKey: string,
-    contractAddress: string,
-    contractName: string,
-    message: DeployInterchainToken,
-    simulate: boolean = false,
-  ): Promise<StacksTransaction> {
-    return await this.transactionsHelper.makeContractCall(
-      {
-        contractAddress: contractAddress,
-        contractName: contractName,
-        functionName: 'setup',
-        functionArgs: [
-          bufferFromHex(message.tokenId),
-          uintCV(TokenType.NATIVE_INTERCHAIN_TOKEN),
-          optionalCVOf(), // operator-address
-          stringAsciiCV(message.name),
-          stringAsciiCV(message.symbol),
-          uintCV(message.decimals),
-          optionalCVOf(), // token uri
-          optionalCVOf(isEmptyData(message.minter) ? undefined : principalCV(message.minter)),
-        ],
-        senderKey,
-        network: this.network,
-        anchorMode: AnchorMode.Any,
-      },
-      simulate,
-    );
   }
 
   async getTemplateSourceCode(): Promise<string | null> {

@@ -51,7 +51,7 @@ import { SlackApi } from '@stacks-monorepo/common/api/slack.api';
 import { RedisHelper } from '@stacks-monorepo/common/helpers/redis.helper';
 
 export interface ItsExtraData {
-  step: 'CONTRACT_DEPLOY' | 'CONTRACT_SETUP' | 'ITS_EXECUTE';
+  step: 'CONTRACT_DEPLOY' | 'ITS_EXECUTE';
   contractId?: string;
   timestamp?: number; // in milliseconds
   deployTxHash?: string;
@@ -296,41 +296,6 @@ export class ItsContract implements OnModuleInit {
         executeTxHash = null;
         // No break here is intentional
       }
-      // @ts-ignore
-      case 'CONTRACT_SETUP': {
-        // Setup contract if we don't have a transaction hash yet
-        if (!executeTxHash) {
-          const contractId = extraData.contractId as string;
-
-          this.logger.debug(`Calling setup function on the native interchain token contract ${contractId}...`);
-
-          const [smartContractAddress, smartContractName] = splitContractId(contractId);
-          const innerMessage = message.payload as DeployInterchainToken;
-          const transaction = await this.nativeInterchainTokenContract.setupTransaction(
-            senderKey,
-            smartContractAddress,
-            smartContractName,
-            innerMessage,
-          );
-
-          return {
-            transaction,
-            incrementRetry: false,
-            extraData: {
-              step: 'CONTRACT_SETUP',
-              contractId,
-              timestamp: Date.now(),
-              deployTxHash: extraData.deployTxHash,
-            } as ItsExtraData,
-          };
-        }
-
-        // Success of transaction is checked above before the switch
-        this.logger.log(`Successfully deployed native interchain contract, txId: ${executeTxHash}`);
-
-        executeTxHash = null;
-        // No break here is intentional
-      }
       case 'ITS_EXECUTE': {
         this.logger.debug(`Calling execute-deploy-interchain-token function...`);
 
@@ -561,15 +526,6 @@ export class ItsContract implements OnModuleInit {
 
     const templateContractId = this.nativeInterchainTokenContract.getTemplateContractId();
     const templateDeployTx = await this.nativeInterchainTokenContract.getTemplateDeployVerificationParams();
-    const [templateContractAddress, templateContractName] = splitContractId(templateContractId);
-    const setupTx = await this.nativeInterchainTokenContract.setupTransaction(
-      senderKey,
-      templateContractAddress,
-      templateContractName,
-      innerMessage,
-      true,
-    );
-    gasCheckerPayload.push({ transaction: setupTx });
 
     const executeDeployInterchainTokenTx = await this.executeDeployInterchainToken(
       senderKey,
