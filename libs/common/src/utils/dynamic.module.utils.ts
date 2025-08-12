@@ -11,11 +11,7 @@ export class DynamicModuleUtils {
         {
           provide: REDIS_CLIENT_TOKEN,
           useFactory: (apiConfigService: ApiConfigService) => {
-            const connectionOptions = {
-              host: apiConfigService.getRedisUrl(),
-              port: apiConfigService.getRedisPort(),
-            };
-            return new Redis(connectionOptions);
+            return new Redis(apiConfigService.getRedisUrl());
           },
           inject: [ApiConfigService],
         },

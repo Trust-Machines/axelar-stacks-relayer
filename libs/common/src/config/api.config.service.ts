@@ -32,17 +32,6 @@ export class ApiConfigService {
     return redisUrl;
   }
 
-  getRedisPort(): number {
-    const url = this.getRedisUrl();
-    const components = url.split(':');
-
-    if (components.length > 1) {
-      return Number(components[1]);
-    }
-
-    return 6379;
-  }
-
   getContractGatewayStorage(): string {
     const contractGatewayStorage = this.configService.get<string>('CONTRACT_ID_GATEWAY_STORAGE');
     if (!contractGatewayStorage) {
