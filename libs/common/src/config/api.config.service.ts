@@ -139,7 +139,7 @@ export class ApiConfigService {
       throw new Error('No client cert present');
     }
 
-    return clientCert;
+    return clientCert.replace(/\\n/gm, '\n');;
   }
 
   getClientKey(): string {
@@ -148,7 +148,7 @@ export class ApiConfigService {
       throw new Error('No client key present');
     }
 
-    return clientKey;
+    return clientKey.replace(/\\n/gm, '\n');;
   }
 
   getStacksNetwork(): string {
